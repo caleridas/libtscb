@@ -1,0 +1,112 @@
+/* -*- C++ -*-
+ * (c) 2006 Helge Bahmann <hcb@chaoticmind.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License version 2.1.
+ * Refer to the file_event "COPYING" for details.
+ */
+
+#ifndef __TSCB_EVENTFLAG_H
+#define __TSCB_EVENTFLAG_H
+
+#include <stdexcept>
+#include <tscb/atomic>
+
+namespace tscb {
+	
+	/* FIXME: write documentation */
+	
+	/**
+		\brief Event flag interface
+		
+		Provides the interface of an event flag synchronization primitive.
+		An event flag can be in one of two possible states: set or cleared.
+		If the flag is set, a \ref wait operation on the flag will
+		not block, and the thread will continue unimpeded. If the
+		flag is cleared, a \ref wait operation will block until
+		the state of the flag is changed to set.
+		
+		In contrast to conditionals, threads will not block on an
+		event flag if it has been set previously. Mutexes and
+		event flags can be used as replacements for mutexes and conditionals,
+		however event flags are considered more difficult to use.
+		
+		Eventflags are used in <B>tscb</B> to provide a
+		generic interface for thread wakeup.
+	*/
+	class eventflag {
+	public:
+		virtual ~eventflag(void) throw();
+		
+		/**
+			\brief Set the flag
+			
+			Set the flag, will implicitly wake up all threads waiting
+			for the flag via \ref wait
+		*/
+		virtual void set(void) throw()=0;
+		/**
+			\brief Clear the flag
+			Clear the flag, threads calling \ref wait will block until
+			the flag is set again via \ref set
+		*/
+		virtual void clear(void) throw()=0;
+		/**
+			\brief Wait until the flag is set
+			
+			Block the current thread until the flag is set; the thread
+			will continue without blocking if the flag is set already.
+		*/
+		virtual void wait(void) throw()=0;
+	};
+	
+	/**
+		\brief Event flag implementation using a control pipe
+		
+		This class implements an event flag using two file descriptors
+		to an internal control pipe; threads are woken up by writing
+		to a control pipe, threads wait on the flag by checking
+		the control pipe for readiness for reading.
+	*/
+	class pipe_eventflag : public eventflag {
+	public:
+		pipe_eventflag(void) throw(std::runtime_error);
+		virtual ~pipe_eventflag(void) throw();
+		
+		virtual void set(void) throw();
+		virtual void wait(void) throw();
+		virtual void clear(void) throw();
+		
+		void start_waiting(void) throw();
+		void stop_waiting(void) throw();
+		
+		int readfd, writefd;
+		/* can have three possible states:
+		- 0: not flagged
+		- 1: flagged, but no wakeup via control pipe 
+		- 2: flagged, wakeup sent via control pipe */
+		atomic flagged;
+		atomic waiting;
+	};
+	
+	/*
+	class signal_event_flag : public event_flag {
+	public:
+		signal_event_flag(pthread_t thread, int signo) throw();
+		virtual ~signal_event_flag(void) throw();
+		
+		virtual void set(void) throw();
+		virtual void wait(void) throw();
+		virtual void clear(void) throw();
+		
+		inline void _set_no_signal(void) throw() {flagged=true;}
+		inline void _clear_no_signal(void) throw() {flagged=false;}
+		
+		pthread_t thread;
+		int signo;
+		bool flagged;
+	};
+	*/
+}
+
+#endif

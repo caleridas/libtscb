@@ -1,0 +1,239 @@
+/* -*- C++ -*-
+ * (c) 2006 Helge Bahmann <hcb@chaoticmind.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License version 2.1.
+ * Refer to the file "COPYING" for details.
+ */
+
+#ifndef __TSCB_THREAD_H
+#define __TSCB_THREAD_H
+
+#define POSIX_THREADS	/* FIXME */
+
+#if defined(POSIX_THREADS)
+ #include <pthread.h>
+ #include <errno.h>
+#else
+ #error No supported thread implementation available -- running windows, eh?
+#endif
+
+/**
+	\page thread_descr Thread and synchronization services
+	
+	<B>libtscb</B> includes a number of wrapper classes that
+	encapsulate platform specific thread and synchronization
+	services:
+	
+	<UL>
+		<LI> \ref tscb::thread "thread" </LI>
+		<LI> \ref tscb::mutex "mutex" </LI>
+		<LI> \ref tscb::conditional "conditional" </LI>
+	</UL>
+	
+	The wrappers are intended for internal use by the library, they
+	are <EM>not</EM> intended to help application programmers write
+	platform independent code -- writing portable code has many aspects,
+	and <B>libtscb</B> does not even pretend it is trying to cover
+	any significant part of that. Nevertheless programmers are certainly
+	free to use the wrappers.
+	
+	The library also provides an interface to one important synchronization
+	primitive that is used to represent thread wake-ups at several
+	points throughout the library, the \ref tscb::eventflag "eventflag".
+*/
+
+namespace tscb {
+	
+	#if defined(POSIX_THREADS)
+	typedef pthread_t thread_handle_t;
+	#endif
+	
+	/**
+		\brief Mutual exclusion lock
+		
+		Wraps a platform-specific mutual exclusion lock.
+	*/
+	class mutex {
+	public:
+		/**
+			\brief Create a new mutual exclusion lock
+			
+			The lock is created with default parameters; several
+			platforms allow to customize the behaviour of mutices
+			(e.g. create recursive mutex); this is available
+			through non-standard constructor.
+		*/
+		inline mutex(void) throw();
+		inline ~mutex(void) throw();
+		
+		/**
+			\brief Lock the mutex
+		
+			Take the lock, block if it is currently locked by this or
+			by another thread
+		*/
+		inline void lock(void) throw();
+		
+		/*
+			\brief Try to take the lock
+			
+			Try to take the lock; returns true if the lock was succesfully
+			taken, and false otherwise
+		*/
+		inline bool trylock(void) throw();
+		
+		/*
+			\brief Unlock the mutex
+			
+			Release lock, wake up threads sleeping on the lock
+		*/
+		inline void unlock(void) throw();
+	
+	#if defined(POSIX_THREADS)
+		/**
+			\brief Create a new mutual exclusion lock
+			
+			The lock is created with the indicated mutex attributes.
+			Refer to the documentation of pthread_mutex_init for
+			possible attributes.
+		*/
+		inline mutex(const pthread_mutexattr_t *attr) throw();
+		
+		/** \brief Exposed handle for low-level access */
+		pthread_mutex_t m;
+	#endif
+	};
+	
+	/**
+		\brief Condition variable
+		
+		Wraps a platform-specific condition variable.
+	*/
+	class conditional {
+	public:
+		/**
+			\brief Create a new condition variable
+			
+			The lock is created with default parameters; several
+			platforms allow to customize the behaviour of mutices
+			(e.g. create recursive mutex); this is available
+			through non-standard constructor.
+		*/
+		inline conditional(void) throw();
+		inline ~conditional(void) throw();
+		/**
+			\brief Wait for the condition variable
+			
+			Atomically unlock the given mutex and wait on the condition
+			variable; after being woken up, reacquire the mutex.
+		*/
+		inline void wait(mutex &m) throw();
+		/**
+			\brief Wake up one thread
+			
+			Wake up one thread currently waiting on the conditional
+		*/
+		inline void signal(void) throw();
+		
+		/**
+			\brief Wake up all threads
+			
+			Wake up all threads currently waiting on the conditional
+		*/
+		inline void broadcast(void) throw();
+		
+	#if defined(POSIX_THREADS)
+		/**
+			\brief Create a new condition variable
+			
+			The conditional is created with the indicated conditional
+			attributes. Refer to the documentation of pthread_cond_init for
+			possible attributes.
+		*/
+		inline conditional(const pthread_condattr_t *attr) throw();
+		
+		/** \brief Exposed handle for low-level access */
+		pthread_cond_t c;
+	#endif
+	};
+	
+	
+	/**
+		\brief Thread
+		
+		Wraps a platform-specific thread.
+	*/
+	class thread {
+	public:
+		virtual ~thread(void) throw();
+		
+		/**
+			\brief Function that will be executed by this thread
+			
+			This function must be overridden by implementations
+		*/
+		virtual void *thread_func(void) throw()=0;
+		
+		/**
+			\brief Start the thread
+			
+			Execution will start with a call to \ref thread_func; the
+			thread terminates if the function returns.
+		*/
+		void start(void) throw();
+		
+		/*
+			\brief Detach from the thread
+			
+			Indicate that this thread will never be joined by another
+			thread, i.e. all resources can be freed after the thread has
+			terminated
+		*/
+		inline void detach(void) throw();
+		
+		/*
+			\brief Wait for thread termination
+			
+			wait for termination of this thread and retrieve the return
+			value from thread_func
+		*/
+		inline int join(void **retval) throw();
+		
+	#if defined(POSIX_THREADS)
+		/** \brief Exposed handle for low-level access */
+		pthread_t p;
+	#endif
+	};
+	
+#if defined(POSIX_THREADS)
+	inline mutex::mutex(void) throw() {pthread_mutex_init(&m, 0);}
+	inline mutex::~mutex(void) throw() {pthread_mutex_destroy(&m);}
+	inline mutex::mutex(const pthread_mutexattr_t *attr) throw()
+	{pthread_mutex_init(&m, attr);}
+	inline void mutex::lock(void) throw() {pthread_mutex_lock(&m);}
+	inline bool mutex::trylock(void) throw()
+	{return pthread_mutex_trylock(&m)==0;}
+	inline void mutex::unlock(void) throw()	{pthread_mutex_unlock(&m);}
+	
+	inline conditional::conditional(void) throw()
+	{pthread_cond_init(&c, NULL);}
+	inline conditional::conditional(const pthread_condattr_t *attr) throw()
+	{pthread_cond_init(&c, attr);}
+	inline conditional::~conditional(void) throw() {pthread_cond_destroy(&c);}
+	inline void conditional::wait(mutex &m) throw() {pthread_cond_wait(&c, &m.m);}
+	inline void conditional::signal(void) throw() {pthread_cond_signal(&c);}
+	inline void conditional::broadcast(void) throw() {pthread_cond_broadcast(&c);}
+	
+	void *__thread_wrapper(void *arg) throw();
+	inline void thread::start(void) throw()
+	{pthread_create(&p, NULL, __thread_wrapper, this);}
+	inline void thread::detach(void) throw()
+	{pthread_detach(p);}
+	inline int thread::join(void **retval) throw()
+	{return pthread_join(p, retval);}
+#endif
+	
+}; /* namespace sys */
+
+#endif

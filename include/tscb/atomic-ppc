@@ -1,0 +1,128 @@
+/* -*- C++ -*-
+ * (c) 2006 Helge Bahmann <hcb@chaoticmind.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License version 2.1.
+ * Refer to the file "COPYING" for details.
+ */
+
+#ifndef __TSCB_ATOMIC_PPC_H
+#define __TSCB_ATOMIC_PPC_H
+
+namespace tscb {
+	
+	/** \cond NEVER */
+	
+	/*
+	  Refer to: Motorola: "Programming Environments Manual for 32-Bit
+	  Implementations of the PowerPC Architecture", Appendix E:
+	  "Synchronization Programming Examples" for an explanation of what is
+	  going on here (can be found on the web at various places by the
+	  name "MPCFPE32B.pdf", Google is your friend...)
+	 */
+	
+	class atomic {
+	public:
+		inline atomic(long initial=0) : value(initial) {}
+		inline void operator++(void) {
+			long tmp;
+			/* note: "b" constraint instructs gcc to use any register except
+			r0; this is required because r0 is not allowed in some places;
+			since I am sometimes unsure if it is allowed or not just play
+			it safe and avoid r0 entirely :) */
+			__asm__ __volatile__(
+				"1: lwarx %0,0,%1 \n"
+				"addi %0,%0,1 \n"
+				"stwcx. %0,0,%1"
+				"\n bne- 1b"
+				: "=&b" (tmp)
+				: "b" (&value)
+				: "cc");
+		}
+		inline void operator++(int) {
+			int tmp;
+			__asm__ __volatile__(
+				"1: lwarx %0,0,%1 \n"
+				"addi %0,%0,1 \n"
+				"stwcx. %0,0,%1 \n"
+				"bne- 1b"
+				: "=&b" (tmp)
+				: "b" (&value)
+				: "cc");
+		}
+		inline bool operator--(void) {
+			int tmp;
+			__asm__ __volatile__(
+				"1: lwarx %0,0,%1 \n"
+				"subi %0,%0,1 \n"
+				"stwcx. %0,0,%1 \n"
+				"bne- 1b \n"
+				: "=&b" (tmp)
+				: "b" (&value)
+				: "cc");
+			return (bool)tmp;
+		}
+		inline void operator--(int) {
+			int tmp;
+			__asm__ __volatile__(
+				"1: lwarx %0,0,%1 \n"
+				"subi %0,%0,1 \n"
+				"stwcx. %0,0,%1 \n"
+				"bne- 1b"
+				: "=&b" (tmp)
+				: "b" (&value)
+				: "cc");
+		}
+		inline bool inc_if_not_zero(void) {
+			int oldval;
+			__asm__ __volatile__(
+				"1: lwarx %0,0,%1\n"
+				"cmpwi %0, 0\n"
+				"beq- 2f\n"
+				"addi %0,%0,1\n"
+				"stwcx. %0,0,%1\n"
+				"bne- 1b\n"
+				"2:"
+				: "=&b" (oldval)
+				: "b" (&value)
+				: "cc"
+			);
+			return oldval;
+		};
+		inline long cmpxchg(long oldvalue, long newvalue)
+		{
+			int retval;
+			__asm__ __volatile__(
+				"1: lwarx %0,0,%1\n"
+				"cmpw %0, %2\n"
+				"bne- 2f\n"
+				"stwcx. %3,0,%1\n"
+				"bne- 1b\n"
+				"2:"
+				: "=&b" (retval)
+				: "b" (&value), "b" (oldvalue), "b" (newvalue)
+			);
+			return retval;
+		}
+		inline operator long(void) const {return value;}
+		inline bool operator==(long v) const {return value==v;}
+		inline bool operator==(int v) const {return value==v;}
+		inline void operator=(long n) {value=n;}
+	private:
+		volatile long value;
+	};
+	
+	inline void memory_barrier(void)
+	{
+		__asm__ __volatile__( "eieio" ::: "memory" );
+	}
+	
+	inline void data_dependence_memory_barrier(void)
+	{
+	}
+	
+	/** \endcond */
+	
+}
+
+#endif

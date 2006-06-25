@@ -1,0 +1,86 @@
+# Process this file with autoconf to produce a configure script.
+PACKAGE=libtscb
+
+AC_INIT(src, 0.9, hcb@chaoticmind.net)
+AC_CONFIG_SRCDIR(.)
+
+VERSION=0.9
+
+AC_CANONICAL_HOST
+case "$host_os" in 
+	darwin*) PORTNAME=darwin ;;
+	linux*) PORTNAME=linux ;;
+	freebsd*) PORTNAME=freebsd ;;
+esac
+AC_SUBST(PORTNAME)
+
+AC_CONFIG_HEADERS([include/tscb/config:include/tscb/config.in])
+
+AC_PROG_CXX
+AC_PROG_INSTALL
+
+# Check for system features
+AC_SYS_LARGEFILE
+if test "$ac_cv_sys_file_offset_bits" != "" -a "$ac_cv_sys_file_offset_bits" != "no"; then
+  CPPFLAGS="$CPPFLAGS -D_FILE_OFFSET_BITS=$ac_cv_sys_file_offset_bits"
+fi
+
+# Checks for libraries.
+ACX_PTHREAD
+
+AC_CHECK_LIB(aio, io_setup)
+AC_CHECK_LIB(rt, aio_suspend)
+
+# Checks for header files.
+AC_HEADER_STDC
+AC_CHECK_HEADERS([sys/poll.h sys/event.h sys/epoll.h libaio.h])
+
+# Checks for library functions.
+AC_CHECK_FUNCS([gettimeofday])
+
+AC_CHECK_FUNC(poll,[
+AC_DEFINE(HAVE_POLL,1,[])
+DISPATCHER_POLL=yes
+],[])
+
+AC_CHECK_FUNC(select,[
+AC_DEFINE(HAVE_SELECT,1,[])
+DISPATCHER_SELECT=yes
+],[])
+
+AC_CHECK_FUNC(epoll_create,[
+AC_DEFINE(HAVE_EPOLL,1,[])
+DISPATCHER_EPOLL=yes
+],[])
+
+AC_CHECK_FUNC(kqueue,[
+AC_DEFINE(HAVE_KQUEUE,1,[])
+DISPATCHER_KQUEUE=yes
+],[])
+
+AC_CHECK_FUNC(io_setup,[
+AC_DEFINE(HAVE_AIO_LINUX,1,[])
+AIO_LINUX=yes
+],[])
+
+# Optional features
+AC_ARG_WITH(fdsetsize,[  --with-fdsetsize=arg    Override FD_SETSIZE (for the nutters who are running Mac OS <10.3)],[
+SELECT_FD_SETSIZE=$withval
+])
+
+AC_ARG_WITH(pthread-atomics,[  --with-pthread-atomics  Use pthread_mutex for atomics],[
+AC_DEFINE(USE_PTHREAD_ATOMICS,1,[])
+],[])
+
+AC_SUBST(DISPATCHER_POLL)
+AC_SUBST(DISPATCHER_SELECT)
+AC_SUBST(DISPATCHER_EPOLL)
+AC_SUBST(DISPATCHER_KQUEUE)
+AC_SUBST(SELECT_FD_SETSIZE)
+AC_SUBST(AIO_LINUX)
+AC_SUBST(VERSION)
+
+# Generate output files
+AC_CONFIG_FILES([Makefile])
+AC_CONFIG_FILES([libtscb.pc])
+AC_OUTPUT

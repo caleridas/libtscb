@@ -1,0 +1,79 @@
+/* -*- C++ -*-
+ * (c) 2006 Helge Bahmann <hcb@chaoticmind.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License version 2.1.
+ * Refer to the file_event "COPYING" for details.
+ */
+
+#ifndef __TSCB_IOREADY_EPOLL_H
+#define __TSCB_IOREADY_EPOLL_H
+
+#include <vector>
+
+#include <sys/epoll.h>
+
+#include <tscb/ioready>
+#include <tscb/deferred>
+
+namespace tscb {
+	
+	/**
+		\brief Dispatcher for IO readiness events using the
+		<TT>epoll_*</TT> system calls
+		
+		This class supports collecting the IO readiness state of
+		a set of file descriptors using the <TT>epoll-*</TT> family of system
+		calls, and dispatching callbacks to receivers that have
+		registered themselves for events on specific file descriptors.
+		
+		The <TT>epoll_*</TT> family of system calls provide the fastest
+		possible way to observe the state of a set of file descriptors
+		on Linux systems. Like
+		\ref tscb::ioready_dispatcher_kqueue "ioready_dispatcher_kqueue"
+		all relevant operations are O(1), that is: independent from
+		the number of descriptors being watched.
+		
+		Moreover, the \ref dispatch method can usefully be called by
+		multiple threads.
+	*/
+	class ioready_dispatcher_epoll : public ioready_dispatcher {
+	public:
+		ioready_dispatcher_epoll(void) throw(std::runtime_error);
+		virtual ~ioready_dispatcher_epoll(void) throw();
+		
+		virtual int dispatch(const long long *timeout, int max) throw();
+		
+		virtual eventflag *get_eventflag(void)
+			throw(std::runtime_error, std::bad_alloc);
+		
+		virtual void register_ioready_callback(ref<ioready_callback_link> l)
+			throw(std::bad_alloc);
+		virtual void unregister_ioready_callback(ioready_callback_link *e)
+			throw();
+		virtual void modify_ioready_callback(ioready_callback_link *e, int event_mask)
+			throw();
+	protected:
+		void drain_queue(int fd, int event_mask) throw();
+		void release_queue(void) throw();
+		
+		void process_events(epoll_event events[], size_t nevents) throw();
+		
+		int epoll_fd;
+		
+		void synchronize(void) throw();
+		
+		inline int translate_os_to_tscb(int ev) throw() {return ev;}
+		inline int translate_tscb_to_os(int ev) throw() {return ev;}
+		
+		ioready_callback_table callback_tab;
+		
+		pipe_eventflag *wakeup_flag;
+		mutex singleton_mutex;
+		
+		deferrable_rwlock guard;
+	};
+	
+}
+
+#endif

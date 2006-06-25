@@ -1,0 +1,80 @@
+/* -*- C++ -*-
+ * (c) 2006 Helge Bahmann <hcb@chaoticmind.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License version 2.1.
+ * Refer to the file_event "COPYING" for details.
+ */
+
+#ifndef __TSCB_IOREADY_KQUEUE_H
+#define __TSCB_IOREADY_KQUEUE_H
+
+#include <vector>
+
+#include <sys/types.h>
+#include <sys/event.h>
+#include <sys/time.h>
+
+#include <tscb/ioready>
+#include <tscb/deferred>
+
+namespace tscb {
+	
+	/**
+		\brief Dispatcher for IO readiness events using the
+		<TT>kqueue</TT> system call mechanism
+		
+		This class supports collecting the IO readiness state of
+		a set of file descriptors using the <TT>kevent</TT> system
+		call, and dispatching callbacks to receivers that have
+		registered themselves for events on specific file descriptors.
+		
+		The <TT>kevent</TT> system call provide the fastest
+		possible way to observe the state of a set of file descriptors
+		on BSD-derived systems; additionally other event
+		notifications can be routed through <TT>kqueue</TT>
+		as well. Like
+		\ref tscb::ioready_dispatcher_epoll "ioready_dispatcher_epoll"
+		all relevant operations are O(1), that is: independent from
+		the number of descriptors being watched.
+		
+		Moreover, the \ref dispatch method can usefully be called by
+		multiple threads.
+	*/
+	class ioready_dispatcher_kqueue : public ioready_dispatcher {
+	public:
+		ioready_dispatcher_kqueue(void) throw(std::runtime_error);
+		virtual ~ioready_dispatcher_kqueue(void) throw();
+		
+		virtual int dispatch(const long long *timeout, int max) throw();
+		
+		virtual eventflag *get_eventflag(void)
+			throw(std::runtime_error, std::bad_alloc);
+		
+		virtual void register_ioready_callback(ref<ioready_callback_link> l)
+			throw(std::bad_alloc);
+		virtual void unregister_ioready_callback(ioready_callback_link *e)
+			throw();
+		virtual void modify_ioready_callback(ioready_callback_link *e, int event_mask)
+			throw();
+	protected:
+		void drain_queue(int fd, int event_mask) throw();
+		void release_queue(void) throw();
+		
+		void process_events(struct kevent events[], size_t nevents) throw();
+		
+		int kqueue_fd;
+		
+		void synchronize(void) throw();
+		
+		ioready_callback_table callback_tab;
+		
+		pipe_eventflag *wakeup_flag;
+		mutex singleton_mutex;
+		
+		deferrable_rwlock guard;
+	};
+	
+}
+
+#endif

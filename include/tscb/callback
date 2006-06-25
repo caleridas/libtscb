@@ -1,0 +1,522 @@
+/* -*- C++ -*-
+ * (c) 2006 Helge Bahmann <hcb@chaoticmind.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License version 2.1.
+ * Refer to the file "COPYING" for details.
+ */
+
+#ifndef __TSCB_CALLBACK_H
+#define __TSCB_CALLBACK_H
+
+/**
+	\page callback_descr Generic callbacks
+	
+	The \ref tscb::callback_chain1 "callback_chain1" ... (up to
+	callback_chain5) template classes provide
+	a generic callback mechanism. Thy allow one object
+	(the "sender") to notify an arbitray number of other objects
+	(the "receivers") of events by calling specified functions.
+	
+	The templates are numbered by the number of function arguments
+	they expect and allow to customize the signature of the callback functions
+	to match the intended use case.
+	
+	\section callback_declaration Declaration of callback chains
+	
+	Callback chains are declared as global or member variables; the
+	template arguments define the arguments passed with every callback
+	invocation (and thus the signature of the expected callback	functions):
+	
+	\code
+		class MyClass {
+		public:
+			// will report old and new value to callbacks
+			tscb::callback_chain2<int, int> onValueChange;
+			
+			void setValue(int newval);
+		private:
+			int value;
+		}
+	\endcode
+	
+	\section callback_issue Issuing callbacks
+	
+	Callback chain objects (as declared in the previous example) provide
+	an overloaded () operator which will call all callback functions
+	registered with this callback chain:
+	
+	\code
+		void MyClass::setValue(int newval)
+		{
+			int oldval=value;
+			value=newval;
+			// notify all registered callbacks
+			onValueChange(oldval, newval);
+		}
+	\endcode
+	
+	The overloaded () operator expects exactly the number and type
+	of arguments as were used when the callback chain was declared.
+	
+	\section callback_register Registration for callbacks
+	
+	Callback chains provide the \ref tscb::callback_chain1::connect "connect"
+	template member functions to allow receivers to add a callback
+	function to the chain. They can be used in the following fashion:
+	
+	\code
+		class MyObserver {
+		public:
+			MyObserver(MyClass *c)
+			{
+				c->onValueChange.connect<MyObserver, &MyObserver::notify_change, &MyObserver::finish>
+					(this);
+			}
+		protected:
+			void notify_change(int oldval, int newval)
+			{
+				printf("Value changed from %d to %d!\n", oldval, newval);
+			}
+			void finish(void)
+			{
+				delete this;
+			}
+		};
+	\endcode
+	
+	In the previous example, the <TT>notify_change</TT> method of the
+	corresponding <TT>MyObserver</TT> object would be called
+	whenever the callback chain is being activated
+	(see section \ref callback_issue above). The <TT>finish</TT>
+	method will be called after the callback has been
+	cancelled (see section \ref callback_cookies below).
+	
+	Another variant of the \ref tscb::callback_chain1::connect "connect"
+	method allows free-standing functions to be called:
+	
+	\code
+		char *msg="Incredible!";
+		
+		void notify_change(char *ctx, int oldval, int newval)
+		{
+			printf("%s Value changed from %d to %d!\n", ctx, oldval, newval);
+		}
+		
+		void finish(char *ctx)
+		{
+			// nothing to do
+		}
+		
+		int main(void)
+		{
+			MyObject obj;
+			obj.onValueChange.connect<char *, &notify_change, &finish>(msg);
+			obj.setValue(42);
+		}
+	\endcode
+	
+	Like in the previous example, the function <TT>notify_change</TT>
+	will be called whenever the callback chain is being activated,
+	and <TT>finish</TT> will be called after the callback has been cancelled.
+	
+	The first template parameter to 
+	\ref tscb::callback_chain1::connect "connect"
+	allows to pass arbitrary data structures as contexts in a type-safe
+	manner. Usually the contex object will be a pointer to a data structure
+	containing the required context data. It is possible to pass arbitrary
+	data structures if desired, but the folliwng restrictions have to be
+	kept in mind:
+	
+	<UL>
+		<LI>
+			The <TT>Context</TT> data type must be copy-constructible
+		</LI>
+		<LI>
+			The context object will be copied on creation of the callback link
+		</LI>
+		<LI>
+			The context object will be destroyed when the link is
+			destroyed
+		</LI>
+	</UL>
+	
+	\section callback_cookies Callback link handles
+	
+	The
+	\ref tscb::callback_chain1::connect "connect"
+	return a reference to a callback link object that represents the
+	connection between the callback service provider and the receiver. The
+	return value can be stored by the caller:
+	
+	\code
+		tscb::callback link;
+		link=c->onValueChange.connect<MyObserver, &MyObserver::notify_change, &MyObserver::finish>
+			(this);
+	\endcode
+	
+	The link object can later be used to cancel the
+	callback:
+	
+	\code
+		link->cancel();
+	\endcode
+	
+	The callback function will not be invoked subsequently; the registered
+	<TT>release</TT> function (third template parameter to
+	\ref tscb::callback_chain1::connect "connect") will be called
+	exactly once as soon as it is guaranteed that the callback function cannot
+	be called again.
+	
+	\section Performance
+	
+	The synchronization mechanism used to protect the integrity of the
+	callback chains is \ref tscb::deferred_rwlock. Thus overhead
+	incurred by the synchronization mechanism has to be paid for callback
+	chains as well.
+	
+	The implementation assumes that callback processing (in contrast
+	to callback registration/cancellation) is the fast path
+	and has been optimized to this end. The performance characteristics
+	are thus:
+	
+	<UL>
+		<LI>
+			process callbacks: O(number_of_registered_callbacks)
+		</LI>
+		<LI>
+			cancel callback: O(1) (if there is no contention, i.e.
+			the chain is not being traversed while cancelling callbacks)
+		</LI>
+		<LI>
+			cancel callback: O(numer_of_cancels^2) (if there is contention,
+			i.e. the chain is being traversed while cancelling callbacks)
+		</LI>
+	</UL>
+	
+	Some measurement were made to estimate the number of clock cycles
+	it takes to call an empty function which takes a single integer parameter:
+	
+	<TABLE>
+		<TR><TH>call type</TH><TH>Motorola PPC7455</TH><TH>Intel Pentium III SSE</TH><TH>AMD Athlon</TH></TR>
+		<TR><TD>direct method call (non-virtual)</TD><TD>8</TD><TD>8</TD><TD>7</TD></TR>
+		<TR><TD>indirect method call (non-virtual)</TD><TD>15</TD><TD>12</TD><TD>10</TD></TR>
+		<TR><TD>callback chain, 1 callback</TD><TD>131</TD><TD>151</TD><TD>99</TD></TR>
+		<TR><TD>callback chain, 2 callbacks</TD><TD>166</TD><TD>180</TD><TD>122</TD></TR>
+		<TR><TD>callback chain, 3 callbacks</TD><TD>192</TD><TD>207</TD><TD>142</TD></TR>
+	</TABLE>
+*/
+
+#include <tscb/thread>
+#include <tscb/ref>
+#include <tscb/deferred>
+#include <tscb/compiler>
+
+namespace tscb {
+	
+	class function_callback_link;
+	class callback_chain;
+	
+	/**
+		\brief Generic callback link
+		
+		This object represents the link between a sender/caller, from
+		which notification is requested, to a reciever/callee, to which
+		notification is to be delivered. It is an abstract base class
+		for all different kinds of links established through the various
+		notification interfaces (callback_chains, file or timer events).
+		
+		Link objects are reference-counted entities, and as such have
+		to be treated according to the rules outlined \ref ref_descr "here".
+	*/
+	class callback_link {
+	public:
+		inline callback_link(void) throw() : refcount(1) {}
+		virtual ~callback_link(void) throw();
+		/**
+			\brief Break the link
+			
+			Calling this function will break the notification link. It will
+			usually cease notifications to be delivered some time after this
+			function has returned. The exact semantic guarantee is:
+			
+			<UL>
+				<LI>
+					no notification will be delivered within the same thread
+					that has called \ref cancel after \ref cancel has
+					returned (i.e. within the same thread, \ref cancel
+					is synchronous)
+				</LI>
+				<LI>
+					notifications in other threads may be delivered after
+					\ref cancel has returned in one thread, but only
+					for events that occured before \ref cancel has returned
+					(i.e. for other threads, cancellation is asynchronous).
+				</LI>
+			</UL>
+			
+			The weak synchronicity guarantee allows implementations that
+			provide excellent concurrency. Furthermore it allows
+			\ref cancel to be called from arbitrary contexts: from within
+			the callback to be cancelled, from different threads etc. It
+			is guaranteed to be deadlock free.
+			
+		*/
+		virtual void cancel(void) throw()=0;
+		
+		/**
+			\brief Confirm cancellation of callback
+			
+			This function is called by the sending side of a callback
+			in reaction to a call to \ref cancel, when it can be proven
+			that the callback cannot be triggered any longer. it <I>must
+			not</I> be called by the receiving side of the callback.
+			
+			Implementations will override this method to perform whatever
+			cleanup operation is required after the callback has been
+			cancelled; for example this can be used to release a reference
+			to the target object.
+		*/
+		virtual void cancelled(void) throw();
+		
+		/* reference counting stuff */
+		inline void pin(void) throw() {refcount++;}
+		inline void release(void) throw() {if (!--refcount) delete this;}
+		
+	private:
+#ifdef _LIBTSCB_CALLBACK_UNITTESTS
+	public:
+#endif
+		atomic refcount;
+	};
+	
+	/**
+		\brief Generic callback link.
+		
+		Every other callback link implemented in this library can be
+		downcast to this type.
+	*/
+	typedef ref<callback_link> callback;
+	
+	/**
+		\brief Base class for generic callback-chain links
+		
+		Contains all members required to manage callback-chains in
+		a thread-safe manner; since it does not introduce any new
+		functionality over \ref callback_link, application programmers
+		should simply not care about the existance of this class.
+	*/
+	class function_callback_link : public callback_link {
+	public:
+		function_callback_link(void) throw();
+		virtual ~function_callback_link(void) throw();
+		virtual void cancel(void) throw();
+		
+		/* well... all other member functions ought to be private to this
+		module; however it is annoyingly tedious to write out all the
+		"friend" relationships, so, dear caller, please simply don't mess with
+		anything below, ok? */
+		
+		/* chain of all elements in list, whether they are active or not */
+		function_callback_link *prev, *next;
+		
+		/* the next element in the active list; elements that
+		have been removed from the list may still point to
+		active elements */
+		function_callback_link *active_next;
+		
+		/* chain of elements that have been removed */
+		function_callback_link *deferred_cancel_next;
+		
+		callback_chain *_chain;
+		
+	protected:
+		friend class callback_chain;
+		mutex registration_mutex;
+	};
+	
+	/**
+		\brief Common functionality for all callback chains
+	*/
+	class callback_chain {
+	public:
+		callback_chain(void) throw();
+		~callback_chain(void) throw();
+		
+	protected:
+		friend class function_callback_link;
+		
+		void add(function_callback_link *i) throw();
+		void remove(function_callback_link *l) throw();
+		void synchronize(void) throw();
+		
+		/* list of all elements in the chain, whether active or not */
+		function_callback_link *first, *last;
+		
+		/* singly-linked list of active elements */
+		function_callback_link *active;
+		
+		/* singly-linked list of elements that have been removed from
+		the active list, but are not yet removed from the full list
+		and not been discarded yet*/
+		function_callback_link *deferred_cancel;
+		
+		deferrable_rwlock guard;
+	};
+	
+	/* The below may appear needlessly complicated, but in fact it isn't.
+	It is not my intention to obfuscate things, but this is really the only way
+	to avoid unnecessary repetition */
+	
+	/* helper macro, to allow passing comma-separated words as a single
+	macro argument */
+	#define _P_(x...) x
+	
+	#define __MAKE_CALLBACK_LINK_CLASSES(numargs, types, typenames, args, argnames)\
+	template<types>\
+	class function_callback_link##numargs : public function_callback_link {\
+	public:\
+		virtual void operator()(args)=0;\
+	};\
+	\
+	template<types, typename Context, void (*function)(Context, args), void (*_release)(Context)>\
+	class function_link##numargs : public function_callback_link {\
+	public:\
+		inline function_link##numargs(Context _context) throw()\
+			: context(_context)\
+		{}\
+		virtual ~function_link##numargs(void) throw() {}\
+		virtual void operator()(args)\
+		{(*function)(context, argnames);}\
+	private:\
+		Context context;\
+		virtual void cancelled(void) throw()\
+		{(*_release)(context);}\
+	};\
+	\
+	template<types, typename Obj, void (Obj::*function)(args), void (Obj::*_release)(void)>\
+	class obj_link##numargs : public function_callback_link {\
+	public:\
+		inline obj_link##numargs(Obj *instance ) throw()\
+			: i(instance)\
+		{}\
+		virtual ~obj_link##numargs(void) throw() {}\
+		virtual void operator()(args)\
+		{(i->*function)(argnames);}\
+	private:\
+		Obj *i;\
+		virtual void cancelled(void) throw()\
+		{(i->*_release)();}\
+	};\
+	
+	#define __MAKE_CALLBACK_CLASSES(numargs, types, typenames, args, argnames)\
+	template<types>\
+	class callback_chain##numargs : public callback_chain {\
+	public:\
+		template<typename Context, void (*function)(Context, args), void (*release)(Context)>\
+		ref_transfer<callback_link> connect(Context context) throw()\
+		{\
+			function_link##numargs<typenames, Context, function, release> *l=\
+				new function_link##numargs<typenames, Context, function, release>(context);\
+			add(l);\
+			return l;\
+		}\
+		template<typename Obj, void(Obj::*function)(args), void(Obj::*release)(void)>\
+		ref_transfer<callback_link> connect(Obj *o) throw()\
+		{\
+			obj_link##numargs<typenames, Obj, function, release> *l=\
+				new obj_link##numargs<typenames, Obj, function, release>(o);\
+			add(l);\
+			return l;\
+		}\
+		inline void operator()(args)\
+		{\
+			while(guard.read_lock()) synchronize();\
+			function_callback_link##numargs<typenames> *l\
+				=(function_callback_link##numargs<typenames> *)active;\
+			while(l) {\
+				data_dependence_memory_barrier();\
+				(*l)(argnames);\
+				l=(function_callback_link##numargs<typenames> *)l->active_next;\
+			}\
+			if (guard.read_unlock()) synchronize();\
+		}\
+	};
+	
+	__MAKE_CALLBACK_LINK_CLASSES(1, _P_(class Arg0), _P_(Arg0), _P_(Arg0 a0), _P_(a0));
+	//__MAKE_CALLBACK_CLASSES(1, _P_(class Arg0), _P_(Arg0), _P_(Arg0 a0), _P_(a0));
+	/**
+		\brief Callback chain with 1 argument
+	*/
+	template<typename Arg1>
+	class callback_chain1 : public callback_chain {
+	public:
+		/**
+			\brief Append new callback function to the chain
+			
+			Appends a new callback function to the chain. It will
+			be called whenever \ref operator() of the chain is invoked,
+			until it is cancelled by calling
+			\ref tscb::callback_link::cancel "callback_link::cancel"
+		*/
+		template<typename Context, void (*function)(Context, Arg1), void (*release)(Context)>
+		ref_transfer<callback_link> connect(Context context) throw()
+		{
+			function_link1<Arg1, Context, function, release> *l=
+				new function_link1<Arg1, Context, function, release>(context);
+			add(l);
+			return l;
+		}
+		/**
+			\brief Append new callback function to the chain
+			
+			Appends a new callback function to the chain. It will
+			be called whenever \ref operator() of the chain is invoked,
+			until it is cancelled by calling
+			\ref tscb::callback_link::cancel "callback_link::cancel"
+		*/
+		template<typename Obj, void(Obj::*function)(Arg1), void(Obj::*release)(void)>
+		ref_transfer<callback_link> connect(Obj *o) throw()
+		{
+			obj_link1<Arg1, Obj, function, release> *l=
+				new obj_link1<Arg1, Obj, function, release>(o);
+			add(l);
+			return l;
+		}
+		/**
+			\brief Call all callback functions registered with the chain
+			
+			Calls all callback functions registered trough \ref connect
+			with the given arguments.
+		*/
+		inline void operator()(Arg1 arg1)
+		{
+			while(guard.read_lock()) synchronize();
+			function_callback_link1<Arg1> *l
+				=(function_callback_link1<Arg1> *)active;
+			while(l) {
+				data_dependence_memory_barrier();
+				(*l)(arg1);
+				l=(function_callback_link1<Arg1> *)l->active_next;
+			}
+			if (guard.read_unlock()) synchronize();
+		}
+	};
+	
+	__MAKE_CALLBACK_LINK_CLASSES(2, _P_(class Arg0, class Arg1), _P_(Arg0, Arg1), _P_(Arg0 a0, Arg1 a1), _P_(a0, a1));
+	__MAKE_CALLBACK_CLASSES(2, _P_(class Arg0, class Arg1), _P_(Arg0, Arg1), _P_(Arg0 a0, Arg1 a1), _P_(a0, a1));
+	__MAKE_CALLBACK_LINK_CLASSES(3, _P_(class Arg0, class Arg1, class Arg2), _P_(Arg0, Arg1, Arg2), _P_(Arg0 a0, Arg1 a1, Arg2 a2), _P_(a0, a1, a2));
+	__MAKE_CALLBACK_CLASSES(3, _P_(class Arg0, class Arg1, class Arg2), _P_(Arg0, Arg1, Arg2), _P_(Arg0 a0, Arg1 a1, Arg2 a2), _P_(a0, a1, a2));
+	__MAKE_CALLBACK_LINK_CLASSES(4, _P_(class Arg0, class Arg1, class Arg2, class Arg3), _P_(Arg0, Arg1, Arg2, Arg3), _P_(Arg0 a0, Arg1 a1, Arg2 a2, Arg3 a3), _P_(a0, a1, a2, a3));
+	__MAKE_CALLBACK_CLASSES(4, _P_(class Arg0, class Arg1, class Arg2, class Arg3), _P_(Arg0, Arg1, Arg2, Arg3), _P_(Arg0 a0, Arg1 a1, Arg2 a2, Arg3 a3), _P_(a0, a1, a2, a3));
+	__MAKE_CALLBACK_LINK_CLASSES(5, _P_(class Arg0, class Arg1, class Arg2, class Arg3, class Arg4), _P_(Arg0, Arg1, Arg2, Arg3, Arg4), _P_(Arg0 a0, Arg1 a1, Arg2 a2, Arg3 a3, Arg4 a4), _P_(a0, a1, a2, a3, a4));
+	__MAKE_CALLBACK_CLASSES(5, _P_(class Arg0, class Arg1, class Arg2, class Arg3, class Arg4), _P_(Arg0, Arg1, Arg2, Arg3, Arg4), _P_(Arg0 a0, Arg1 a1, Arg2 a2, Arg3 a3, Arg4 a4), _P_(a0, a1, a2, a3, a4));
+	
+	/* yeah I know this is butt-ugly */
+	#undef _P_
+	#undef __MAKE_CALLBACK_CLASSES
+	
+}
+
+#endif
+

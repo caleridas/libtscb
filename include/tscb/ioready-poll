@@ -1,0 +1,90 @@
+/* -*- C++ -*-
+ * (c) 2006 Helge Bahmann <hcb@chaoticmind.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License version 2.1.
+ * Refer to the file_event "COPYING" for details.
+ */
+
+#ifndef __TSCB_IOREADY_POLL_H
+#define __TSCB_IOREADY_POLL_H
+
+#include <vector>
+
+#include <sys/poll.h>
+
+#include <tscb/ioready>
+#include <tscb/deferred>
+
+namespace tscb {
+	
+	/**
+		\brief Dispatcher for IO readiness events using the
+		<TT>poll</TT> system call
+		
+		This class supports collecting the IO readiness state of
+		a set of file descriptors using the <TT>poll</TT> system
+		call, and dispatching callbacks to receivers that have
+		registered themselves for events on specific file descriptors.
+		
+		The <TT>poll</TT> system call usually performs considerably
+		better than <TT>select</TT>, though it has the same
+		asymptotic behaviour (and is thus not very well-suited for
+		watching large numbers of mostly idle descriptors).
+	*/
+	class ioready_dispatcher_poll : public ioready_dispatcher {
+	public:
+		ioready_dispatcher_poll(void)
+			throw(std::bad_alloc, std::runtime_error);
+		virtual ~ioready_dispatcher_poll(void) throw();
+		
+		virtual int dispatch(const long long *timeout, int max) throw();
+		
+		virtual eventflag *get_eventflag(void) throw();
+		
+		virtual void register_ioready_callback(tscb::ref<ioready_callback_link> l)
+			throw(std::bad_alloc);
+		virtual void unregister_ioready_callback(ioready_callback_link *e)
+			throw();
+		virtual void modify_ioready_callback(ioready_callback_link *e, int event_mask)
+			throw();
+	protected:
+		/** \cond NEVER */
+		class polltab {
+		public:
+			polltab(size_t size) throw(std::bad_alloc);
+			~polltab(void) throw();
+			size_t size;
+			int generation;
+			struct pollfd *pfd;
+			
+			polltab *old, *peer;
+		};
+		/** \endcond */
+		
+		polltab *clone_polltab_for_extension(void) throw(std::bad_alloc);
+		void create_polltab_entry(ioready_callback_link *link)
+			throw(std::bad_alloc);
+		void update_polltab_entry(int fd) throw();
+		void remove_polltab_entry(int fd) throw();
+		
+		void synchronize(void) throw();
+		inline int translate_os_to_tscb(int ev) throw() {return ev;}
+		inline int translate_tscb_to_os(int ev) throw() {return ev;}
+		
+		polltab *master_ptab;
+		ioready_callback_table callback_tab;
+		
+		deferrable_rwlock guard;
+		
+		pipe_eventflag wakeup_flag;
+		
+		ref<ioready_callback_link> pipe_callback;
+	private:
+		void drain_queue(int fd, int event_mask) throw();
+		void release_queue(void) throw();
+	};
+	
+}
+
+#endif

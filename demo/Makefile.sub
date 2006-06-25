@@ -1,0 +1,6 @@
+DEMOS=tcpserver pipetest primitive-timings
+
+DEMOEXECUTABLES=$(patsubst %, demo/%, $(DEMOS))
+EXECUTABLES+=$(DEMOEXECUTABLES)
+
+$(DEMOEXECUTABLES): % : %.o libtscb.a

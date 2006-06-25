@@ -1,0 +1,77 @@
+/* -*- C++ -*-
+ * (c) 2006 Helge Bahmann <hcb@chaoticmind.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License version 2.1.
+ * Refer to the file_event "COPYING" for details.
+ */
+
+#ifndef __TSCB_IOREADY_SELECT_H
+#define __TSCB_IOREADY_SELECT_H
+
+#include <vector>
+
+#include <sys/select.h>
+
+#include <tscb/ioready>
+#include <tscb/deferred>
+
+namespace tscb {
+	
+	/**
+		\brief Dispatcher for IO readiness events using the
+		<TT>select</TT> system call
+		
+		This class supports collecting the IO readiness state of
+		a set of file descriptors using the <TT>select</TT> system
+		call, and dispatching callbacks to receivers that have
+		registered themselves for events on specific file descriptors.
+		
+		<TT>select</TT> is the most portable system call to determine
+		the IO readiness state of a set of descriptors, but also
+		by far the slowest. It has a hard (compile-time) limitation
+		on the number of permissible descriptors, and is O(n) in
+		the number of descriptors watched.
+		
+		Use of this dispatcher should be avoided if possible, choose
+		one of the better performing alternatives instead and fall
+		back to \ref tscb::ioready_dispatcher_select "ioready_dispatcher_select"
+		only if nothing else is available.
+	*/
+	class ioready_dispatcher_select : public ioready_dispatcher {
+	public:
+		ioready_dispatcher_select(void)
+			throw(std::bad_alloc, std::runtime_error);
+		virtual ~ioready_dispatcher_select(void) throw();
+		
+		virtual int dispatch(const long long *timeout, int max) throw();
+		
+		virtual eventflag *get_eventflag(void) throw();
+		
+		virtual void register_ioready_callback(tscb::ref<ioready_callback_link> l)
+			throw(std::bad_alloc);
+		virtual void unregister_ioready_callback(ioready_callback_link *e)
+			throw();
+		virtual void modify_ioready_callback(ioready_callback_link *e, int event_mask)
+			throw();
+	protected:
+		fd_set readfds, writefds, exceptfds;
+		int maxfd;
+		
+		void synchronize(void) throw();
+		void update_fdsets(int fd) throw();
+		
+		
+		ioready_callback_table callback_tab;
+		
+		deferrable_rwlock guard;
+		
+		pipe_eventflag wakeup_flag;
+	private:
+		void drain_queue(int fd, int event_mask) throw();
+		void release_queue(void) throw();
+	};
+	
+}
+
+#endif

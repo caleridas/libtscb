@@ -1,0 +1,698 @@
+/* -*- C++ -*-
+ * (c) 2006 Helge Bahmann <hcb@chaoticmind.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License version 2.1.
+ * Refer to the file_event "COPYING" for details.
+ */
+
+#ifndef __TSCB_IOREADY_H
+#define __TSCB_IOREADY_H
+
+#include <tscb/eventflag>
+#include <tscb/callback>
+
+/**
+	\page ioready_descr I/O readiness callbacks
+	
+	The class \ref tscb::ioready_service "ioready_service" defines the
+	interface which receivers of I/O readiness callbacks can use to register
+	themselves. Several concrete implementations of this interface exist and
+	may be used on different platforms.
+	
+	
+	\section ioready_registration Registration for events
+	
+	Interested receivers can register functions to be called when file
+	descriptors are ready for IO at the
+	\ref tscb::ioready_service "ioready_service" interface.
+	Receivers can use the
+	\ref tscb::ioready_service::watch "ioready_service::watch" functions
+	for this purpose; they can be used in the following fashion:
+	
+	\code
+		class IOHandler {
+		public:
+			void onDataReady(int fd, int event_mask) throw()
+			{
+				// process data
+			}
+			
+			void finish(void) throw()
+			{
+				close(descriptor);
+				delete this;
+			}
+			
+			void register(tscb::ioready_service *service) throw(std::bad_alloc)
+			{
+				service->watch<IOHandler, &IOHandler::onDataReady, &IOHandler::finish>
+					(descriptor, tscb::EVMASK_INPUT, this);
+			}
+			
+			int descriptor;
+		};
+	\endcode
+	
+	In the previous example, the <TT>onDataReady</TT> method of the
+	corresponding object would be called whenever data is
+	available on <TT>descriptor</TT>. The <TT>finish</TT> method will
+	be called after the callback has been cancelled (see section
+	\ref ioready_callback_cookies below).
+	
+	Another variant of the \ref tscb::ioready_service::watch
+	"ioready_service::watch" method allows free-standing functions to be called:
+	
+	\code
+		class IOContext;
+		
+		void onDataReady(IOContext *ctx, int fd, int event_mask) throw()
+		{
+			// process data
+		}
+		
+		void finish(IOContext *ctx) throw()
+		{
+			delete IOContext;
+		}
+		
+		void register(IOContext *ctx, int fd, tscb::ioready_service *service)
+			throw(std::bad_alloc)
+		{
+			service->watch<IOContext *, &onDataReady, &finish>
+				(fd, tscb::EVMASK_INPUT, ctx);
+		}
+	\endcode
+	
+	Like in the previous example, the function <TT>onDataReady</TT> will
+	be called whenever data is available on the file descriptor,
+	and <TT>finish</TT> will be called after the callback has been cancelled.
+	
+	The first template parameter to \ref tscb::ioready_service::watch
+	"ioready_service::watch" allows to pass arbitrary data structures as
+	contexts in a type-safe manner. Usually the context object will be a pointer
+	to a data structure (as it is in the example above) containing the required
+	context data. It is possible to pass arbitrary data structures if desired,
+	but the following restrictions should be kept in mind:
+	
+	<UL>
+		<LI>
+			The <TT>Context</TT> data type must be copy-constructible
+		</LI>
+		<LI>
+			The context object will be copied on creation of the callback link
+		</LI>
+		<LI>
+			The context object will be destroyed when the link is
+			destroyed
+		</LI>
+	</UL>
+	
+	\section ioready_callback_cookies Callback link handles for ioready callbacks
+	
+	The \ref tscb::ioready_service::watch "ioready_service::watch" functions
+	return a reference to a callback link object that represents the
+	connection between the callback service provider and the receiver. The
+	return value can be stored by the caller:
+	
+	\code
+		tscb::ioready_callback link;
+		link=service->watch<IOHandler, &IOHandler::onDataReady, &IOHandler::finish>
+			(descriptor, tscb::EVMASK_INPUT, this);
+	\endcode
+	
+	The link object can later be used for two purposes: 1. Cancel the
+	callback:
+	
+	\code
+		link->cancel();
+	\endcode
+	
+	The callback function will not be invoked subsequently; the registered
+	<TT>release</TT> function (third template parameter to
+	\ref tscb::ioready_service::watch "ioready_service::watch") will be called
+	exactly once as soon as it is guaranteed that the callback function cannot
+	be called again.
+	
+	or 2. modify the event mask:
+	
+	\code
+		link->modify(tscb::EVMASK_INPUT | tscb::EVMASK_OUTPUT);
+	\endcode
+	
+	In this case, the callback will subsequently be invoked whenever the
+	descriptor is in a state as indicated by the new event mask. The
+	event mask may legally be zero, effectively temporarily disabling
+	the callback.
+	
+	\section ioready_dispatcher_descr ioready dispatchers
+	
+	Free-standing implementations of the \ref tscb::ioready_service
+	"ioready_service" interface derive from the \ref tscb::ioready_dispatcher
+	"ioready_dispatcher" interface. Operating system-dependent mechanisms are
+	used to query the state information of watched file descriptors.
+	Specifically, the following methods are supported:
+	
+	<UL>
+		<LI>
+			Using the <TT>select</TT> system call:
+			\ref tscb::ioready_dispatcher_select "ioready_dispatcher_select"
+			(available all Posix systems)
+		</LI>
+		<LI>
+			Using the <TT>poll</TT> system call:
+			\ref tscb::ioready_dispatcher_poll "ioready_dispatcher_poll"
+			(available most Posix systems)
+		</LI>
+		<LI>
+			Using the <TT>epoll</TT> family of system calls:
+			\ref tscb::ioready_dispatcher_epoll "ioready_dispatcher_epoll"
+			(available on Linux systems)
+		</LI>
+		<LI>
+			Using the <TT>kqueue</TT> family of system calls:
+			\ref tscb::ioready_dispatcher_kqueue "ioready_dispatcher_kqueue"
+			(available on BSD and derived systems)
+		</LI>
+	</UL>
+	
+	The \ref tscb::ioready_dispatcher "ioready_dispatcher" interface adds two
+	methods in addition to those inherited from \ref tscb::ioready_service
+	"ioready_service". The first method,
+	\ref tscb::ioready_dispatcher::dispatch "ioready_dispatcher::dispatch",
+	drives the dispatching mechanism and invokes the callbacks registered
+	previously (see section \ref ioready_registration):
+	
+	\code
+		tscb::ioready_dispatcher *dispatcher;
+		...
+		long long timeout=1000;
+		
+		while(true) dispatcher->dispatch(&timeout, 16);
+	\endcode
+	
+	(Refer to \ref tscb::ioready_dispatcher::dispatch
+	"ioready_dispatcher::dispatch" for a full description
+	of the function). Like in the example above, at least one thread
+	must periodically call \ref tscb::ioready_dispatcher::dispatch
+	"ioready_dispatcher::dispatch";
+	the function will check the registered receivers and process pending
+	IO readiness callbacks.
+	
+	The second method, \ref tscb::ioready_dispatcher::get_eventflag
+	"ioready_dispatcher::get_eventflag",
+	allows to obtain a reference to an event flag associated with
+	the dispatcher:
+	
+	\code
+		tscb::ioready_dispatcher *dispatcher;
+		...
+		tscb::eventflag flag=dispatcher->get_eventflag();
+	\endcode
+	
+	Raising the event flag will interrupt a timeout waiting for events
+	to dispatch:
+	
+	\code
+		tscb::eventflag flag;
+		...
+		flag->set();
+	\endcode
+	
+	A thread currently in \ref tscb::ioready_dispatcher::dispatch
+	"ioready_dispatcher::dispatch" would stop waiting
+	for events and return prematurely. This is most useful in conjunction
+	with timer queues (see the example at the end
+	of section \ref timerqueue_dispatcher_descr).
+	
+	Please note:
+	
+	<UL>
+		<LI>
+			the eventflag is associated with the <I>dispatcher</I> and not
+			one particular <I>thread</I> entering
+			\ref tscb::ioready_dispatcher::dispatch
+			"ioready_dispatcher::dispatch";
+		</LI>
+		<LI>
+			depending on the implementation, raising the flag may
+			cause one, many, or all threads currently in
+			\ref tscb::ioready_dispatcher::dispatch "ioready_dispatcher::dispatch"
+			to return prematurely.
+		</LI>
+		<LI>
+			before returning, the event flag will be cleared
+		</LI>
+	</UL>
+*/
+
+namespace tscb {
+	
+	class ioready_service;
+	class ioready_callback_link;
+	
+	/**
+		\brief Input event mask
+		
+		Set this bit if you are interested for "input data ready" events
+		on a descriptor; see
+		\ref tscb::ioready_service::watch "ioready_service::watch".
+	*/
+	const int EVMASK_INPUT=1;
+	/**
+		\brief Output event mask
+		
+		Set this bit if you are interested for "output data ready" events
+		on a descriptor; see
+		\ref tscb::ioready_service::watch "ioready_service::watch".
+	*/
+	const int EVMASK_OUTPUT=2;
+	
+	/**
+		\brief callback link for I/O readiness events on file descriptors
+		
+		This class represents a link that has been established by registering
+		a callback for I/O readiness events on file (or socket) descriptor
+		events (see \ref tscb::ioready_service). Like its base class,
+		\ref tscb::callback_link, it supports cancellation, but additionally
+		it also allows to dynamically change the event notification mask
+		(which is much more efficient than to cancel the previous callback and
+		register a new one).
+	*/
+	class ioready_callback_link : public callback_link {
+	public:
+		inline ioready_callback_link(int _fd, int _event_mask) throw()
+			: fd(_fd), event_mask(_event_mask)
+		{}
+		virtual ~ioready_callback_link(void) throw();
+		
+		/**
+			\brief Break the link
+			
+			Calling this function will break the notification link. It will
+			usually cease notifications to be delivered some time after this
+			function has returned. The exact semantic guarantee is:
+			
+			<UL>
+				<LI>
+					no notification will be delivered within the same thread
+					that has called \ref cancel after \ref cancel has
+					returned (i.e. within the same thread, \ref cancel
+					is synchronous)
+				</LI>
+				<LI>
+					notifications in other threads may be delivered after
+					\ref cancel has returned in one thread, but only
+					for events that occured before \ref cancel has returned
+					(i.e. for other threads, cancellation is asynchronous).
+				</LI>
+			</UL>
+			
+			The weak synchronicity guarantee allows implementations that
+			provide excellent concurrency. Furthermore it allows
+			\ref cancel to be called from arbitrary contexts: from within
+			the callback to be cancelled, from different threads etc. It
+			is guaranteed to be deadlock free.
+			
+		*/
+		virtual void cancel(void) throw();
+		/**
+			\brief modify the mask of events the receiver is interested in
+			
+			\param new_event_mask Mask of events the caller is interested in
+			
+			This replaces the previous event mask with anew mask; 
+			subsequently callbacks will only be generated for events matching
+			this mask.
+			
+			This operation is asynchronous, like all other methods. This
+			means that it is still possible for callbacks to be generated
+			for events that match the previous mask, but not the new one.
+			
+			The precise guarantee is: At most one event matching the
+			previous event mask may be generated for each thread that
+			is allowed to dispatch events for this callback.
+		*/
+		void modify(int new_event_mask) throw();
+		
+		/* called by the dispatcher */
+		virtual void operator()(int event)=0;
+		
+		int fd, event_mask;
+		
+		ioready_callback_link *active_next, *prev, *next, *inactive_next;
+		ioready_service *service;
+		
+		mutex cancellation_mutex;
+	};
+	
+	/**
+		\brief IO readiness callback link
+	*/
+	typedef ref<ioready_callback_link> ioready_callback;
+	
+	/**
+		\brief Registration for IO readiness events
+		
+		This class provides the registration interface for IO readiness
+		callbacks. Receivers can use the \ref watch methods
+		of this class to indicate their interest in readiness events
+		on a specific file descriptor. See section \ref ioready_registration
+		for examples on how to use this interface.
+	*/
+	class ioready_service {
+	public:
+		virtual ~ioready_service(void) throw();
+		
+		/**
+			\brief register callback for file event
+			
+			\param Context
+				Data type of the context object that will be passed;
+				usually this will be a pointer to a composite data structure
+			\param function
+				Function to be called in case of readiness for IO
+			\param release
+				Function to be called after the callback has been cancelled
+			\param fd
+				The file descriptor which should be monitored for events
+			\param event_mask
+				Set of events for which notification should be delivered
+			\param context
+				Context to be passed along with each invocation
+				of the callback
+			
+			This function requests callbacks for IO readiness on a file
+			descriptor (on Unix systems the objects for which events can be
+			delivered include pipes, sockets, terminal lines, and a number of
+			special device files).
+			
+			The event_mask indicates what events the callee
+			is interested in; it is a bitwise "or" of one of the
+			following constants:
+			
+			<UL>
+				<LI>
+					<TT>tscb::EVMASK_INPUT</TT>: descriptor is ready
+					for reading
+				</LI>
+				<LI>
+					<TT>tscb::EVMASK_OUTPUT</TT>: descriptor is ready
+					for writing
+				</LI>
+			</UL>
+		*/
+		template<typename Context, void (*function)(Context , int fd, int event), void (*release)(Context )>
+		inline ref_transfer<ioready_callback_link>
+		watch(int fd, int event_mask, Context context)
+			throw(std::bad_alloc);
+
+		/**
+			\brief register callback for file event
+			
+			\param Target
+				Class type of the object whose member function will
+				be called
+			\param function
+				Function to be called in case of readiness for IO
+			\param release
+				Function to be called after the callback has been cancelled
+			\param fd
+				The file descriptor which should be monitored for events
+			\param event_mask
+				Set of events for which notification should be delivered
+			\param instance
+				Object instance whose methods will be called
+			
+			This function requests callbacks for IO readiness on a file
+			descriptor (on Unix systems the objects for which events can be
+			delivered include pipes, sockets, terminal lines, and a number of
+			special device files).
+			
+			The event_mask indicates what events the callee
+			is interested in; it is a bitwise "or" of one of the
+			following constants:
+			
+			<UL>
+				<LI>
+					<TT>tscb::EVMASK_INPUT</TT>: descriptor is ready
+					for reading
+				</LI>
+				<LI>
+					<TT>tscb::EVMASK_OUTPUT</TT>: descriptor is ready
+					for writing
+				</LI>
+			</UL>
+		*/
+		template<typename Target, void (Target::*function)(int fd, int event), void (Target::*release)(void)>
+		inline ref_transfer<ioready_callback_link>
+		watch(int fd, int event_mask, Target *instance)
+			throw(std::bad_alloc);
+		
+		/*
+			\brief register callback for file event to reference-counted target
+			
+			\param fd
+				The file descriptor which should be monitored for events
+			\param event_mask
+				Set of events for which notification should be delivered
+			\param instance
+				Object instance to which notification should be delivered;
+				the member function <CODE>function</CODE> given as
+				template argument will be called for this instance
+			
+			Works exactly like \ref file_event, but acquires a reference
+			to the target object that will be dropped when the callback
+			has been cancelled and the implementation can make sure it
+			will never be called again. See the explanation about
+			reference-counting \ref ref_descr "here".
+			
+			References to the target object are acquired and released by
+			calling the \c pin and \c release methods of the object.
+		*/
+		template<class Target, void (Target::*function)(int fd, int event)>
+		inline ref_transfer<ioready_callback_link>
+		ref_watch(int fd, int event_mask, Target *instance)
+			throw(std::bad_alloc);
+		
+		/* internal functions; actual implementation of the file event
+		callback mechanism */
+		friend class ioready_callback_link;
+		virtual void register_ioready_callback(tscb::ref<ioready_callback_link> l)
+			throw(std::bad_alloc)=0;
+		virtual void unregister_ioready_callback(ioready_callback_link *e)
+			throw()=0;
+		virtual void modify_ioready_callback(ioready_callback_link *e, int event_mask)
+			throw()=0;
+	};
+	
+	/** \cond NEVER internal class */
+	class ioready_callback_table {
+	public:
+		ioready_callback_table(size_t initial=32) throw(std::bad_alloc);
+		~ioready_callback_table(void) throw();
+		
+		ioready_callback_link *lookup_first_callback(int fd);
+		void insert(ioready_callback_link *link) throw(std::bad_alloc);
+		
+		inline bool chain_empty(size_t fd) const throw()
+		{
+			if (fd>=table->size) return true;
+			else return table->chains[fd].active==0;
+		}
+		
+		void *get_closure(int fd) throw();
+		void set_closure(int fd, void *closure) throw(std::bad_alloc);
+		void remove(ioready_callback_link *link) throw();
+		ioready_callback_link *synchronize(void) throw();
+		
+	protected:
+		
+		class ioready_callback_chain {
+		public:
+			ioready_callback_link *active;
+			ioready_callback_link *first, *last;
+			void *closure;
+		};
+		
+		class chain_table {
+		public:
+			chain_table(size_t initial) throw(std::bad_alloc);
+			~chain_table(void) throw();
+			size_t size, max;
+			ioready_callback_chain *chains;
+			
+			chain_table *old;
+		};
+		
+		ioready_callback_link *inactive;
+		
+		chain_table *table;
+		void grow(size_t new_size) throw(std::bad_alloc);
+		void ensure_size(size_t min_size) throw(std::bad_alloc);
+	};
+	
+	/** \endcond NEVER internal class */
+	/* implementation */
+	
+	/**
+		\brief Dispatcher for IO readiness events
+		
+		This class provides the interface for free-standing
+		IO readiness callback dispatchers; it is implemented by several
+		classes that use operating system-specific methods for collecting
+		the required information.
+	*/
+	class ioready_dispatcher : public ioready_service {
+	public:
+		virtual ~ioready_dispatcher(void) throw();
+		
+		/**
+			\brief Dispatch a number of pending events
+			
+			\param timeout
+				Timeout (in microseconds), or a NULL pointer
+			\param max
+				Maximum number of events to be processed
+			
+			Check state of all registered file descriptors and process
+			registered callback functions.
+			
+			All pending events are processed up to the indicated maximum
+			number of events; unprocessed events will be processed in further
+			calls to \ref dispatch.
+			
+			The function will return indicating the number of events processed
+			as soon as one the following conditions becomes true:
+			<UL>
+				<LI>
+					at least one (and up to <TT>max</TT>) number of events
+					have been processed
+				</LI>
+				<LI>
+					no event was processed, but a timeout has occured waiting
+					for events, as indicated by the <TT>timeout</TT> parameter;
+					if <TT>timeout</TT> is a NULL pointer, \ref dispatch
+					will wait indefinitely
+				</LI>
+				<LI>
+					the \ref tscb::eventflag associated with the dispatcher
+					has been raised (see \ref get_eventflag)
+				</LI>
+				<LI>
+					registration: depending on the dispatcher implementation
+					dispatching may be interrupted if callbacks
+					are registered, modified or cancelled by another
+					thread
+				</LI>
+			</UL>
+			
+			The function is generally reentrant, multiple threads
+			can enter the dispatching loop simultaneously. However depending
+			on the concrete dispatcher implementation the behaviour
+			may not be terribly useful, as some dispatchers will
+			dispatch every event by every thread.
+		*/
+		virtual int dispatch(const long long *timeout, int max=2147483647L)
+			throw()=0;
+		
+		/**
+			\brief Event flag to interrupt dispatching
+			
+			Returns a pointer to an event flag that allows interrupting
+			the dispatching operation. Setting this flag (from an
+			arbitrary thread) via \ref tscb::eventflag::set will cause
+			the \ref dispatch function to return immediately. The flag
+			will be cleared by the \ref dispatch function before returning.
+			
+			This functionality is mostly useful in multi-threaded
+			programs to interrupt one dispatcher, e.g. because a
+			timeout has to be shortened.
+			
+			The \ref tscb::eventflag returned is inseparably associated
+			with the dispatcher; its lifetime is implicitly determined
+			by the lifetime of the dispatcher object, and it must
+			not be destroyed by the caller. Furthermore, multiple calls
+			to \ref get_eventflag will always return the same event
+			flag (instead of creating a new one)
+		*/
+		virtual eventflag *get_eventflag(void)
+			throw(std::bad_alloc, std::runtime_error)=0;
+		
+	};
+	
+	/** \cond NEVER */
+	template<typename Context, void (*function)(Context, int, int), void (*_release)(Context)>
+	class dynamic_ioready_callback_link : public ioready_callback_link {
+	public:
+		dynamic_ioready_callback_link(Context _context, int _fd, int _event) throw()
+			: ioready_callback_link(_fd, _event), context(_context)
+		{}
+		virtual ~dynamic_ioready_callback_link(void) throw() {}
+		virtual void operator()(int revent) throw()
+		{
+			(*function)(context, fd, revent);
+		}
+		virtual void cancelled(void) throw()
+		{
+			(*_release)(context);
+		}
+	protected:
+		Context context;
+	};
+	
+	/** \endcond */
+	
+	template<typename Context, void (*function)(Context , int fd, int event), void (*_release)(Context )>
+	inline ref_transfer<ioready_callback_link>
+	ioready_service::watch(int fd, int event_mask, Context context)
+		throw(std::bad_alloc)
+	{
+		ref<ioready_callback_link> link;
+		
+		link.assign(new dynamic_ioready_callback_link<Context, function, _release>
+			(context, fd, event_mask));
+		register_ioready_callback(link);
+		
+		return link;
+	}
+	
+	/** \cond NEVER */
+	template<typename Target, void (Target::*function)(int, int), void (Target::*_release)(void)>
+	class dynamicobj_ioready_callback_link : public ioready_callback_link {
+	public:
+		dynamicobj_ioready_callback_link(Target *_instance, int _fd, int _event) throw()
+			: ioready_callback_link(_fd, _event), instance(_instance)
+		{}
+		virtual ~dynamicobj_ioready_callback_link(void) throw() {}
+		virtual void operator()(int revent) throw()
+		{
+			(instance->*function)(fd, revent);
+		}
+		virtual void cancelled(void) throw()
+		{
+			(instance->*_release)();
+		}
+	protected:
+		Target *instance;
+	};
+	
+	/** \endcond */
+	
+	template<typename Target, void (Target::*function)(int, int), void (Target::*_release)(void)>
+	inline ref_transfer<ioready_callback_link>
+	ioready_service::watch(int fd, int event_mask, Target *instance)
+		throw(std::bad_alloc)
+	{
+		ref<ioready_callback_link> link;
+		
+		link.assign(new dynamicobj_ioready_callback_link<Target, function, _release>
+			(instance, fd, event_mask));
+		register_ioready_callback(link);
+		
+		return link;
+	}
+	
+}
+
+#endif

@@ -1,0 +1,361 @@
+/* -*- C++ -*-
+ * (c) 2006 Helge Bahmann <hcb@chaoticmind.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License version 2.1.
+ * Refer to the file "COPYING" for details.
+ */
+
+#ifndef __TSCB_FIBHEAP_H
+#define __TSCB_FIBHEAP_H
+
+
+/**
+	\page fibheap_descr Fibonacci Heap
+	
+	Fibonacci heaps are a data-structure suitable for extracting the "smallest"
+	element out of a pool of elements. In contrast to fully-ordered data
+	structures (e.g. trees) that could in theory also be used, Fibonacci heaps
+	have better complexity guarantees:
+	
+	<UL>
+		<LI>insert is O(1) amortized (worst case O(ln n))</LI>
+		<LI>peek_min is O(1)</LI>
+		<LI>extract_min is O(ln n) amortized (worst case O(n))</LI>
+		<LI>decrease_key is O(1) amortized (worst case O(ln n))</LI>
+		<LI>remove is O(ln n) amortized (worst case O(n))</LI>
+	</UL>
+	
+	(Trees and binary heaps have O(ln n) complexity for both insert and
+	peek_min as well).
+	
+	<A HREF="http://www.wikipedia.org">Wikipedia</A> has a good introductory
+	<A HREF="http://en.wikipedia.org/wiki/Fibonacci_heap">article on
+	Fibonacci Heaps</A>, and also references more literature.
+	
+	Fibonacci heaps are the data structure of choice for implementing
+	priority queues, and are also commonly used in graph algorithms.
+*/
+
+#include <functional>
+
+namespace tscb {
+	
+	/**
+		\brief Fibonacci heap
+		
+		This template class implements a Fibonacci heap; the type of the
+		"Nodes" stored inside the class is customizable using the template
+		parameters. Refer to this \ref fibheap_descr "description" to
+		understand what a Fibonacci heap is.
+		
+		The template has been designed so that it does not perform any
+		memory management at all, it is the burden of the user to allocate
+		and deallocate the nodes stored inside the heap. This decision was
+		made deliberately, mainly to make the implementation useful for
+		applications with real-time constraints where implicit memory
+		management in utility classes tends to be a problem.
+		
+		The user has to supply the following parameters
+		
+		\param Node
+			The datatype of the nodes stored inside the heap; the datatype
+			must be a structure or class containing four pointers that are
+			used by the heap to keep track of neighbour nodes, as well
+			as an integer keeping tracking of the node degree.
+			The pointers are by default named "prev", "next", "parent" and
+			"child", and the integer is by default named "degree", but their
+			names can be customized using template parameters
+		\param Less
+			This functional template is used to perform comparison of
+			Nodes, to determine if one is smaller than the other
+		\param LessEqual
+			This functional template is used to perform comparison of
+			Nodes, to determine if one is smaller than or has the
+			same value as the other
+		\param next
+			Indicates which member variable of Node to use as
+			"next" pointer
+		\param prev
+			Indicates which member variable of Node to use as
+			"prev" pointer
+		\param next
+			Indicates which member variable of Node to use as
+			"parent" pointer
+		\param next
+			Indicates which member variable of Node to use as
+			"child" pointer
+		\param degree
+			Indicates which member variable of Node to use to keep
+			track of node degree
+	*/
+	template<class Node,
+		class Less=std::less<Node>,
+		class LessEqual=std::less_equal<Node>,
+		Node *Node::*next=&Node::next,
+		Node *Node::*prev=&Node::prev,
+		Node *Node::*parent=&Node::parent,
+		Node *Node::*child=&Node::child,
+		int Node::*degree=&Node::degree
+	>
+	class fibheap {
+	private:
+		inline void __remove(Node *node)
+		{
+			(node->*next)->*prev=(node->*prev);
+			(node->*prev)->*next=(node->*next);
+			
+			if (node->*parent) {
+				((node->*parent)->*degree)--;
+				if ((node->*parent)->*child==node) {
+					(node->*parent)->*child=node->*next;
+					if (node->*next==node) (node->*parent)->*child=0;
+				}
+			} else {
+				root_degree--;
+				if (root==node) {
+					root=node->*next;
+					if (node->*next==node) root=0;
+				}
+			}
+			/* parent=(node *)0;next=(node *)0;prev=(node *)0; */
+		}
+		inline void __push(Node *node, Node *subnode)
+		{
+			if (node->*child) {
+				subnode->*prev=node->*child;
+				subnode->*next=(node->*child)->*next;
+				((node->*child)->*next)->*prev=subnode;
+				(node->*child)->*next=subnode;
+				if (lt(*subnode, *(node->*child))) node->*child=subnode;
+			} else {
+				subnode->*prev=subnode;
+				subnode->*next=subnode;
+				node->*child=subnode;
+			}
+			subnode->*parent=node;
+			(node->*degree)++;
+		}
+		inline void __push_root(Node *subnode)
+		{
+			if (root) {
+				subnode->*prev=root;
+				subnode->*next=root->*next;
+				(root->*next)->*prev=subnode;
+				root->*next=subnode;
+				if (lt(*subnode, *root)) root=subnode;
+			} else {
+				subnode->*prev=subnode;
+				subnode->*next=subnode;
+				root=subnode;
+			}
+			subnode->*parent=0;
+			(subnode->*degree)++;
+		}
+	public:
+		inline fibheap(void)
+		{
+			root=0;
+			root_degree=0;
+		}
+		
+		/**
+			\brief Insert a new node into the heap
+			
+			Inserts a new node into the heap; the element will be sorted
+			into the correct place upon insertion.
+			
+			Complexity: O(1) amortized, O(ln n) worst case.
+		*/
+		inline void insert(Node *n)
+		{
+			n->*degree=0;
+			n->*parent=0;
+			n->*next=0;
+			n->*prev=0;
+			n->*child=0;
+			if (root) {
+				n->*prev=root->*prev;
+				n->*next=root;
+				n->*parent=0;
+				(root->*prev)->*next=n;
+				root->*prev=n;
+				if (lt(*n, *root)) root=n;
+			} else {
+				root=n;
+				n->*parent=0;
+				n->*next=n;
+				n->*prev=n;
+			}
+			root_degree++;
+		}
+		
+		/**
+			\brief Extract node with lowest value
+			
+			Extract the node with lowest value from heap, and reorganize heap
+			to reflect new structure.
+			
+			Complexity: O(ln n) amortized, O(n) worst case.
+		*/
+		inline Node *extract_min(void)
+		{
+			Node *result=root, *newroot;
+			if (result) {
+				root_degree--;
+				if (result==result->*next) {
+					newroot=result->*child;
+					root_degree=result->*degree;
+				} else {
+					newroot=result->*child;
+					if (newroot) {
+						newroot->*prev->*next=result->*next;
+						result->*next->*prev=newroot->*prev;
+						newroot->*prev=result->*prev;
+						result->*prev->*next=newroot;
+						root_degree+=result->*degree;
+					} else {
+						result->*next->*prev=result->*prev;
+						result->*prev->*next=result->*next;
+						newroot=result->*next;
+					}
+				}
+				root=newroot;
+		
+				rebalance();
+				
+				result->*parent=0;
+				result->*next=0;
+				result->*prev=0;
+				result->*child=0;
+			}
+			
+			return result;
+		}
+		
+		/**
+			\brief Return node with lowest value without removing it
+			
+			Returns the node with lowest value without removing it from the
+			heap structure; subsequently calling \ref extract_min will
+			return this exact element and remove it.
+			
+			Complexity: O(1)
+		*/
+		inline Node *peek_min(void) const
+		{
+			return root;
+		}
+		
+		/**
+			\brief Reduce value of node
+			
+			Assigns a new value to a node which <I>must</I> be lower than
+			the previous value of the node. Reorganize heap accordingly
+			afterwards. The class "Node" must support assignment via
+			the "=" operator from the "Value" type used in calling
+			decrease_key.
+			
+			Complexity: O(1) amortized, O(ln n) worst case.
+		*/
+		template<class Value>
+		inline void decrease_key(Node *n, const Value &newval)
+		{
+			*n=newval;
+			if (n->*parent!=0) {
+				Node *parent=n->*parent;
+				if (lt(*parent, *n)) return;
+				__remove(n);
+				
+				__push_root(n);
+				
+				cascade(parent);
+			}
+			if (lt(*n->v, *root)) root=n;
+		}
+		
+		/**
+			\brief Remove a node
+			
+			Removes a node from the heap which need not be the node with
+			the lowest value.
+			
+			Complexity: O(ln n) amortized, O(n) worst case.
+		*/
+		inline void remove(Node *n)
+		{
+			if (n->*parent!=0) {
+				Node *_parent=n->*parent;
+				__remove(n);
+				__push_root(n);
+				cascade(_parent);
+			}
+			root=n;
+			
+			extract_min();
+		}
+		
+		/**
+			\brief Remove all elements from the heap
+			
+			Complexity: O(n)
+		*/
+		inline void clear(void)
+		{
+			while (extract_min()) {}
+		}
+		
+	private:
+		Less lt;
+		LessEqual le;
+		Node *root;
+		int root_degree;
+	
+		inline void rebalance(void)
+		{
+			Node *collision[64], *current, *tmp, *other, *minimum;
+			memset(collision, 0, sizeof(Node *)*64);
+			
+			int count=root_degree;
+			current=root;
+			if (!current) return;
+			minimum=root;
+			while(count--) {
+				tmp=current->*next;
+				
+				current->*parent=0;
+				
+				while((other=collision[current->*degree])) {
+					if (lt(*other, *current)) {
+						Node *xchg=current;
+						current=other;
+						other=xchg;
+					}
+					collision[current->*degree]=0;
+					__remove(other);
+					other->*parent=current;
+					__push(current, other);
+				}
+				if (le(*current, *minimum)) minimum=current;
+				collision[current->*degree]=current;
+				
+				current=tmp;
+			}
+			root=minimum;
+		}
+		
+		inline void cascade(Node *n)
+		{
+			Node *_parent=n->*parent;
+			while(n->*parent!=0) {
+				__remove(n);
+				__push_root(n);
+				n=_parent;
+				_parent=n->*parent;
+			}
+		}
+	};
+	
+}
+
+#endif

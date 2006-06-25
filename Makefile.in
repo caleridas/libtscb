@@ -1,0 +1,164 @@
+# (c) 2004 Helge Bahmann <hcb@chaoticmind.net>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License version 2.
+# Refer to the file "COPYING" for details.
+
+# configuration variables from autoconf
+
+SHELL = /bin/sh
+VPATH = @srcdir@
+
+subdirs = @subdirs@
+top_srcdir = @top_srcdir@
+srcdir = @srcdir@
+prefix = @prefix@
+exec_prefix = @exec_prefix@
+bindir = @bindir@
+sysconfdir = @sysconfdir@
+localstatedir = @localstatedir@
+libdir = @libdir@
+includedir = @includedir@
+moduledir = $(libdir)/flss
+mandir = @mandir
+
+CC = @CC@
+CXX = @CXX@
+YACC = @YACC@
+FLEX = flex
+CPPFLAGS = -Iinclude @CPPFLAGS@ 
+CXXFLAGS = -Wall @CXXFLAGS@ @PTHREAD_CFLAGS@
+LDFLAGS = @LDFLAGS@ @PTHREAD_CFLAGS@
+LIBS = @LIBS@ @PTHREAD_LIBS@
+INSTALL = @INSTALL@
+PORTNAME = @PORTNAME@
+DISPATCHER_POLL = @DISPATCHER_POLL@
+DISPATCHER_SELECT = @DISPATCHER_SELECT@
+DISPATCHER_EPOLL = @DISPATCHER_EPOLL@
+DISPATCHER_KQUEUE = @DISPATCHER_KQUEUE@
+SELECT_FD_SETSIZE = @SELECT_FD_SETSIZE@
+AIO_LINUX = @AIO_LINUX@
+
+# commands for generating various types of targets
+
+EXECUTABLE_LINK = $(CXX)
+DYNAMIC_MODULE_LINK = $(CXX) -shared
+STATIC_MODULE_LINK =$(AR) r
+
+# override general options by port-specific options
+
+ifeq ($(PORTNAME), darwin)
+  DYNAMIC_MODULE_LINK = $(CXX) -undefined suppress -flat_namespace -bundle
+  # I would gladly receive some kind of explanation for the following...
+  CPPFLAGS += -DBROKEN_DLOPEN_PREPENDS_UNDERSCORE_BEFORE_SYMBOLNAME
+endif
+
+ifeq ($(PORTNAME), freebsd)
+  EXECUTABLE_LINK += -rdynamic
+endif
+
+ifeq ($(PORTNAME), linux)
+  EXECUTABLE_LINK += -rdynamic
+  CPPFLAGS += -D_GNU_SOURCE -D_PTHREAD # make STL thread-safe
+endif
+
+CXXFLAGS+=-Iinclude
+
+LIBTSCB_SOURCES=src/callback.cc src/thread.cc src/eventflag.cc src/timer.cc\
+	src/ioready.o\
+
+# include dispatcher implementations depending on configuration
+
+ifeq ($(DISPATCHER_POLL), yes)
+  LIBTSCB_SOURCES+=src/ioready-poll.cc
+endif
+
+ifeq ($(DISPATCHER_SELECT), yes)
+  LIBTSCB_SOURCES+=src/ioready-select.cc
+endif
+
+ifeq ($(DISPATCHER_EPOLL), yes)
+  LIBTSCB_SOURCES+=src/ioready-epoll.cc
+endif
+
+ifeq ($(DISPATCHER_KQUEUE), yes)
+  LIBTSCB_SOURCES+=src/ioready-kqueue.cc
+endif
+
+ifneq ($(SELECT_FD_SETSIZE), )
+  CPPFLAGS+=-DFD_SETSIZE=$(SELECT_FD_SETSIZE)
+endif
+
+# include asynchronous io implementations depending on configuration
+
+ifeq ($(AIO_LINUX), yes)
+  LIBTSCB_SOURCES+=src/aio_linux.cc
+endif
+
+# default target
+
+LIBRARIES=libtscb.a libtscb.so
+
+all: $(LIBRARIES)
+
+libtscb.a: $(patsubst %.cc, %.o, $(LIBTSCB_SOURCES))
+libtscb.so: $(patsubst %.cc, %.o, $(LIBTSCB_SOURCES))
+
+# some demo programs
+include demo/Makefile.sub
+# unit tests
+include testprogs/Makefile.sub
+
+# pseudo-rules for cleaning the build tree
+
+clean:
+	find . -name "*.[ao]" -o -name "*.so" | xargs rm -f
+	rm -f $(EXECUTABLES)
+
+docclean:
+	rm -rf doc
+
+distclean: clean docclean
+	rm -rf config.log config.status include/tscb/config Makefile .depend autom4te.cache libtscb.pc
+
+maintainerclean: distclean
+	rm -f configure
+
+# installation rules
+install: $(LIBRARIES)
+	$(INSTALL) -s -m 755 -v $(filter %.so,$(LIBRARIES)) $(libdir)/
+	$(INSTALL) -m 644 -v $(filter %.a,$(LIBRARIES)) $(libdir)/
+	mkdir -p $(includedir)/tscb
+	$(INSTALL) -m 644 -v include/tscb/* $(includedir)/tscb
+	mkdir -p $(libdir)/pkgconfig/
+	$(INSTALL) -m 644 -v libtscb.pc $(libdir)/pkgconfig/
+
+# rules for generating various file types
+
+EXECUTABLE_LINK=$(CXX)
+DYNAMIC_MODULE_LINK=$(CXX) -shared
+ifeq ($(PORTNAME), darwin)
+  DYNAMIC_MODULE_LINK = $(CXX) -undefined suppress -flat_namespace -bundle
+endif
+
+# executables
+$(EXECUTABLES):
+	$(EXECUTABLE_LINK) -static -o $@ $^ $(LDFLAGS) $(LIBS)
+
+# static libraries
+%.a:
+	rm -f $@
+	ar clqv $@ $^
+	ranlib $@
+
+# dynamic libraries
+%.so:
+	$(DYNAMIC_MODULE_LINK) -o $@ $^
+	strip $@
+
+doc: .PHONY
+	mkdir -p doc
+	doxygen doxygen.conf
+
+.PHONY:
+

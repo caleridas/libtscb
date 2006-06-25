@@ -1,0 +1,42 @@
+# (c) 2004 Helge Bahmann <hcb@chaoticmind.net>
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU Lesser General Public License version 2.
+# Refer to the file "COPYING" for details.
+
+TESTS=list atomic ref callback deferred timer
+
+ifeq ($(DISPATCHER_POLL), yes)
+  TESTS+=ioready-poll
+endif
+
+ifeq ($(DISPATCHER_SELECT), yes)
+  TESTS+=ioready-select
+endif
+
+ifeq ($(DISPATCHER_EPOLL), yes)
+  TESTS+=ioready-epoll
+endif
+
+ifeq ($(DISPATCHER_KQUEUE), yes)
+  TESTS+=ioready-kqueue
+endif
+
+testprogs/ioready-poll: testprogs/ioready-poll.o testprogs/ioready-dispatcher.o
+
+testprogs/ioready-epoll: testprogs/ioready-epoll.o testprogs/ioready-dispatcher.o
+
+testprogs/ioready-select: testprogs/ioready-select.o testprogs/ioready-dispatcher.o
+
+testprogs/ioready-kqueue: testprogs/ioready-kqueue.o testprogs/ioready-dispatcher.o
+
+RUNTESTS=$(patsubst %, run-%, $(TESTS))
+check: $(RUNTESTS)
+
+TESTEXECUTABLES=$(patsubst %, testprogs/%, $(TESTS))
+EXECUTABLES+=$(TESTEXECUTABLES)
+
+$(TESTEXECUTABLES): % : %.o libtscb.a
+
+$(RUNTESTS): run-%: testprogs/%
+	$^

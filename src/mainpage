@@ -1,0 +1,105 @@
+/* -*- C++ -*-
+ * (c) 2004 Helge Bahmann <hcb@chaoticmind.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License version 2.1.
+ * Refer to the file_event "COPYING" for details.
+ */
+
+/* okay this is not _really_ a source file, but a placeholder for the main
+documentation page; I don't know where else to put it */
+
+/**
+	\mainpage libtscb - Thread-safe callback services
+	
+	This library provides a framework for notifications in multi-threaded
+	programs. Notifications are delivered using callbacks, but managing
+	registration/deregistration of callbacks in threaded applications
+	requires synchronization to ensure they can be handled in a thread-safe
+	manner. This synchronization comes at a cost, and it is the aim of
+	this library to provide patterns that minimize the synchronization
+	overhead - in fact, in many cases it achieves the theoretical
+	optimum.
+	
+	The library achieves both excellent concurrency and low synchronization
+	overhead by using synchronization primitives that allows to perform certain
+	actions "asynchronously". This means that many operations are not
+	really completed at the time the corresponding function call returns,
+	but are instead queued up for execution at a better (later) point in
+	time. The benefit of asynchronicity is certainly better parallelism and
+	less contention, but the downside is usually an increase in code complexity.
+	The patterns provided in this library assist in minimizing the additional
+	complexity while making no compromise in efficiency.
+	
+	The library relies on a platform-dependent "atomic" datatype; this
+	datatype guarantees that certain primitive operations can be performed
+	atomically, and the library provides assembler implementations of these
+	operations for various popuplar architectures.
+	
+	\section util_adt Utility datatypes and algorithms
+	
+	These data structures are used internally inside the library, but
+	since they may be of generic use, they are exported
+	
+	<UL>
+		<LI>
+			\ref list_descr - simple linked lists with explicit memory
+			management for list headers
+		</LI>
+		<LI>
+			\ref fibheap_descr - the data structure of choice
+			for priority queues
+		</LI>
+	</UL>
+	
+	\section primitives Primitives
+	
+	Primitives providing generic functionality, some of which have to be
+	implemented in a platform-specific way
+	
+	<UL>
+		<LI>
+			\ref atomic_descr - Integer variables that can be manipulated
+			atomically from multiple threads
+		</LI>
+		<LI>
+			\ref ref_descr - classes that simplify management of object
+			references
+		</LI>
+	</UL>
+	
+	\section synchronization Synchronization
+	
+	Patterns for various forms of synchronisation
+	
+	<UL>
+		<LI>
+			\ref deferred_descr - deferring updates to data structures to
+			allow both non-blocking readers and writers access to the same
+			data structure
+		</LI>
+	</UL>
+	
+	\section services Callback services
+	
+	Callback registration and dispatching services for various types of
+	events
+	
+	<UL>
+		<LI>
+			\ref callback_descr
+		</LI>
+		<LI>
+			\ref ioready_descr
+		</LI>
+		<LI>
+			\ref timer_descr
+		</LI>
+	</UL>
+*/
+
+/**
+	\brief Thread-safe callbacks
+*/
+namespace tscb {
+}
