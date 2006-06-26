@@ -141,6 +141,7 @@ namespace tscb {
 		
 		while(stale) {
 			ioready_callback_link *next=stale->inactive_next;
+			stale->cancelled();
 			stale->release();
 			stale=next;
 		}
