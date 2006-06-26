@@ -13,6 +13,25 @@
 
 namespace tscb {
 	
+	inline int ioready_dispatcher_epoll::translate_os_to_tscb(int ev) throw()
+	{
+		int e=0;
+		if (ev&EPOLLIN) e|=EVMASK_INPUT;
+		if (ev&EPOLLOUT) e|=EVMASK_OUTPUT;
+		/* deliver hangup event to input and output handlers as well */
+		if (ev&EPOLLHUP) e|=EVMASK_HANGUP|EVMASK_INPUT|EVMASK_OUTPUT;
+		return e;
+	}
+	
+	inline int ioready_dispatcher_epoll::translate_tscb_to_os(int ev) throw()
+	{
+		int e=0;
+		if (ev&EVMASK_INPUT) e|=EPOLLIN;
+		if (ev&EVMASK_OUTPUT) e|=EPOLLOUT;
+		if (ev&EVMASK_HANGUP) e|=EPOLLHUP;
+		return e;
+	}
+	
 	ioready_dispatcher_epoll::ioready_dispatcher_epoll(void)
 		throw(std::runtime_error)
 		: wakeup_flag(0)

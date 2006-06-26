@@ -88,6 +88,8 @@ namespace tscb {
 				int ev=0;
 				if (r) ev=EVMASK_INPUT;
 				if (w) ev|=EVMASK_OUTPUT;
+				/* deliver exception events to everyone */
+				if (e) ev|=EVMASK_OUTPUT|EVMASK_INPUT|EVMASK_HANGUP;
 				
 				ioready_callback_link *link=
 					callback_tab.lookup_first_callback(n);
@@ -204,6 +206,8 @@ namespace tscb {
 		else FD_CLR(fd, &readfds);
 		if (evmask&EVMASK_OUTPUT) FD_SET(fd, &writefds);
 		else FD_CLR(fd, &writefds);
+		if (evmask&EVMASK_HANGUP) FD_SET(fd, &exceptfds);
+		else FD_CLR(fd, &exceptfds);
 	}
 	
 	void ioready_dispatcher_select::synchronize(void) throw()

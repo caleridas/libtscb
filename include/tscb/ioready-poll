@@ -69,8 +69,8 @@ namespace tscb {
 		void remove_polltab_entry(int fd) throw();
 		
 		void synchronize(void) throw();
-		inline int translate_os_to_tscb(int ev) throw() {return ev;}
-		inline int translate_tscb_to_os(int ev) throw() {return ev;}
+		inline int translate_os_to_tscb(int ev) throw();
+		inline int translate_tscb_to_os(int ev) throw();
 		
 		polltab *master_ptab;
 		ioready_callback_table callback_tab;

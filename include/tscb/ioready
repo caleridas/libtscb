@@ -267,6 +267,14 @@ namespace tscb {
 		\ref tscb::ioready_service::watch "ioready_service::watch".
 	*/
 	const int EVMASK_OUTPUT=2;
+	/**
+		\brief Hangup event mask
+		
+		Set this bit if you are interested for "connection closed" events
+		on a descriptor; see
+		\ref tscb::ioready_service::watch "ioready_service::watch".
+	*/
+	const int EVMASK_HANGUP=4;
 	
 	/**
 		\brief callback link for I/O readiness events on file descriptors
