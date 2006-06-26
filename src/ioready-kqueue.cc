@@ -147,12 +147,37 @@ namespace tscb {
 		}
 	}
 	
+	void ioready_dispatcher_kqueue::update_evmask(int fd) throw()
+	{
+		int oldevmask=(long)callback_tab.get_closure(fd);
+		ioready_callback_link *tmp=callback_tab.lookup_first_callback(fd);
+		int newevmask=0;
+		while(tmp) {
+			newevmask|=tmp->event_mask;
+			tmp=tmp->active_next;
+		}
+		struct kevent modlist[2];
+		int nmods=0;
+		if ((oldevmask^newevmask)&EVMASK_OUTPUT) {
+			EV_SET(&modlist[nmods], fd, EVFILT_WRITE, (newevmask&EVMASK_OUTPUT)?EV_ADD:EV_DELETE, 0, 0, (void *)EVFILT_WRITE);
+			nmods++;
+		}
+		if ((oldevmask^newevmask)&EVMASK_INPUT) {
+			EV_SET(&modlist[nmods], fd, EVFILT_READ, (newevmask&EVMASK_INPUT)?EV_ADD:EV_DELETE, 0, 0, (void *)EVFILT_READ);
+			nmods++;
+		}
+		struct timespec timeout;
+		timeout.tv_sec=0;
+		timeout.tv_nsec=0;
+		if (nmods>0)
+			kevent(kqueue_fd, modlist, nmods, NULL, 0, &timeout);
+		callback_tab.set_closure(fd, (void *)newevmask);
+	}
+	
 	void ioready_dispatcher_kqueue::register_ioready_callback(tscb::ref<ioready_callback_link> link)
 		throw(std::bad_alloc)
 	{
 		bool sync=guard.write_lock_async();
-		
-		bool empty_chain=callback_tab.chain_empty(link->fd);
 		
 		try {
 			callback_tab.insert(link);
@@ -162,51 +187,8 @@ namespace tscb {
 			else guard.write_unlock_async();
 			throw;
 		}
-		
-		if (empty_chain) {
-			struct kevent modlist[4];
-			
-			struct timespec timeout;
-			timeout.tv_sec=0;
-			timeout.tv_nsec=0;
-			
-			modlist[0].ident=link->fd;
-			modlist[0].flags=EV_ADD;
-			modlist[0].filter=EVFILT_READ;
-			modlist[1].ident=link->fd;
-			modlist[1].flags=EV_ADD;
-			modlist[1].filter=EVFILT_WRITE;
-			modlist[2].ident=link->fd;
-			modlist[2].flags=link->event_mask&EVMASK_INPUT?EV_ENABLE:EV_DISABLE;
-			modlist[2].filter=EVFILT_READ;
-			modlist[3].ident=link->fd;
-			modlist[3].flags=link->event_mask&EVMASK_OUTPUT?EV_ENABLE:EV_DISABLE;
-			modlist[3].filter=EVFILT_WRITE;
-			
-			kevent(kqueue_fd, modlist, 4, NULL, 0, &timeout);
-		} else {
-			ioready_callback_link *tmp=callback_tab.lookup_first_callback(link->fd);
-			int newevmask=0;
-			while(tmp) {
-				newevmask|=tmp->event_mask;
-				tmp=tmp->active_next;
-			}
-			
-			struct kevent modlist[2];
-			
-			struct timespec timeout;
-			timeout.tv_sec=0;
-			timeout.tv_nsec=0;
-			
-			modlist[0].ident=link->fd;
-			modlist[0].flags=newevmask&EVMASK_INPUT?EV_ENABLE:EV_DISABLE;
-			modlist[0].filter=EVFILT_READ;
-			modlist[1].ident=link->fd;
-			modlist[1].flags=newevmask&EVMASK_OUTPUT?EV_ENABLE:EV_DISABLE;
-			modlist[1].filter=EVFILT_WRITE;
-			
-			kevent(kqueue_fd, modlist, 2, NULL, 0, &timeout);
-		}
+
+		update_evmask(link->fd);
 		
 		link->service=this;
 		
@@ -223,48 +205,10 @@ namespace tscb {
 		bool sync=guard.write_lock_async();
 		
 		if (link->service) {
-			int fd=link->fd;
-			
 			callback_tab.remove(link);
 			
-			if (callback_tab.chain_empty(fd)) {
-				struct kevent modlist[2];
-				
-				struct timespec timeout;
-				timeout.tv_sec=0;
-				timeout.tv_nsec=0;
-				
-				modlist[0].ident=link->fd;
-				modlist[0].flags=EV_DELETE;
-				modlist[0].filter=EVFILT_READ;
-				modlist[1].ident=link->fd;
-				modlist[1].flags=EV_DELETE;
-				modlist[1].filter=EVFILT_WRITE;
-				
-				kevent(kqueue_fd, modlist, 2, NULL, 0, &timeout);
-			} else {
-				ioready_callback_link *tmp=callback_tab.lookup_first_callback(link->fd);
-				int newevmask=0;
-				while(tmp) {
-					newevmask|=tmp->event_mask;
-					tmp=tmp->active_next;
-				}
-				
-				struct kevent modlist[2];
+			update_evmask(link->fd);
 			
-				struct timespec timeout;
-				timeout.tv_sec=0;
-				timeout.tv_nsec=0;
-				
-				modlist[0].ident=link->fd;
-				modlist[0].flags=newevmask&EVMASK_INPUT?EV_ENABLE:EV_DISABLE;
-				modlist[0].filter=EVFILT_READ;
-				modlist[1].ident=link->fd;
-				modlist[1].flags=newevmask&EVMASK_OUTPUT?EV_ENABLE:EV_DISABLE;
-				modlist[1].filter=EVFILT_WRITE;
-				
-				kevent(kqueue_fd, modlist, 2, NULL, 0, &timeout);
-			}
 			link->service=0;
 		}
 		
@@ -282,27 +226,7 @@ namespace tscb {
 		
 		link->event_mask=event_mask;
 		
-		ioready_callback_link *tmp=callback_tab.lookup_first_callback(link->fd);
-		int newevmask=0;
-		while(tmp) {
-			newevmask|=tmp->event_mask;
-			tmp=tmp->active_next;
-		}
-		
-		struct kevent modlist[2];
-	
-		struct timespec timeout;
-		timeout.tv_sec=0;
-		timeout.tv_nsec=0;
-		
-		modlist[0].ident=link->fd;
-		modlist[0].flags=newevmask&EVMASK_INPUT?EV_ENABLE:EV_DISABLE;
-		modlist[0].filter=EVFILT_READ;
-		modlist[1].ident=link->fd;
-		modlist[1].flags=newevmask&EVMASK_OUTPUT?EV_ENABLE:EV_DISABLE;
-		modlist[1].filter=EVFILT_WRITE;
-		
-		kevent(kqueue_fd, modlist, 2, NULL, 0, &timeout);
+		update_evmask(link->fd);
 		
 		if (sync) synchronize();
 		else guard.write_unlock_async();

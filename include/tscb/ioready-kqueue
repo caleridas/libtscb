@@ -61,6 +61,8 @@ namespace tscb {
 		void drain_queue(int fd, int event_mask) throw();
 		void release_queue(void) throw();
 		
+		void update_evmask(int fd) throw();
+		
 		void process_events(struct kevent events[], size_t nevents) throw();
 		
 		int kqueue_fd;
