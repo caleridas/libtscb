@@ -365,20 +365,14 @@ namespace tscb {
 			If this function returns "false", then the caller may simply 
 			proceed.
 		*/
-		inline bool read_lock(void)
+		inline bool read_lock(void) throw()
 		{
 			if (__builtin_expect(readers.inc_if_not_zero(), true)) {
-				//memory_barrier();
+				memory_barrier();
 				return false;
 			}
 			
-			writers.lock();
-			if (readers.inc_if_not_zero()) {
-				writers.unlock();
-				return false;
-			}
-			
-			return true;
+			return read_lock_slow();
 		}
 		
 		/**
@@ -393,18 +387,12 @@ namespace tscb {
 			If this function returns "false", then the caller may simply
 			proceed.
 		*/
-		inline bool read_unlock(void)
+		inline bool read_unlock(void) throw()
 		{
-			//memory_barrier();
+			memory_barrier();
 			if (__builtin_expect(--readers, true)) return false;
 			
-			writers.lock();
-			if (readers!=0) {
-				writers.unlock();
-				return false;
-			}
-			
-			return true;
+			return read_unlock_slow();
 		}
 		
 		/**
@@ -465,6 +453,10 @@ namespace tscb {
 		}
 
 	private:
+		/* out of line slow-path functions */
+		bool read_lock_slow(void) throw();
+		bool read_unlock_slow(void) throw();
+		
 		atomic readers;
 		mutex writers;
 		bool queued;
@@ -516,22 +508,11 @@ namespace tscb {
 		inline bool read_lock(void)
 		{
 			if (__builtin_expect(readers.inc_if_not_zero(), true)) {
+				memory_barrier();
 				return false;
 			}
 			
-			writers.lock();
-			while (waiting) {
-				waiting=false;
-				writers.unlock();
-				waiting_writers.broadcast();
-				writers.lock();
-			}
-			if (readers.inc_if_not_zero()) {
-				writers.unlock();
-				return false;
-			}
-			
-			return true;
+			return read_lock_slow();
 		}
 		
 		/**
@@ -548,7 +529,10 @@ namespace tscb {
 		*/
 		inline bool read_unlock(void)
 		{
+			memory_barrier();
 			if (__builtin_expect(--readers, true)) return false;
+			
+			return read_unlock_slow();
 			
 			writers.lock();
 			while (waiting) {
@@ -660,6 +644,10 @@ namespace tscb {
 		}
 
 	private:
+		/* out of line slow-path functions */
+		bool read_lock_slow(void) throw();
+		bool read_unlock_slow(void) throw();
+		
 		atomic readers;
 		mutex writers;
 		conditional waiting_writers;
