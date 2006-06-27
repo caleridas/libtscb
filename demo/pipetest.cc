@@ -19,7 +19,7 @@
 
 #include <tscb/thread>
 #include <tscb/ioready>
-#include <tscb/ioready-epoll>
+#include <tscb/ioready-select>
 #include <tscb/timer>
 
 const int second_threshold=5;
@@ -160,7 +160,7 @@ void cleanup_receivers(void)
 
 tscb::ioready_dispatcher *create_dispatcher()
 {
-	return new tscb::ioready_dispatcher_epoll();
+	return new tscb::ioready_dispatcher_select();
 }
 
 tscb::ioready_dispatcher *prepare_ring(int start, int nelements,

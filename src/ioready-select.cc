@@ -12,6 +12,7 @@ namespace tscb {
 	
 	ioready_dispatcher_select::ioready_dispatcher_select(void)
 		throw(std::bad_alloc, std::runtime_error)
+		: maxfd(0)
 	{
 		FD_ZERO(&readfds);
 		FD_ZERO(&writefds);
@@ -42,7 +43,7 @@ namespace tscb {
 	not necessarily have to be true */
 	static void copy_fdset(fd_set *dst, const fd_set *src, int maxfd)
 	{
-		int copybytes=((maxfd+31)/32)*4;
+		int copybytes=((maxfd+63)/64)*8;
 		memcpy(dst, src, copybytes);
 	}
 	
