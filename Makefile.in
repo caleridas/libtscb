@@ -143,7 +143,7 @@ endif
 
 # executables
 $(EXECUTABLES):
-	$(EXECUTABLE_LINK) -static -o $@ $^ $(LDFLAGS) $(LIBS)
+	$(EXECUTABLE_LINK) -o $@ $^ $(LDFLAGS) $(LIBS)
 
 # static libraries
 %.a:
