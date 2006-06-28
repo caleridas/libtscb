@@ -68,7 +68,10 @@ namespace tscb {
 	
 	inline void memory_barrier(void)
 	{
-		__asm__ __volatile__ ("mfence" ::: "memory");
+		// hm... as far as I understand AMD64 memory model
+		// is sequentially consistent; at least I have not been
+		// able to view any reordered reads/writes in repeated tests
+		//__asm__ __volatile__ ("mfence" ::: "memory");
 	}
 	
 	inline void data_dependence_memory_barrier(void)
