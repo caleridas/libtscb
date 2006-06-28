@@ -533,20 +533,6 @@ namespace tscb {
 			if (__builtin_expect(--readers, true)) return false;
 			
 			return read_unlock_slow();
-			
-			writers.lock();
-			while (waiting) {
-				waiting=false;
-				writers.unlock();
-				waiting_writers.broadcast();
-				writers.lock();
-			}
-			if (readers!=0) {
-				writers.unlock();
-				return false;
-			}
-			
-			return true;
 		}
 		
 		/**
