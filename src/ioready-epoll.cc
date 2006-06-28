@@ -42,7 +42,36 @@ namespace tscb {
 	
 	ioready_dispatcher_epoll::~ioready_dispatcher_epoll(void) throw()
 	{
-		/* FIXME: cancel pending callbacks */
+		/* we can assume
+		
+		- no thread is actively dispatching at the moment
+		- no user can register new callbacks at the moment
+		
+		if those conditions are not met, we are in big trouble anyway, and
+		there is no point doing anything about it
+		*/
+		
+		while(guard.read_lock()) synchronize();
+		callback_tab.cancel_all();
+		if (guard.read_unlock()) {
+			/* the above cancel operations will cause synchronization
+			to be performed at the next possible point in time; if
+			there is no concurrent cancellation, this is now */
+			synchronize();
+		} else {
+			/* this can only happen if some callback link was
+			cancelled while this object is being destroyed; in
+			that case we have to suspend the thread that is destroying
+			the object until we are certain that synchronization has
+			been performed */
+			
+			guard.write_lock_sync();
+			synchronize();
+			
+			/* note that synchronize implicitly calls sync_finished,
+			which is equivalent to write_unlock_sync for deferrable_rwlocks */
+		}
+		
 		close(epoll_fd);
 		
 		if (wakeup_flag) delete wakeup_flag;

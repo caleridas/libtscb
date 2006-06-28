@@ -494,7 +494,7 @@ namespace tscb {
 			throw()=0;
 	};
 	
-	/** \cond NEVER internal class */
+	/** \cond NEVER -- internal class, ignored by doxygen */
 	class ioready_callback_table {
 	public:
 		ioready_callback_table(size_t initial=32) throw(std::bad_alloc);
@@ -513,6 +513,8 @@ namespace tscb {
 		void set_closure(int fd, void *closure) throw(std::bad_alloc);
 		void remove(ioready_callback_link *link) throw();
 		ioready_callback_link *synchronize(void) throw();
+		
+		void cancel_all(void) throw();
 		
 	protected:
 		

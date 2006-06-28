@@ -58,7 +58,7 @@ namespace tscb {
 	ioready_callback_table::~ioready_callback_table(void) throw()
 	{
 		while(true) {
-			if (table) break;
+			if (!table) break;
 			chain_table *tmp=table->old;
 			delete table;
 			table=tmp;
@@ -189,6 +189,13 @@ namespace tscb {
 		link=inactive;
 		inactive=0;
 		return link;
+	}
+	
+	void ioready_callback_table::cancel_all(void) throw()
+	{
+		size_t n=0;
+		for(n=0; n<table->size; n++)
+			while(table->chains[n].active) table->chains[n].active->cancel();
 	}
 	
 	static ioready_dispatcher *

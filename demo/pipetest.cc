@@ -21,8 +21,8 @@
 #include <tscb/ioready>
 #include <tscb/timer>
 
-const int second_threshold=5;
-const int max_threads=4;
+const int second_threshold=1;
+const int max_threads=2;
 const int num_reserved_fds=max_threads*4;
 
 std::vector<int> read_fds, write_fds;
@@ -170,8 +170,8 @@ tscb::ioready_dispatcher *prepare_ring(int start, int nelements,
 		);
 	
 	/* FIXME: inject n tokens */
-	char buffer[16]="a";
-	write(write_fds[start], buffer, 1);
+	char buffer=0;
+	write(write_fds[start], &buffer, 1);
 	
 	return d;
 }
