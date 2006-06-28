@@ -629,6 +629,24 @@ namespace tscb {
 		
 	};
 	
+	/**
+		\brief Create dispatcher for ioready events
+		
+		Select an \ref tscb::ioready_dispatcher "ioready_dispatcher"
+		implementation and instantiate dispatcher class. The function
+		will select the "best" dispatcher available on the current
+		platform dynamically; the order of preference is:
+		
+		<UL>
+			<LI>\ref tscb::ioready_dispatcher_kqueue "ioready_dispatcher_kqueue"</LI>
+			<LI>\ref tscb::ioready_dispatcher_epoll "ioready_dispatcher_epoll"</LI>
+			<LI>\ref tscb::ioready_dispatcher_poll "ioready_dispatcher_poll"</LI>
+			<LI>\ref tscb::ioready_dispatcher_select "ioready_dispatcher_select"</LI>
+		</UL>
+	*/
+	ioready_dispatcher *
+	create_ioready_dispatcher(void) throw(std::bad_alloc, std::runtime_error);
+	
 	/** \cond NEVER */
 	template<typename Context, void (*function)(Context, int, int), void (*_release)(Context)>
 	class dynamic_ioready_callback_link : public ioready_callback_link {

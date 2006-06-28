@@ -19,7 +19,6 @@
 
 #include <tscb/thread>
 #include <tscb/ioready>
-#include <tscb/ioready-select>
 #include <tscb/timer>
 
 const int second_threshold=5;
@@ -158,15 +157,10 @@ void cleanup_receivers(void)
 	cleanup_pipes();
 }
 
-tscb::ioready_dispatcher *create_dispatcher()
-{
-	return new tscb::ioready_dispatcher_select();
-}
-
 tscb::ioready_dispatcher *prepare_ring(int start, int nelements,
 	perfcounter &counter, int ninject=1)
 {
-	tscb::ioready_dispatcher *d=create_dispatcher();
+	tscb::ioready_dispatcher *d=tscb::create_ioready_dispatcher();
 	
 	for(int n=0; n<nelements; n++)
 		receivers.push_back(

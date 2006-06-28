@@ -233,4 +233,10 @@ namespace tscb {
 	{
 	}
 	
+	ioready_dispatcher *
+	create_ioready_dispatcher_select(void) throw(std::bad_alloc, std::runtime_error)
+	{
+		return new ioready_dispatcher_select();
+	}
+	
 }
