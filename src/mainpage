@@ -95,6 +95,9 @@ documentation page; I don't know where else to put it */
 		<LI>
 			\ref timer_descr
 		</LI>
+		<LI>
+			\ref dispatcher_descr
+		</LI>
 	</UL>
 */
 

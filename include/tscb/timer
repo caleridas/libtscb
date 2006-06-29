@@ -254,34 +254,9 @@
 	The caller must <I>atomically</I> wait on the eventflag and the
 	timeout value calculated above. One way to achieve this is to
 	couple the timer dispatching with an
-	\ref tscb::ioready_dispatcher "ioready_dispatcher":
-	
-	\code
-		tscb::ioready_dispatcher *io;
-		tscb::timerqueue_dispatcher *timers;
-		
-		io=new tscb::ioready_dispatcher_poll();
-		timers=new tscb::timerqueue_dispatcher(io->get_eventflag());
-		
-		// run the dispatcher loop
-		do {
-			long long next_timer;
-			long long now=tscb::current_time();
-			bool timer_pending;
-			do {
-				next_timer=now;
-				timer_pending=timers->run_queue(next_timer);
-				if (!timer_pending) break;
-				now=tscb::current_time();
-			} while(now>=next_timer);
-			
-			if (timer_pending) {
-				long long timeout=now-next_timer;
-				io->dispatch(&timeout);
-			} else
-				io->dispatch(0);
-		}
-	\endcode
+	\ref tscb::ioready_dispatcher "ioready_dispatcher"; see
+	\ref dispatcher_descr how to simultaneously dispatch timer
+	and io events from one thread.
 */
 
 #include <new>
