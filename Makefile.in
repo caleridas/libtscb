@@ -131,8 +131,12 @@ maintainerclean: distclean
 
 # installation rules
 install: $(LIBRARIES)
-	$(INSTALL) -s -m 755 -v $(filter %.so,$(LIBRARIES)) $(libdir)/
-	$(INSTALL) -m 644 -v $(filter %.a,$(LIBRARIES)) $(libdir)/
+	for file in $(filter %.so,$(LIBRARIES)) ; do\
+		$(INSTALL) -s -m 755 -v $$file $(libdir)/ ; \
+	done
+	for file in $(filter %.a,$(LIBRARIES)) ; do\
+		$(INSTALL) -m 644 -v $$file $(libdir)/ ; \
+	done
 	mkdir -p $(includedir)/tscb
 	$(INSTALL) -m 644 -v include/tscb/* $(includedir)/tscb
 	mkdir -p $(libdir)/pkgconfig/
