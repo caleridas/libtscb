@@ -692,7 +692,7 @@ namespace tscb {
 			ordering between flag and tested condition
 			*/
 			memory_barrier();
-			return (bool)timer_queue.peekmin();
+			return (bool)timer_queue.peek_min();
 		}
 		
 		/**
