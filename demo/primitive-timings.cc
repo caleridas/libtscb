@@ -75,7 +75,7 @@ int ncallbacks;
 
 void callback(int times)
 {
-	tscb::callback_chain1<int> chain;
+	tscb::callback_chain<int> chain;
 	
 	int num=ncallbacks;
 	
@@ -95,7 +95,7 @@ inline void release(int dummy)
 
 void callback_function(int times)
 {
-	tscb::callback_chain1<int> chain;
+	tscb::callback_chain<int> chain;
 	
 	int num=ncallbacks;
 	

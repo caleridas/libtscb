@@ -46,7 +46,7 @@ void release(void *context)
 
 void callback_tests(void)
 {
-	callback_chain1<int> chain;
+	callback_chain<int> chain;
 	{
 		/* verify that callbacks are invoked correctly at all, that
 		callbacks are cancellable and that references to target objects
@@ -104,7 +104,7 @@ void callback_tests(void)
 		to target objects are dropped as well */
 		Receiver r;
 		{
-			callback_chain1<int> chain;
+			callback_chain<int> chain;
 			r.pin();
 			r.link=chain.connect<Receiver, &Receiver::cbrecv1, &Receiver::release>(&r);
 			ASSERT(r.link->refcount==2);

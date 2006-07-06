@@ -23,7 +23,7 @@ namespace tscb {
 			return;
 		}
 		
-		long long now=current_time(), t;
+		long long now=current_time();
 		long long t=now;
 		bool pending;
 		do {
