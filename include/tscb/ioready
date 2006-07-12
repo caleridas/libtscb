@@ -480,7 +480,7 @@ namespace tscb {
 		*/
 		template<class Target, void (Target::*function)(int fd, int event)>
 		inline ref_transfer<ioready_callback_link>
-		ref_watch(int fd, int event_mask, Target *instance)
+		ref_watch(int fd, int event_mask, ref<Target> instance)
 			throw(std::bad_alloc);
 		
 		/* internal functions; actual implementation of the file event
@@ -718,6 +718,17 @@ namespace tscb {
 			(instance, fd, event_mask));
 		register_ioready_callback(link);
 		
+		return link;
+	}
+
+	template<class Target, void (Target::*function)(int fd, int event)>
+	inline ref_transfer<ioready_callback_link>
+	ioready_service::ref_watch(int fd, int event_mask, ref<Target> instance)
+		throw(std::bad_alloc)
+	{
+		ioready_callback_link *link=watch<Target, function, &Target::release>
+			(fd, event_mask, instance);
+		instance.unassign();
 		return link;
 	}
 	

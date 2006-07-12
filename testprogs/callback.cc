@@ -163,8 +163,21 @@ void callback_tests(void)
 	}
 }
 
+void callback_reftests(void)
+{
+	callback_chain<int> chain;
+	Receiver r;
+	
+	ASSERT(r.refcount==1);
+	tscb::callback link=chain.ref_connect<Receiver, &Receiver::cbrecv1>(&r);
+	ASSERT(r.refcount==2);
+	link->cancel();
+	ASSERT(r.refcount==1);
+}
+
 int main(void)
 {
 	callback_tests();
+	callback_reftests();
 	return 0;
 }

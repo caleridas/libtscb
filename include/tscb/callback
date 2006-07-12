@@ -206,6 +206,8 @@
 	</TABLE>
 */
 
+#include <stdexcept>
+
 #include <tscb/thread>
 #include <tscb/ref>
 #include <tscb/deferred>
@@ -564,7 +566,7 @@ namespace tscb {
 			\ref tscb::callback_link::cancel "callback_link::cancel"
 		*/
 		template<typename Context, void (*function)(Context, Arg1), void (*release)(Context)>
-		ref_transfer<callback_link> connect(Context context) throw()
+		ref_transfer<callback_link> connect(Context context) throw(std::bad_alloc)
 		{
 			link_type *l=
 				new function_link1<Arg1, Context, function, release>(context);
@@ -580,11 +582,31 @@ namespace tscb {
 			\ref tscb::callback_link::cancel "callback_link::cancel"
 		*/
 		template<typename Obj, void(Obj::*function)(Arg1), void(Obj::*release)(void)>
-		ref_transfer<callback_link> connect(Obj *o) throw()
+		ref_transfer<callback_link> connect(Obj *o) throw(std::bad_alloc)
 		{
 			link_type *l=
 				new obj_link1<Arg1, Obj, function, release>(o);
 			push_back(l);
+			return l;
+		}
+		/**
+			\brief Append new callback function to the chain
+			
+			Appends a new callback function to the chain. It will
+			be called whenever \ref operator() of the chain is invoked,
+			until it is cancelled by calling
+			\ref tscb::callback_link::cancel "callback_link::cancel".
+			
+			The target object muss support reference counting through
+			->pin() and ->release() member functions; ->pin() will
+			be used to acquire a reference to the target object; ->release()
+			will be called after the callback has been cancelled.
+		*/
+		template<typename Obj, void(Obj::*function)(Arg1)>
+		ref_transfer<callback_link> ref_connect(ref<Obj> o) throw(std::bad_alloc)
+		{
+			callback_link *l=connect<Obj, function, &Obj::release>(o);
+			o.unassign();
 			return l;
 		}
 		/**
@@ -689,7 +711,7 @@ namespace tscb {
 			\ref tscb::callback_link::cancel "callback_link::cancel"
 		*/
 		template<typename Context, void (*function)(Context, Arg1, Arg2), void (*release)(Context)>
-		ref_transfer<callback_link> connect(Context context) throw()
+		ref_transfer<callback_link> connect(Context context) throw(std::bad_alloc)
 		{
 			link_type *l=
 				new function_link2<Arg1, Arg2, Context, function, release>(context);
@@ -705,11 +727,31 @@ namespace tscb {
 			\ref tscb::callback_link::cancel "callback_link::cancel"
 		*/
 		template<typename Obj, void(Obj::*function)(Arg1, Arg2), void(Obj::*release)(void)>
-		ref_transfer<callback_link> connect(Obj *o) throw()
+		ref_transfer<callback_link> connect(Obj *o) throw(std::bad_alloc)
 		{
 			link_type *l=
 				new obj_link2<Arg1, Arg2, Obj, function, release>(o);
 			push_back(l);
+			return l;
+		}
+		/**
+			\brief Append new callback function to the chain
+			
+			Appends a new callback function to the chain. It will
+			be called whenever \ref operator() of the chain is invoked,
+			until it is cancelled by calling
+			\ref tscb::callback_link::cancel "callback_link::cancel".
+			
+			The target object muss support reference counting through
+			->pin() and ->release() member functions; ->pin() will
+			be used to acquire a reference to the target object; ->release()
+			will be called after the callback has been cancelled.
+		*/
+		template<typename Obj, void(Obj::*function)(Arg1, Arg2)>
+		ref_transfer<callback_link> ref_connect(ref<Obj> o) throw(std::bad_alloc)
+		{
+			callback_link *l=connect<Obj, function, &Obj::release>(o);
+			o.unassign();
 			return l;
 		}
 		/**
@@ -814,7 +856,7 @@ namespace tscb {
 			\ref tscb::callback_link::cancel "callback_link::cancel"
 		*/
 		template<typename Context, void (*function)(Context, Arg1, Arg2, Arg3), void (*release)(Context)>
-		ref_transfer<callback_link> connect(Context context) throw()
+		ref_transfer<callback_link> connect(Context context) throw(std::bad_alloc)
 		{
 			link_type *l=
 				new function_link3<Arg1, Arg2, Arg3, Context, function, release>(context);
@@ -830,11 +872,31 @@ namespace tscb {
 			\ref tscb::callback_link::cancel "callback_link::cancel"
 		*/
 		template<typename Obj, void(Obj::*function)(Arg1, Arg2, Arg3), void(Obj::*release)(void)>
-		ref_transfer<callback_link> connect(Obj *o) throw()
+		ref_transfer<callback_link> connect(Obj *o) throw(std::bad_alloc)
 		{
 			link_type *l=
 				new obj_link3<Arg1, Arg2, Arg3, Obj, function, release>(o);
 			push_back(l);
+			return l;
+		}
+		/**
+			\brief Append new callback function to the chain
+			
+			Appends a new callback function to the chain. It will
+			be called whenever \ref operator() of the chain is invoked,
+			until it is cancelled by calling
+			\ref tscb::callback_link::cancel "callback_link::cancel".
+			
+			The target object muss support reference counting through
+			->pin() and ->release() member functions; ->pin() will
+			be used to acquire a reference to the target object; ->release()
+			will be called after the callback has been cancelled.
+		*/
+		template<typename Obj, void(Obj::*function)(Arg1, Arg2, Arg3)>
+		ref_transfer<callback_link> ref_connect(ref<Obj> o) throw(std::bad_alloc)
+		{
+			callback_link *l=connect<Obj, function, &Obj::release>(o);
+			o.unassign();
 			return l;
 		}
 		/**
@@ -939,7 +1001,7 @@ namespace tscb {
 			\ref tscb::callback_link::cancel "callback_link::cancel"
 		*/
 		template<typename Context, void (*function)(Context, Arg1, Arg2, Arg3, Arg4), void (*release)(Context)>
-		ref_transfer<callback_link> connect(Context context) throw()
+		ref_transfer<callback_link> connect(Context context) throw(std::bad_alloc)
 		{
 			link_type *l=
 				new function_link4<Arg1, Arg2, Arg3, Arg4, Context, function, release>(context);
@@ -955,7 +1017,7 @@ namespace tscb {
 			\ref tscb::callback_link::cancel "callback_link::cancel"
 		*/
 		template<typename Obj, void(Obj::*function)(Arg1, Arg2, Arg3, Arg4), void(Obj::*release)(void)>
-		ref_transfer<callback_link> connect(Obj *o) throw()
+		ref_transfer<callback_link> connect(Obj *o) throw(std::bad_alloc)
 		{
 			link_type *l=
 				new obj_link4<Arg1, Arg2, Arg3, Arg4, Obj, function, release>(o);
@@ -968,6 +1030,26 @@ namespace tscb {
 			Calls all callback functions registered trough \ref connect
 			with the given arguments.
 		*/
+		/**
+			\brief Append new callback function to the chain
+			
+			Appends a new callback function to the chain. It will
+			be called whenever \ref operator() of the chain is invoked,
+			until it is cancelled by calling
+			\ref tscb::callback_link::cancel "callback_link::cancel".
+			
+			The target object muss support reference counting through
+			->pin() and ->release() member functions; ->pin() will
+			be used to acquire a reference to the target object; ->release()
+			will be called after the callback has been cancelled.
+		*/
+		template<typename Obj, void(Obj::*function)(Arg1, Arg2, Arg3, Arg4)>
+		ref_transfer<callback_link> ref_connect(ref<Obj> o) throw(std::bad_alloc)
+		{
+			callback_link *l=connect<Obj, function, &Obj::release>(o);
+			o.unassign();
+			return l;
+		}
 		inline void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4)
 		{
 			parent_type::read_lock();
@@ -1064,7 +1146,7 @@ namespace tscb {
 			\ref tscb::callback_link::cancel "callback_link::cancel"
 		*/
 		template<typename Context, void (*function)(Context, Arg1, Arg2, Arg3, Arg4, Arg5), void (*release)(Context)>
-		ref_transfer<callback_link> connect(Context context) throw()
+		ref_transfer<callback_link> connect(Context context) throw(std::bad_alloc)
 		{
 			link_type *l=
 				new function_link5<Arg1, Arg2, Arg3, Arg4, Arg5, Context, function, release>(context);
@@ -1080,11 +1162,31 @@ namespace tscb {
 			\ref tscb::callback_link::cancel "callback_link::cancel"
 		*/
 		template<typename Obj, void(Obj::*function)(Arg1, Arg2, Arg3, Arg4, Arg5), void(Obj::*release)(void)>
-		ref_transfer<callback_link> connect(Obj *o) throw()
+		ref_transfer<callback_link> connect(Obj *o) throw(std::bad_alloc)
 		{
 			link_type *l=
 				new obj_link5<Arg1, Arg2, Arg3, Arg4, Arg5, Obj, function, release>(o);
 			push_back(l);
+			return l;
+		}
+		/**
+			\brief Append new callback function to the chain
+			
+			Appends a new callback function to the chain. It will
+			be called whenever \ref operator() of the chain is invoked,
+			until it is cancelled by calling
+			\ref tscb::callback_link::cancel "callback_link::cancel".
+			
+			The target object muss support reference counting through
+			->pin() and ->release() member functions; ->pin() will
+			be used to acquire a reference to the target object; ->release()
+			will be called after the callback has been cancelled.
+		*/
+		template<typename Obj, void(Obj::*function)(Arg1, Arg2, Arg3, Arg4, Arg5)>
+		ref_transfer<callback_link> ref_connect(ref<Obj> o) throw(std::bad_alloc)
+		{
+			callback_link *l=connect<Obj, function, &Obj::release>(o);
+			o.unassign();
 			return l;
 		}
 		/**
@@ -1153,6 +1255,7 @@ namespace tscb {
 		virtual void cancelled(void) throw()
 		{(*_release)(context);}
 	};
+
 	
 	template<typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5, typename Arg6,
 	typename Obj, void (Obj::*function)(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5, Arg6 arg6), void (Obj::*_release)(void)>
@@ -1189,7 +1292,7 @@ namespace tscb {
 			\ref tscb::callback_link::cancel "callback_link::cancel"
 		*/
 		template<typename Context, void (*function)(Context, Arg1, Arg2, Arg3, Arg4, Arg5, Arg6), void (*release)(Context)>
-		ref_transfer<callback_link> connect(Context context) throw()
+		ref_transfer<callback_link> connect(Context context) throw(std::bad_alloc)
 		{
 			link_type *l=
 				new function_link6<Arg1, Arg2, Arg3, Arg4, Arg5, Arg6, Context, function, release>(context);
@@ -1205,11 +1308,31 @@ namespace tscb {
 			\ref tscb::callback_link::cancel "callback_link::cancel"
 		*/
 		template<typename Obj, void(Obj::*function)(Arg1, Arg2, Arg3, Arg4, Arg5, Arg6), void(Obj::*release)(void)>
-		ref_transfer<callback_link> connect(Obj *o) throw()
+		ref_transfer<callback_link> connect(Obj *o) throw(std::bad_alloc)
 		{
 			link_type *l=
 				new obj_link6<Arg1, Arg2, Arg3, Arg4, Arg5, Arg6, Obj, function, release>(o);
 			push_back(l);
+			return l;
+		}
+		/**
+			\brief Append new callback function to the chain
+			
+			Appends a new callback function to the chain. It will
+			be called whenever \ref operator() of the chain is invoked,
+			until it is cancelled by calling
+			\ref tscb::callback_link::cancel "callback_link::cancel".
+			
+			The target object muss support reference counting through
+			->pin() and ->release() member functions; ->pin() will
+			be used to acquire a reference to the target object; ->release()
+			will be called after the callback has been cancelled.
+		*/
+		template<typename Obj, void(Obj::*function)(Arg1, Arg2, Arg3, Arg4, Arg5, Arg6)>
+		ref_transfer<callback_link> ref_connect(ref<Obj> o) throw(std::bad_alloc)
+		{
+			callback_link *l=connect<Obj, function, &Obj::release>(o);
+			o.unassign();
 			return l;
 		}
 		/**
