@@ -90,6 +90,10 @@
 
 #include <tscb/atomic-ppc>
 
+#elif defined(__GNUC__) && (defined(__sparc__)) && !defined(USE_PTHREAD_ATOMICS)
+
+#include <tscb/atomic-sparc>
+
 #elif defined(__GNUC__) && defined(__alpha__) && !defined(USE_PTHREAD_ATOMICS)
 
 #include <tscb/atomic-alpha>

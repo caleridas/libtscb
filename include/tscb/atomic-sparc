@@ -1,0 +1,91 @@
+/* -*- C++ -*-
+ * (c) 2006 Helge Bahmann <hcb@chaoticmind.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License version 2.1.
+ * Refer to the file "COPYING" for details.
+ */
+
+#ifndef __TSCB_ATOMIC_SPARC_H
+#define __TSCB_ATOMIC_SPARC_H
+
+namespace tscb {
+	
+	/** \cond NEVER */
+	
+	/*
+	  Refer to: Motorola: "Programming Environments Manual for 32-Bit
+	  Implementations of the PowerPC Architecture", Appendix E:
+	  "Synchronization Programming Examples" for an explanation of what is
+	  going on here (can be found on the web at various places by the
+	  name "MPCFPE32B.pdf", Google is your friend...)
+	 */
+	
+	class atomic {
+	public:
+		inline atomic(long initial=0) : value(initial) {}
+		inline void operator++(void) {
+			int old;
+			do {
+				old=value;
+			} while(old!=cmpxchg(old, old+1));
+		}
+		inline void operator++(int) {
+			int old;
+			do {
+				old=value;
+			} while(old!=cmpxchg(old, old+1));
+		}
+		inline bool operator--(void) {
+			int old, newval;
+			do {
+				old=value;
+				newval=old-1;
+			} while(old!=cmpxchg(old, newval));
+			return (bool)newval;
+		}
+		inline void operator--(int) {
+			int old;
+			do {
+				old=value;
+			} while(old!=cmpxchg(old, old-1));
+		}
+		inline bool inc_if_not_zero(void) {
+			int old;
+			do {
+				old=value;
+				if (!old) return false;
+			} while(old!=cmpxchg(old, old+1));
+			return true;
+		};
+		inline int cmpxchg(int oldvalue, int newvalue)
+		{
+			__asm__ __volatile__(
+				"cas [%2], %3, %0"
+				: "=&r" (newvalue)
+				: "0" (newvalue), "r" (&value), "r" (oldvalue)
+				: "cc");
+			return newvalue;
+		}
+		inline operator long(void) const {return value;}
+		inline bool operator==(long v) const {return value==v;}
+		inline bool operator==(int v) const {return value==v;}
+		inline void operator=(long n) {value=n;}
+	private:
+		volatile int value;
+	};
+	
+	inline void memory_barrier(void)
+	{
+		__asm__ __volatile__( "membar #StoreLoad | #StoreStore" ::: "memory" );
+	}
+	
+	inline void data_dependence_memory_barrier(void)
+	{
+	}
+	
+	/** \endcond */
+	
+}
+
+#endif
