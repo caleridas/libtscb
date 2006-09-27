@@ -7,7 +7,7 @@
 
 long long start, end;
 
-volatile long *var;
+volatile long var;
 tscb::atomic atomic_var;
 tscb::mutex mutex;
 tscb::deferred_rwlock deferred_rwlock;
