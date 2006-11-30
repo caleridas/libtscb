@@ -58,6 +58,7 @@ void my_release(void *)
 class X {
 public:
 	bool fn(long long &t) {return false;}
+	void pin(void) {}
 	void release(void) {}
 };
 
@@ -117,6 +118,13 @@ void timer_tests(void)
 		X x;
 		long long time(0);
 		timer_link=tq.timer<X, &X::fn, &X::release>(time, &x);
+		timer_link->cancel();
+		ASSERT(timer_link->refcount==1);
+	}
+	{
+		X x;
+		long long time(0);
+		timer_link=tq.ref_timer<X, &X::fn>(time, &x);
 		timer_link->cancel();
 		ASSERT(timer_link->refcount==1);
 	}

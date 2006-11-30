@@ -577,7 +577,9 @@ namespace tscb {
 		ref_timer(Timeval expires, ref<Target> instance)
 			throw(std::bad_alloc)
 		{
-			ref<generic_timer_callback_link<Timeval> > link=timer<Target, function, &Target::release>(expires, instance);
+			ref<generic_timer_callback_link<Timeval> > link=
+				timer<Target, function, &Target::release>(expires,
+					(Target *)instance);
 			
 			instance.unassign();
 			return link;
@@ -647,10 +649,23 @@ namespace tscb {
 			returns false, there is no point in calling \ref run_queue
 			as no timers have been registered.
 			
-			Note that checking 
+			Note that this check may race with registration of
+			new timers from other threads; to avoid missing timers
+			the caller should therefore
 			
-			returns false if
-			no timers are pendi
+			1. clear the \ref eventflag the timer dispatcher is
+			associated with
+			
+			2. check if timers are pending
+			
+			3. atomically wait for timeout and the \ref eventflag
+			
+			If a timer is inserted between 2 and 3, the dispatcher
+			thread will not wait in step 3, and a new
+			iteration of the dispatching loop must be started.
+			
+			This function is more light-weight than its
+			cousin \ref next_timer.
 		*/
 		inline bool timers_pending(void) const throw()
 		{
@@ -664,10 +679,40 @@ namespace tscb {
 			However since this test should always be coupled with a 
 			"clear" operation on the event flag associated with the timer,
 			a memory barrier is required to provide correct
-			ordering between flag and tested condition
-			*/
+			ordering between flag and tested condition */
 			memory_barrier();
 			return (bool)timer_queue.peek_min();
+		}
+		
+		/**
+			\brief Determine when next timer is due
+			
+			\param tv
+				Point in time when the next timer is due
+			
+			Returns true if any timers are pending at all (i.e.
+			any timer callbacks have been registered); if
+			any timers are registered, the expiration time of
+			the earliest pending timer is returned as well.
+			
+			All remarks regarding race conditions that
+			apply to \ref timers_pending apply to this
+			function as well.
+			
+			Note that \ref next_timer delivers more
+			information than \ref timers_pending and is
+			more heavy-weight.
+		*/
+		inline bool next_timer(Timeval &tv) const throw()
+		{
+			queue_mutex.lock();
+			generic_timer_callback_link<Timeval> *t=timer_queue.peek_min();
+			if (t) {
+				tv=t->when;
+				queue_mutex.unlock();
+				return true;
+			}
+			return false;
 		}
 		
 		/**
@@ -821,7 +866,7 @@ namespace tscb {
 	protected:
 		fibheap<generic_timer_callback_link<Timeval> > timer_queue;
 		
-		mutex queue_mutex;
+		mutable mutex queue_mutex;
 		
 		bool timer_queue_running;
 		
@@ -829,6 +874,8 @@ namespace tscb {
 	};
 	
 	typedef generic_timer_callback_link<long long> timer_callback_link;
+	
+	typedef ref<timer_callback_link> timer_callback;
 	
 	/**
 		\brief Timer service using 64 bit integers to represent time values
