@@ -500,7 +500,7 @@ namespace tscb {
 			
 			This will increase the reference counter of the target object
 		*/
-		inline ref(T *p) throw() : ptr(p) {if (p) c.pin(p);}
+		inline ref(T *p) throw() : ptr(p) {if (ptr) c.pin(p);}
 
 		/**
 			\brief point reference to different object
@@ -519,7 +519,7 @@ namespace tscb {
 			of copy constructor is checked before attempting template
 			specialization
 		*/
-		inline ref(const ref &p) throw() : ptr(p.ptr) {c.pin(ptr);}
+		inline ref(const ref &p) throw() : ptr(p.ptr) {if (ptr) c.pin(ptr);}
 		
 		/**
 			\brief point reference to different object
