@@ -68,7 +68,7 @@ AC_ARG_WITH(fdsetsize,[  --with-fdsetsize=arg    Override FD_SETSIZE (for the nu
 SELECT_FD_SETSIZE=$withval
 ])
 
-AC_ARG_WITH(pthread-atomics,[  --with-pthread-atomics  Use pthread_mutex for atomics],[
+AC_ARG_WITH(pthread-atomics,[  --with-pthread-atomics  Use pthread_mutex for atomics; performance will suck.],[
 AC_DEFINE(USE_PTHREAD_ATOMICS,1,[])
 ],[])
 
