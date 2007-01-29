@@ -58,44 +58,44 @@ namespace tscb {
 		*/
 		class iterator {
 		public:
-			inline iterator(void) : ptr(0) {}
-			inline const iterator &operator++(void) {ptr=(*ptr).*next; return *this;}
-			inline iterator operator++(int) {iterator tmp=*this; ptr=(*ptr).*next; return tmp;}
-			inline const iterator &operator--(void) {if (ptr) ptr=(*ptr).*prev; else ptr=l->last; return *this;}
-			inline iterator operator--(int) {iterator tmp=*this; if (ptr) ptr=(*ptr).*prev; else ptr=l->last; return tmp;}
-			inline operator T *(void) const {return ptr;}
-			inline T* operator->(void) const {return ptr;}
-			inline bool operator==(const iterator &i) const {return ptr==i.ptr;}
-			inline bool operator!=(const iterator &i) const {return ptr!=i.ptr;}
+			inline iterator(void) throw() : ptr(0) {}
+			inline const iterator &operator++(void) throw() {ptr=(*ptr).*next; return *this;}
+			inline iterator operator++(int) throw() {iterator tmp=*this; ptr=(*ptr).*next; return tmp;}
+			inline const iterator &operator--(void) throw() {if (ptr) ptr=(*ptr).*prev; else ptr=l->last; return *this;}
+			inline iterator operator--(int) throw() {iterator tmp=*this; if (ptr) ptr=(*ptr).*prev; else ptr=l->last; return tmp;}
+			inline operator T *(void) const throw() {return ptr;}
+			inline T* operator->(void) const throw() {return ptr;}
+			inline bool operator==(const iterator &i) const throw() {return ptr==i.ptr;}
+			inline bool operator!=(const iterator &i) const throw() {return ptr!=i.ptr;}
 		private:
 			T *ptr;
 			list *l;
-			inline iterator(T *p, list *_l) : ptr(p) , l(_l) {}
+			inline iterator(T *p, list *_l) throw() : ptr(p) , l(_l) {}
 			friend class list;
 		};
-		inline list(void) : first(0), last(0) {}
-		inline void push_back(T *obj)
+		inline list(void) throw() : first(0), last(0) {}
+		inline void push_back(T *obj) throw()
 		{
 			if (last) (*last).*next=obj; else first=obj;
 			(*obj).*prev=last;
 			(*obj).*next=0;
 			last=obj;
 		}
-		inline void push_front(T *obj)
+		inline void push_front(T *obj) throw()
 		{
 			if (first) (*first).*prev=obj; else last=obj;
 			(*obj).*prev=0;
 			(*obj).*next=first;
 			first=obj;
 		}
-		inline void remove(T *obj)
+		inline void remove(T *obj) throw()
 		{
 			if ((*obj).*prev) *((*obj).*prev).*next=(*obj).*next;
 			else first=(*obj).*next;
 			if ((*obj).*next) *((*obj).*next).*prev=(*obj).*prev;
 			else last=(*obj).*prev;
 		}
-		inline void join_front(list &l)
+		inline void join_front(list &l) throw()
 		{
 			if (l.last) l.last->*next=first;
 			
@@ -107,7 +107,7 @@ namespace tscb {
 			l.first=0;
 			l.last=0;
 		}
-		inline void join_back(list &l)
+		inline void join_back(list &l) throw()
 		{
 			if (l.first) l.first->*prev=last;
 			
@@ -120,8 +120,25 @@ namespace tscb {
 			l.last=0;
 		}
 		
-		inline iterator begin(void) {return iterator(first, this);}
-		inline iterator end(void) {return iterator(0, this);}
+		inline iterator begin(void) throw() {return iterator(first, this);}
+		inline iterator end(void) throw() {return iterator(0, this);}
+		
+		inline void insert_before(T *obj, T *at) throw()
+		{
+			if (at->*prev) at->*prev->*next=obj;
+			else first=obj;
+			obj->*prev=at->*prev;
+			obj->*next=at;
+			at->*prev=obj;
+		}
+		inline void insert_after(T *obj, T *at) throw()
+		{
+			if (at->*next) at->*next->*prev=obj;
+			else last=obj;
+			obj->*next=at->*next;
+			obj->*prev=at;
+			at->*next=obj;
+		}
 	private:
 		T *first, *last;
 		friend class iterator;
