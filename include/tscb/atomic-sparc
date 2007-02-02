@@ -77,7 +77,7 @@ namespace tscb {
 	
 	inline void memory_barrier(void)
 	{
-		__asm__ __volatile__( "membar #StoreLoad | #StoreStore" ::: "memory" );
+		__asm__ __volatile__( "membar #StoreLoad | #StoreStore | #LoadStore | #LoadLoad" ::: "memory" );
 	}
 	
 	inline void data_dependence_memory_barrier(void)
