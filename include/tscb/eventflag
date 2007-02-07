@@ -89,6 +89,18 @@ namespace tscb {
 		atomic waiting;
 	};
 	
+	class variable_eventflag : public eventflag {
+	public:
+		inline variable_eventflag(void) throw() : flagged(0) {}
+		virtual ~variable_eventflag(void) throw();
+		
+		virtual void set(void) throw();
+		virtual void wait(void) throw();
+		virtual void clear(void) throw();
+		
+		volatile int flagged;
+	};
+	
 	/*
 	class signal_event_flag : public event_flag {
 	public:

@@ -120,6 +120,26 @@ namespace tscb {
 		/* we assume that a system call is an implicit memory barrier */
 	}
 	
+	variable_eventflag::~variable_eventflag(void) throw()
+	{
+	}
+	
+	void variable_eventflag::set(void) throw()
+	{
+		flagged=1;
+	}
+	
+	void variable_eventflag::wait(void) throw()
+	{
+		while (!flagged);
+	}
+	
+	void variable_eventflag::clear(void) throw()
+	{
+		flagged=0;
+	}
+		
+	
 	#if 0
 	
 	signal_eventflag::signal_eventflag(pthread_t _thread, int _signo) throw()
