@@ -63,7 +63,7 @@ namespace tscb {
 		oldval=flagged.cmpxchg(1, 2);
 		if (oldval!=1) return;
 		
-		char c;
+		char c=0;
 		write(writefd, &c, 1);
 	}
 	
