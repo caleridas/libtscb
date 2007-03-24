@@ -432,6 +432,26 @@ namespace tscb {
 		Target *target;
 	};
 	
+	template<typename Timeval, typename Target, bool (Target::*function)(Timeval &)>
+	class refobj_timer_callback_link : public generic_timer_callback_link<Timeval> {
+	public:
+		refobj_timer_callback_link(Timeval expires, ref<Target> _target) throw()
+			: generic_timer_callback_link<Timeval>(expires),
+			target(ref_transfer<Target>(_target))
+		{}
+		virtual ~refobj_timer_callback_link(void) throw() {}
+		virtual bool operator()(Timeval &now) throw()
+		{
+			return (target->*function)(now);
+		}
+		virtual void cancelled(void) throw()
+		{
+			target=0;
+		}
+	protected:
+		ref<Target> target;
+	};
+	
 	/** \endcond */
 	
 	/**
@@ -577,17 +597,17 @@ namespace tscb {
 		ref_timer(Timeval expires, ref<Target> instance)
 			throw(std::bad_alloc)
 		{
-			ref<generic_timer_callback_link<Timeval> > link=
-				timer<Target, function, &Target::release>(expires,
-					(Target *)instance);
+			generic_timer_callback_link<Timeval> *link;
 			
-			instance.unassign();
+			link=new refobj_timer_callback_link<Timeval, Target, function>(expires,
+				ref_transfer<Target>(instance));
+			register_timer(link);
 			return link;
 		}
 		
 		/* internal functions; actual implementation of the timer callback
 		mechanism */
-		virtual void register_timer(tscb::ref<generic_timer_callback_link<Timeval> > t) throw()=0;
+		virtual void register_timer(ref<generic_timer_callback_link<Timeval> > t) throw()=0;
 		virtual void unregister_timer(generic_timer_callback_link<Timeval> *t) throw()=0;
 	};
 	
@@ -833,7 +853,7 @@ namespace tscb {
 			}
 		}
 		
-		virtual void register_timer(tscb::ref<generic_timer_callback_link<Timeval> > t) throw()
+		virtual void register_timer(ref<generic_timer_callback_link<Timeval> > t) throw()
 		{
 			queue_mutex.lock();
 			

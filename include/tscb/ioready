@@ -705,6 +705,26 @@ namespace tscb {
 		Target *instance;
 	};
 	
+	template<typename Target, void (Target::*function)(int, int)>
+	class refobj_ioready_callback_link : public ioready_callback_link {
+	public:
+		refobj_ioready_callback_link(ref<Target> _instance, int _fd, int _event) throw()
+			: ioready_callback_link(_fd, _event),
+			instance(ref_transfer<Target>(_instance))
+		{}
+		virtual ~refobj_ioready_callback_link(void) throw() {}
+		virtual void operator()(int revent) throw()
+		{
+			(instance->*function)(fd, revent);
+		}
+		virtual void cancelled(void) throw()
+		{
+			instance=0;
+		}
+	protected:
+		ref<Target> instance;
+	};
+	
 	/** \endcond */
 	
 	template<typename Target, void (Target::*function)(int, int), void (Target::*_release)(void)>
@@ -726,9 +746,12 @@ namespace tscb {
 	ioready_service::ref_watch(int fd, int event_mask, ref<Target> instance)
 		throw(std::bad_alloc)
 	{
-		ioready_callback_link *link=watch<Target, function, &Target::release>
-			(fd, event_mask, instance);
-		instance.unassign();
+		ref<ioready_callback_link> link;
+		
+		link.assign(new refobj_ioready_callback_link<Target, function>(
+			ref_transfer<Target>(instance), fd, event_mask));
+		register_ioready_callback(link);
+		
 		return link;
 	}
 	
