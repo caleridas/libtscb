@@ -69,8 +69,8 @@ namespace tscb {
 			inline bool operator!=(const iterator &i) const throw() {return ptr!=i.ptr;}
 		private:
 			T *ptr;
-			list *l;
-			inline iterator(T *p, list *_l) throw() : ptr(p) , l(_l) {}
+			const list *l;
+			inline iterator(T *p, const list *_l) throw() : ptr(p) , l(_l) {}
 			friend class list;
 		};
 		inline list(void) throw() : first(0), last(0) {}
@@ -139,6 +139,12 @@ namespace tscb {
 			obj->*prev=at;
 			at->*next=obj;
 		}
+		inline void insert_before(T *obj, const iterator &at) throw()
+			{insert_before(obj, at.ptr);}
+		inline void insert_after(T *obj, const iterator &at) throw()
+			{insert_after(obj, at.ptr);}
+		inline iterator make_iterator(T *obj) const throw() {return iterator(obj, this);}
+		inline bool empty(void) const throw() {return first==0;}
 	private:
 		T *first, *last;
 		friend class iterator;
