@@ -65,7 +65,7 @@
 			} while(now>=next_timer);
 			
 			if (timer_pending) {
-				long long timeout=now-next_timer;
+				long long timeout=next_timer-now;
 				io->dispatch(&timeout);
 			} else
 				io->dispatch(0);
