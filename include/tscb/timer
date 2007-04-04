@@ -875,6 +875,7 @@ namespace tscb {
 			if (queued) timer_queue.remove(t);
 			t->next=0;
 			queue_mutex.unlock();
+			t->cancellation_mutex.unlock();
 			
 			if (needWakeup) timer_added->set();
 			if (queued) {

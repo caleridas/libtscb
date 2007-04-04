@@ -62,6 +62,13 @@ public:
 	void release(void) {}
 };
 
+class Y {
+public:
+	bool fn(long long &t) {timer_link->cancel(); return false;}
+	void pin(void) {}
+	void release(void) {}
+};
+
 void timer_tests(void)
 {
 	timerqueue_dispatcher tq(&flag);
@@ -127,6 +134,12 @@ void timer_tests(void)
 		timer_link=tq.ref_timer<X, &X::fn>(time, &x);
 		timer_link->cancel();
 		ASSERT(timer_link->refcount==1);
+	}
+	{
+		Y y;
+		long long time(0);
+		timer_link=tq.ref_timer<Y, &Y::fn>(time, &y);
+		tq.run_queue(time);
 	}
 }
 
