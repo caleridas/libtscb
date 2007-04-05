@@ -66,7 +66,7 @@ endif
 CXXFLAGS+=-Iinclude
 
 LIBTSCB_SOURCES=src/callback.cc src/thread.cc src/eventflag.cc src/timer.cc\
-	src/ioready.o src/deferred.cc src/dispatch.cc
+	src/ioready.cc src/deferred.cc src/dispatch.cc
 
 # include dispatcher implementations depending on configuration
 
@@ -106,8 +106,8 @@ endif
 
 all: $(LIBRARIES)
 
-libtscb.a: $(patsubst %.cc, %.o, $(LIBTSCB_SOURCES))
-libtscb.so: $(patsubst %.cc, %.o, $(LIBTSCB_SOURCES))
+libtscb.a: $(patsubst %.cc, %.la, $(LIBTSCB_SOURCES))
+libtscb.so: $(patsubst %.cc, %.lo, $(LIBTSCB_SOURCES))
 
 # some demo programs
 include demo/Makefile.sub
@@ -117,7 +117,7 @@ include testprogs/Makefile.sub
 # pseudo-rules for cleaning the build tree
 
 clean:
-	find . -name "*.[ao]" -o -name "*.so" | xargs rm -f
+	find . -name "*.[ao]" -o -name "*.l[ao]" -o -name "*.so" | xargs rm -f
 	rm -f $(EXECUTABLES)
 
 docclean:
@@ -143,6 +143,12 @@ install: $(LIBRARIES)
 	$(INSTALL) -m 644 -v libtscb.pc $(libdir)/pkgconfig/
 
 # rules for generating various file types
+
+%.lo: %.cc
+	$(CXX) -c -fPIC $(CXXFLAGS) $(CPPFLAGS) -o $@ $^
+
+%.la: %.cc
+	$(CXX) -c $(CXXFLAGS) $(CPPFLAGS) -o $@ $^
 
 EXECUTABLE_LINK=$(CXX)
 DYNAMIC_MODULE_LINK=$(CXX) -shared
