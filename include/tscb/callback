@@ -545,6 +545,21 @@ namespace tscb {
 		{(i->*_release)();}
 	};
 	
+	template<typename Arg1, typename Obj, void (Obj::*function)(Arg1 arg1)>
+	class refobj_link1 : public function_callback_link1<Arg1> {
+	public:
+		inline refobj_link1(tscb::ref<Obj> instance ) throw()
+			: i(tscb::ref_transfer<Obj>(instance))
+		{}
+		virtual ~refobj_link1(void) throw() {}
+		virtual void operator()(Arg1 arg1) throw()
+		{(i->*function)(arg1);}
+	private:
+		tscb::ref<Obj> i;
+		virtual void cancelled(void) throw()
+		{i=0;}
+	};
+	
 	/* \endcond */
 	
 	/**
@@ -605,8 +620,9 @@ namespace tscb {
 		template<typename Obj, void(Obj::*function)(Arg1)>
 		ref_transfer<callback_link> ref_connect(ref<Obj> o) throw(std::bad_alloc)
 		{
-			callback_link *l=connect<Obj, function, &Obj::release>(o);
-			o.unassign();
+			link_type *l=
+				new refobj_link1<Arg1, Obj, function>(o);
+			push_back(l);
 			return l;
 		}
 		/**
@@ -692,6 +708,22 @@ namespace tscb {
 		{(i->*_release)();}
 	};
 	
+	template<typename Arg1, typename Arg2,
+	typename Obj, void (Obj::*function)(Arg1 arg1, Arg2 arg2)>
+	class refobj_link2 : public function_callback_link2<Arg1, Arg2> {
+	public:
+		inline refobj_link2(tscb::ref<Obj> instance ) throw()
+			: i(tscb::ref_transfer<Obj>(instance))
+		{}
+		virtual ~refobj_link2(void) throw() {}
+		virtual void operator()(Arg1 arg1, Arg2 arg2) throw()
+		{(i->*function)(arg1, arg2);}
+	private:
+		tscb::ref<Obj> i;
+		virtual void cancelled(void) throw()
+		{i=0;}
+	};
+	
 	/** \endcond */
 	
 	/**
@@ -750,8 +782,9 @@ namespace tscb {
 		template<typename Obj, void(Obj::*function)(Arg1, Arg2)>
 		ref_transfer<callback_link> ref_connect(ref<Obj> o) throw(std::bad_alloc)
 		{
-			callback_link *l=connect<Obj, function, &Obj::release>(o);
-			o.unassign();
+			link_type *l=
+				new refobj_link2<Arg1, Arg2, Obj, function>(o);
+			push_back(l);
 			return l;
 		}
 		/**
@@ -837,6 +870,22 @@ namespace tscb {
 		{(i->*_release)();}
 	};
 	
+	template<typename Arg1, typename Arg2, typename Arg3,
+	typename Obj, void (Obj::*function)(Arg1 arg1, Arg2 arg2, Arg3 arg3)>
+	class refobj_link3 : public function_callback_link3<Arg1, Arg2, Arg3> {
+	public:
+		inline refobj_link3(tscb::ref<Obj> instance ) throw()
+			: i(tscb::ref_transfer<Obj>(instance))
+		{}
+		virtual ~refobj_link3(void) throw() {}
+		virtual void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3) throw()
+		{(i->*function)(arg1, arg2, arg3);}
+	private:
+		tscb::ref<Obj> i;
+		virtual void cancelled(void) throw()
+		{i=0;}
+	};
+	
 	/** \endcond */
 	
 	/**
@@ -895,8 +944,9 @@ namespace tscb {
 		template<typename Obj, void(Obj::*function)(Arg1, Arg2, Arg3)>
 		ref_transfer<callback_link> ref_connect(ref<Obj> o) throw(std::bad_alloc)
 		{
-			callback_link *l=connect<Obj, function, &Obj::release>(o);
-			o.unassign();
+			link_type *l=
+				new refobj_link3<Arg1, Arg2, Arg3, Obj, function>(o);
+			push_back(l);
 			return l;
 		}
 		/**
@@ -982,6 +1032,22 @@ namespace tscb {
 		{(i->*_release)();}
 	};
 	
+	template<typename Arg1, typename Arg2, typename Arg3, typename Arg4,
+	typename Obj, void (Obj::*function)(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4)>
+	class refobj_link4 : public function_callback_link4<Arg1, Arg2, Arg3, Arg4> {
+	public:
+		inline refobj_link4(tscb::ref<Obj> instance ) throw()
+			: i(tscb::ref_transfer<Obj>(instance))
+		{}
+		virtual ~refobj_link4(void) throw() {}
+		virtual void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4) throw()
+		{(i->*function)(arg1, arg2, arg3, arg4);}
+	private:
+		tscb::ref<Obj> i;
+		virtual void cancelled(void) throw()
+		{i=0;}
+	};
+	
 	/** \endcond */
 	
 	/**
@@ -1025,12 +1091,6 @@ namespace tscb {
 			return l;
 		}
 		/**
-			\brief Call all callback functions registered with the chain
-			
-			Calls all callback functions registered trough \ref connect
-			with the given arguments.
-		*/
-		/**
 			\brief Append new callback function to the chain
 			
 			Appends a new callback function to the chain. It will
@@ -1046,10 +1106,17 @@ namespace tscb {
 		template<typename Obj, void(Obj::*function)(Arg1, Arg2, Arg3, Arg4)>
 		ref_transfer<callback_link> ref_connect(ref<Obj> o) throw(std::bad_alloc)
 		{
-			callback_link *l=connect<Obj, function, &Obj::release>(o);
-			o.unassign();
+			link_type *l=
+				new refobj_link4<Arg1, Arg2, Arg3, Arg4, Obj, function>(o);
+			push_back(l);
 			return l;
 		}
+		/**
+			\brief Call all callback functions registered with the chain
+			
+			Calls all callback functions registered trough \ref connect
+			with the given arguments.
+		*/
 		inline void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4)
 		{
 			parent_type::read_lock();
@@ -1127,6 +1194,22 @@ namespace tscb {
 		{(i->*_release)();}
 	};
 	
+	template<typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5,
+	typename Obj, void (Obj::*function)(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5)>
+	class refobj_link5 : public function_callback_link5<Arg1, Arg2, Arg3, Arg4, Arg5> {
+	public:
+		inline refobj_link5(tscb::ref<Obj> instance ) throw()
+			: i(tscb::ref_transfer<Obj>(instance))
+		{}
+		virtual ~refobj_link5(void) throw() {}
+		virtual void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5) throw()
+		{(i->*function)(arg1, arg2, arg3, arg4, arg5);}
+	private:
+		tscb::ref<Obj> i;
+		virtual void cancelled(void) throw()
+		{i=0;}
+	};
+	
 	/** \endcond */
 	
 	/**
@@ -1185,8 +1268,9 @@ namespace tscb {
 		template<typename Obj, void(Obj::*function)(Arg1, Arg2, Arg3, Arg4, Arg5)>
 		ref_transfer<callback_link> ref_connect(ref<Obj> o) throw(std::bad_alloc)
 		{
-			callback_link *l=connect<Obj, function, &Obj::release>(o);
-			o.unassign();
+			link_type *l=
+				new refobj_link5<Arg1, Arg2, Arg3, Arg4, Arg5, Obj, function>(o);
+			push_back(l);
 			return l;
 		}
 		/**
@@ -1273,6 +1357,22 @@ namespace tscb {
 		{(i->*_release)();}
 	};
 	
+	template<typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5, typename Arg6,
+	typename Obj, void (Obj::*function)(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5, Arg6 arg6)>
+	class refobj_link6 : public function_callback_link6<Arg1, Arg2, Arg3, Arg4, Arg5, Arg6> {
+	public:
+		inline refobj_link6(tscb::ref<Obj> instance ) throw()
+			: i(tscb::ref_transfer<Obj>(instance))
+		{}
+		virtual ~refobj_link6(void) throw() {}
+		virtual void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5, Arg6 arg6) throw()
+		{(i->*function)(arg1, arg2, arg3, arg4, arg5, arg6);}
+	private:
+		tscb::ref<Obj> i;
+		virtual void cancelled(void) throw()
+		{i=0;}
+	};
+	
 	/** \endcond */
 	
 	/**
@@ -1331,8 +1431,9 @@ namespace tscb {
 		template<typename Obj, void(Obj::*function)(Arg1, Arg2, Arg3, Arg4, Arg5, Arg6)>
 		ref_transfer<callback_link> ref_connect(ref<Obj> o) throw(std::bad_alloc)
 		{
-			callback_link *l=connect<Obj, function, &Obj::release>(o);
-			o.unassign();
+			link_type *l=
+				new refobj_link6<Arg1, Arg2, Arg3, Arg4, Arg5, Arg6, Obj, function>(o);
+			push_back(l);
 			return l;
 		}
 		/**
