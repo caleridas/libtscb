@@ -18,7 +18,7 @@ public:
 	static int count;
 	
 	inline X(void) : refcnt(0) {count++;}
-	inline ~X(void) {ASSERT(refcnt==0); count--;}
+	virtual ~X(void) throw() {ASSERT(refcnt==0); count--;}
 	inline void pin(void) {refcnt++;}
 	inline void release(void) {refcnt--; if (!refcnt) delete this;}
 
@@ -26,6 +26,8 @@ public:
 };
 
 class Y : public X {
+public:
+	virtual ~Y(void) throw() {}
 };
 
 int X::count=0;
@@ -126,11 +128,26 @@ void casttests(void)
 	}
 	
 	ASSERT(X::count==0);
-	
+}
+
+void dynamiccasttests(void)
+{
+	{
+		ref<X> x_as_x=new X;
+		ref<X> y_as_x=new Y;
+		
+		ref<Y> x_as_y=x_as_x.cast_dynamic<Y>();
+		ASSERT(!x_as_y);
+		ASSERT(x_as_x->refcnt==1);
+		ref<Y> y_as_y=y_as_x.cast_dynamic<Y>();
+		ASSERT(y_as_y);
+		ASSERT(y_as_x->refcnt==2);
+	}
 }
 
 int main()
 {
 	reftests();
 	casttests();
+	dynamiccasttests();
 }

@@ -647,6 +647,24 @@ namespace tscb {
 		*/
 		inline T *unassign(void) throw() {T *tmp=ptr; ptr=0; return tmp;}
 		
+		/**
+			\brief dynamic cast to different type of object
+			
+			This will attempt to cast the given object to a different
+			type of object, using RTTI (run-time type information).
+			The call returns either a new reference to the given
+			object, or 0 if the cast failed.
+		*/
+		template <typename X>
+		ref_transfer<X> cast_dynamic(void) throw()
+		{
+			X *x=dynamic_cast<X *>(ptr);
+			if (x) {
+				x->pin();
+				return x;
+			} else return 0;
+		}
+		
 		T *ptr;
 		C c;
 	};

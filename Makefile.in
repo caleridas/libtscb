@@ -19,7 +19,6 @@ sysconfdir = @sysconfdir@
 localstatedir = @localstatedir@
 libdir = @libdir@
 includedir = @includedir@
-moduledir = $(libdir)/flss
 mandir = @mandir
 
 CC = @CC@
