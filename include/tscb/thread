@@ -162,7 +162,9 @@ namespace tscb {
 	/**
 		\brief Thread
 		
-		Wraps a platform-specific thread.
+		Wraps a platform-specific thread. FIXME: Actually I know of
+		no good reason to include this here. Developers should do
+		their own wrapper facades if they want to.
 	*/
 	class thread {
 	public:
