@@ -656,7 +656,7 @@ namespace tscb {
 			object, or 0 if the cast failed.
 		*/
 		template <typename X>
-		ref_transfer<X> cast_dynamic(void) throw()
+		ref_transfer<X> cast_dynamic(void) const throw()
 		{
 			X *x=dynamic_cast<X *>(ptr);
 			if (x) {
