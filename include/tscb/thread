@@ -103,6 +103,12 @@ namespace tscb {
 		/** \brief Exposed handle for low-level access */
 		pthread_mutex_t m;
 	#endif
+		class scoped_lock {
+		public:
+			scoped_lock(mutex &_m) throw() : m(_m) {m.lock();}
+			~scoped_lock(void) throw() {m.unlock();}
+			mutex &m;
+		};
 	};
 	
 	/**
