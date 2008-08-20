@@ -1,0 +1,13 @@
+*.o
+*.lo
+*.la
+*.a
+*.so
+include/tscb/config
+Makefile
+autom4te.cache
+config.log
+config.status
+configure
+doc
+libtscb.pc
