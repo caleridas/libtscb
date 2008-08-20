@@ -440,6 +440,18 @@
 
 namespace tscb {
 	
+	template<typename T>
+	static inline void intrusive_ptr_add_ref(T *t) throw()
+	{
+		t->pin();
+	}
+	
+	template<typename T>
+	static inline void intrusive_ptr_release(T *t) throw()
+	{
+		t->release();
+	}
+	
 	/** \cond NEVER */
 	template<class T>
 	class default_counter_functor {
@@ -449,20 +461,14 @@ namespace tscb {
 	};
 	/** \endcond */
 	
-	template<typename T, typename C=default_counter_functor<T> > class ref;
-	template<typename T, typename C=default_counter_functor<T> > class ref_transfer;
+	template<typename T> class ref;
+	template<typename T> class ref_transfer;
 	
 	/**
 		\brief reference to a ref-counted object
 		
 		\param T
 		The type of object that will be referenced
-		
-		\param C
-		The functor object that will be used to manipulate the reference counter
-		of the object; this parameter can be omitted, in this case 
-		default_counter_functor will be used, which simply calls ->pin()
-		and ->release() methods of the object, respectively
 		
 		ref objects are used to point to reference-counted objects (called
 		"target objects" in the following). They can be used
@@ -477,7 +483,7 @@ namespace tscb {
 		decreased accordingly for each ref that ceases to point to this
 		object.
 	*/
-	template<typename T, typename C>
+	template<typename T>
 	class ref {
 	public:
 		/**
@@ -493,14 +499,14 @@ namespace tscb {
 			Destroying a ref object will cause the reference to the target
 			object to be dropped
 		*/
-		inline ~ref(void) throw() {if (ptr) c.release(ptr); }
+		inline ~ref(void) throw() {if (ptr) intrusive_ptr_release(ptr); }
 		
 		/**
 			\brief initialize ref pointing to an object	
 			
 			This will increase the reference counter of the target object
 		*/
-		inline ref(T *p) throw() : ptr(p) {if (ptr) c.pin(p);}
+		inline ref(T *p) throw() : ptr(p) {if (ptr) intrusive_ptr_add_ref(p);}
 
 		/**
 			\brief point reference to different object
@@ -509,7 +515,7 @@ namespace tscb {
 			and decrease the reference counter of the old target object
 		*/
 		inline void operator=(T *p) throw()
-		{if (ptr) c.release(ptr); ptr=p; if (ptr) c.pin(ptr);}
+		{if (ptr) intrusive_ptr_release(ptr); ptr=p; if (ptr) intrusive_ptr_add_ref(ptr);}
 	
 		/**
 			\brief initialize ref pointing to an object	
@@ -519,7 +525,7 @@ namespace tscb {
 			of copy constructor is checked before attempting template
 			specialization
 		*/
-		inline ref(const ref &p) throw() : ptr(p.ptr) {if (ptr) c.pin(ptr);}
+		inline ref(const ref &p) throw() : ptr(p.ptr) {if (ptr) intrusive_ptr_add_ref(ptr);}
 		
 		/**
 			\brief point reference to different object
@@ -529,15 +535,15 @@ namespace tscb {
 			separate declaration for copy operator, see above
 		*/
 		inline void operator=(const ref &p) throw()
-		{if (ptr) c.release(ptr); ptr=p.ptr; if(ptr) c.pin(ptr);}
+		{if (ptr) intrusive_ptr_release(ptr); ptr=p.ptr; if(ptr) intrusive_ptr_add_ref(ptr);}
 		
 		/**
 			\brief initialize ref pointing to an object	
 			
 			This will increase the reference counter of the target object
 		*/
-		template<typename X, typename Y>
-		inline ref(const ref<X, Y> &p) throw() : ptr(p.ptr) {c.pin(ptr);}
+		template<typename X>
+		inline ref(const ref<X> &p) throw() : ptr(p.ptr) {intrusive_ptr_add_ref(ptr);}
 		
 		/**
 			\brief point reference to different object
@@ -545,9 +551,9 @@ namespace tscb {
 			This will increase the reference counter of the new target object
 			and decrease the reference counter of the old target object
 		*/
-		template<typename X, typename Y>
-		inline void operator=(const ref<X, Y> &p) throw()
-		{if (ptr) c.release(ptr); ptr=p.ptr; if(ptr) c.pin(ptr);}
+		template<typename X>
+		inline void operator=(const ref<X> &p) throw()
+		{if (ptr) intrusive_ptr_release(ptr); ptr=p.ptr; if(ptr) intrusive_ptr_add_ref(ptr);}
 		
 		/* special assignment from transfer objects: object ownership is
 		conveyed through ref_transfer/ref_return object, so MUST NOT
@@ -562,8 +568,8 @@ namespace tscb {
 			the transfer proxy object. However, the reference counter
 			of the previous target object is decreased.
 		*/
-		template<typename X, typename Y>
-		inline ref(const ref_transfer<X, Y> &r) {ptr=r.unassign();}
+		template<typename X>
+		inline ref(const ref_transfer<X> &r) {ptr=r.unassign();}
 		
 		/**
 			\brief point reference to different object, take over reference
@@ -576,7 +582,7 @@ namespace tscb {
 			of the previous target object is decreased.
 		*/
 		inline void operator=(const ref_transfer<T> &r) throw()
-		{if (ptr) c.release(ptr); ptr=r.unassign();}
+		{if (ptr) intrusive_ptr_release(ptr); ptr=r.unassign();}
 		
 		/**
 			\brief point reference to different object, take over reference
@@ -590,7 +596,7 @@ namespace tscb {
 		*/
 		template<typename X>
 		inline void operator=(const ref_transfer<X> &r) throw()
-		{if (ptr) c.release(ptr); ptr=r.unassign();}
+		{if (ptr) intrusive_ptr_release(ptr); ptr=r.unassign();}
 		
 		/* comparison and testing for 0 */
 		/**
@@ -633,7 +639,7 @@ namespace tscb {
 			is decreased). This is useful to transfer a reference into
 			a ref object when the caller knows what he is doing.
 		*/
-		inline void assign(T *p) throw() {if (ptr) c.release(ptr); ptr=p;}
+		inline void assign(T *p) throw() {if (ptr) intrusive_ptr_release(ptr); ptr=p;}
 		/**
 			\brief unassign object without dropping reference counter
 			
@@ -656,7 +662,7 @@ namespace tscb {
 			object, or 0 if the cast failed.
 		*/
 		template <typename X>
-		ref_transfer<X> cast_dynamic(void) const throw()
+		inline ref_transfer<X> cast_dynamic(void) const throw()
 		{
 			X *x=dynamic_cast<X *>(ptr);
 			if (x) {
@@ -666,7 +672,6 @@ namespace tscb {
 		}
 		
 		T *ptr;
-		C c;
 	};
 	
 	/**
@@ -676,7 +681,7 @@ namespace tscb {
 		ref object without temporarily bumping the reference counter in
 		between
 	*/
-	template<typename T, typename C>
+	template<typename T>
 	class ref_transfer {
 	public:
 		/**
@@ -687,7 +692,7 @@ namespace tscb {
 			the reference counter; the ref_transfer object can then be
 			used to assign this acquired reference to a different ref object.
 		*/
-		ref_transfer(ref<T, C>& r) throw() {ptr=r.unassign();}
+		inline ref_transfer(ref<T>& r) throw() {ptr=r.unassign();}
 		/**
 			\brief take over reference from a ref_transfer object
 			
@@ -695,7 +700,7 @@ namespace tscb {
 			object; this just prolongs the chain and is equivalent to directly
 			assigning to this ref where the original ref got its object from.
 		*/
-		ref_transfer(ref_transfer& r) throw() {ptr=r.unassign();}
+		inline ref_transfer(ref_transfer& r) throw() {ptr=r.unassign();}
 		/**
 			\brief take over reference from a pointer
 			
@@ -704,7 +709,7 @@ namespace tscb {
 			acquired for this pointer (most likely by calling \c pin on
 			the target object).
 		*/
-		ref_transfer(T* r) throw() {ptr=r;}
+		inline ref_transfer(T* r) throw() {ptr=r;}
 		/**
 			\brief release reference on destruction
 			
@@ -713,12 +718,12 @@ namespace tscb {
 			reference, it is sufficient to assign from the ref_transfer
 			to a ref object, or use the \ref unassign method.
 		*/
-		~ref_transfer(void) throw() {if (ptr) c.release(ptr);}
+		inline ~ref_transfer(void) throw() {if (ptr) intrusive_ptr_release(ptr);}
 	
-		template<typename X, typename Y>
-		ref_transfer(ref<X, Y>& r) throw() {ptr=r; r.unassign();}
-		template<typename X, typename Y>
-		ref_transfer(const ref_transfer<X, Y>& r) throw() {ptr=r.unassign();}
+		template<typename X>
+		inline ref_transfer(ref<X>& r) throw() {ptr=r; r.unassign();}
+		template<typename X>
+		inline ref_transfer(const ref_transfer<X>& r) throw() {ptr=r.unassign();}
 		
 		/**
 			\brief take over reference into a pointer
@@ -748,7 +753,6 @@ namespace tscb {
 		*/
 		inline operator T *(void) throw() {return unassign();}
 	private:
-		C c;
 		mutable T *ptr;
 		friend class ref<T>;
 	};
