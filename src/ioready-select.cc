@@ -6,6 +6,8 @@
  * Refer to the file "COPYING" for details.
  */
 
+#include <string.h>
+
 #include <tscb/ioready-select>
 
 namespace tscb {

@@ -7,6 +7,7 @@
  */
 
 #include <sys/fcntl.h>
+#include <string.h>
 
 #include <tscb/ioready-poll>
 

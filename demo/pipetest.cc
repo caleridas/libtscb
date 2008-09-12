@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include <tscb/thread>
 #include <tscb/ioready>

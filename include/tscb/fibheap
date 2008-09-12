@@ -9,7 +9,6 @@
 #ifndef __TSCB_FIBHEAP_H
 #define __TSCB_FIBHEAP_H
 
-
 /**
 	\page fibheap_descr Fibonacci Heap
 	
@@ -36,6 +35,8 @@
 	Fibonacci heaps are the data structure of choice for implementing
 	priority queues, and are also commonly used in graph algorithms.
 */
+
+#include <string.h>
 
 #include <functional>
 
