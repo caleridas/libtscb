@@ -77,7 +77,7 @@
 	\code
 		class TimerContext;
 		
-		void onTimer(TimerContext *ctx, long long time) throw()
+		bool onTimer(TimerContext *ctx, long long time) throw()
 		{
 			// perform timer action
 			timer+=1000;
@@ -899,11 +899,11 @@ namespace tscb {
 	typedef ref<timer_callback_link> timer_callback;
 	
 	/**
-		\brief Timer service using 64 bit integers to represent time values
+		\brief Timer service using 64 bit integers to represent time values as usecs
 	*/
 	typedef generic_timer_service<long long> timer_service;
 	/**
-		\brief Timer dispatcher using 64 bit integers to represent time values
+		\brief Timer dispatcher using 64 bit integers to represent time values as usecs
 	*/
 	typedef generic_timerqueue_dispatcher<long long> timerqueue_dispatcher;
 	
