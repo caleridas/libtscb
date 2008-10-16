@@ -732,6 +732,7 @@ namespace tscb {
 				queue_mutex.unlock();
 				return true;
 			}
+			queue_mutex.unlock();
 			return false;
 		}
 		
