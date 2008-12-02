@@ -151,7 +151,7 @@ namespace tscb {
 				root=subnode;
 			}
 			subnode->*parent=0;
-			(subnode->*degree)++;
+			root_degree++;
 		}
 	public:
 		inline fibheap(void)
@@ -305,6 +305,42 @@ namespace tscb {
 		{
 			while (extract_min()) {}
 		}
+		
+		#ifdef FIBHEAP_DEBUG
+		
+		inline void assert_structure(void)
+		{
+			if (root) assert_structure_recursive(root, root_degree);
+		}
+		
+		inline void assert_structure_recursive(Node *current, int _degree)
+		{
+			Node *tmp=current;
+			
+			int count=0;
+			do {
+				if (!le(*current, *tmp)) {
+					fprintf(stderr, "%p > %p\n", current, tmp);
+					abort();
+				}
+				if (tmp->*child) {
+					if (!le(*tmp, *(tmp->*child))) {
+						fprintf(stderr, "%p > %p (child) \n", current, tmp);
+						abort();
+					}
+					assert_structure_recursive(tmp->*child, tmp->*degree);
+				}
+				tmp=tmp->*next;
+				count++;
+			} while(tmp!=current);
+			
+			if (_degree!=count) {
+				fprintf(stderr, "%p: degree=%d, count=%d\n", current, _degree, count);
+				abort();
+			}
+		}
+		
+		#endif
 		
 	private:
 		Less lt;

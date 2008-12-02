@@ -4,7 +4,7 @@
 # it under the terms of the GNU Lesser General Public License version 2.
 # Refer to the file "COPYING" for details.
 
-TESTS=list atomic ref callback deferred timer
+TESTS=list atomic ref callback deferred timer fibheap
 
 ifeq ($(DISPATCHER_POLL), yes)
   TESTS+=ioready-poll
