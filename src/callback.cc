@@ -16,8 +16,4 @@ namespace tscb {
 	{
 	}
 	
-	void callback_link::cancelled(void) throw()
-	{
-	}	
-	
 }; /* namespace callback */

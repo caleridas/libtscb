@@ -12,11 +12,15 @@
  */
 
 #include <vector>
+#include <boost/bind.hpp>
+
 #include <unistd.h>
 #include <fcntl.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+#include <boost/date_time/posix_time/posix_time_types.hpp>
 
 #include <tscb/thread>
 #include <tscb/ioready>
@@ -73,7 +77,7 @@ public:
 	void count(void);
 	
 	int counter, iterations;
-	long long begin;
+	boost::posix_time::ptime begin;
 	double loopspersecond;
 	
 	volatile bool finished;
@@ -83,7 +87,7 @@ perfcounter::perfcounter(void)
 {
 	counter=0;
 	iterations=256;
-	begin=tscb::current_time();
+	begin=boost::posix_time::microsec_clock::universal_time();
 	loopspersecond=0;
 	finished=false;
 }
@@ -93,8 +97,9 @@ void perfcounter::count(void)
 	if (!finished) {
 		counter++;
 		if (counter>=iterations) {
-			long long end=tscb::current_time();
-			long long d=end-begin;
+			boost::posix_time::ptime end;
+			end=boost::posix_time::microsec_clock::universal_time();
+			long long d=(end-begin).total_microseconds();
 			if (d/1000000>=second_threshold) {
 				loopspersecond=counter*1000000.0/d;
 				finished=true;
@@ -115,7 +120,7 @@ public:
 	void pass_token(int fd, int event);
 	void release(void);
 	
-	tscb::ref<tscb::ioready_callback_link> link;
+	tscb::ioready_callback link;
 private:
 	int from, to;
 	perfcounter &counter;
@@ -126,8 +131,10 @@ std::vector<receiver *> receivers;
 receiver::receiver(tscb::ioready_service *io, int _from, int _to, perfcounter &_counter)
 	: counter(_counter)
 {
-	link=io->watch<receiver, &receiver::pass_token, &receiver::release>
-		(_from, tscb::EVMASK_INPUT, this);
+	link=io->watch(boost::bind(&receiver::pass_token, this, _from, _1),
+		_from, tscb::EVMASK_INPUT);
+	//link=io->watch<receiver, &receiver::pass_token, &receiver::release>
+	//	(_from, tscb::EVMASK_INPUT, this);
 	from=_from;
 	to=_to;
 }

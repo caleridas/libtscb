@@ -1,11 +1,13 @@
+#include <boost/bind.hpp>
+#include <boost/date_time/posix_time/posix_time_types.hpp>
+
 #include <stdio.h>
 #include <tscb/atomic>
-#include <tscb/timer>
 #include <tscb/thread>
 #include <tscb/deferred>
 #include <tscb/callback>
 
-long long start, end;
+boost::posix_time::ptime start, end;
 
 volatile long var;
 tscb::atomic atomic_var;
@@ -66,41 +68,36 @@ void deferred_rwlock_write_lockunlock(int times)
 class CallbackReceiver {
 public:
 	void callback(int arg) {}
-	inline void release(void) {}
 };
 
 CallbackReceiver receiver;
 
 int ncallbacks;
 
-void callback(int times)
+void callback_obj(int times)
 {
-	tscb::callback_chain<int> chain;
+	tscb::callback_chain<void (int)> chain;
 	
 	int num=ncallbacks;
 	
 	while(num--)
-		chain.connect<CallbackReceiver, &CallbackReceiver::callback, &CallbackReceiver::release>
-			(&receiver);
+		chain.connect(boost::bind(&CallbackReceiver::callback, &receiver, _1));
 	
 	while(times--)
 		chain(0);
 }
 
-inline void callback_fn(int dummy, int n)
-{}
-
-inline void release(int dummy)
+inline void callback_fn(int n)
 {}
 
 void callback_function(int times)
 {
-	tscb::callback_chain<int> chain;
+	tscb::callback_chain<void (int)> chain;
 	
 	int num=ncallbacks;
 	
 	while(num--)
-		chain.connect<int, &callback_fn, &release>(0);
+		chain.connect(&callback_fn);
 	
 	while(times--)
 		chain(0);
@@ -110,18 +107,8 @@ struct simple_cb;
 
 struct simple_cb {
 	simple_cb *prev, *next;
-	void (*fn)(void *closure, int arg);
-	void *closure;
-	
-	/*
-	int refcount;
-	void *dummy1, *dummy2, *dummy3;
-	tscb::mutex m;*/
+	boost::function<void (int)> fn;
 };
-
-void function(void *closure, int arg)
-{
-}
 
 void simple_cb(int times)
 {
@@ -131,13 +118,12 @@ void simple_cb(int times)
 		struct simple_cb *tmp=new struct simple_cb;
 		tmp->next=cb;
 		cb=tmp;
-		tmp->closure=0;
-		tmp->fn=function;
+		tmp->fn=callback_fn;
 	}
 	while(--times) {
 		struct simple_cb *tmp=cb;
 		while(tmp) {
-			(tmp->fn)(tmp->closure, 0);
+			(tmp->fn)(0);
 			tmp=tmp->next;
 		}
 	}
@@ -148,14 +134,14 @@ void run(void (*function)(int times), const char *description)
 	long times=128;
 	
 	while(1) {
-		start=tscb::current_time();
+		start=boost::posix_time::microsec_clock::universal_time();
 		function(times);
-		end=tscb::current_time();
-		if ((end-start)>=500000) break;
+		end=boost::posix_time::microsec_clock::universal_time();
+		if ((end-start).total_microseconds()>=500000) break;
 		times=times*2;
 	}
 	
-	double usec=end-start;
+	double usec=(end-start).total_microseconds();
 	double ops=times/usec*1000000;
 	double nsec=usec/times*1000;
 	
@@ -173,57 +159,57 @@ int main()
 	run(deferred_rwlock_write_lockunlock, "rwlock write_lock+write_unlock");
 	ncallbacks=0;
 	printf("Empty chain\n");
-	run(callback, "Callback chain, member fn");
+	run(callback_obj, "Callback chain, member fn");
 	run(callback_function, "Callback chain, static fn");
 	run(simple_cb, "Simple callback, static fn");
 	ncallbacks=1;
 	printf("Single function\n");
-	run(callback, "Callback chain, member fn");
+	run(callback_obj, "Callback chain, member fn");
 	run(callback_function, "Callback chain, static fn");
 	run(simple_cb, "Simple callback, static fn");
 	ncallbacks=2;
 	printf("%d functions\n", ncallbacks);
-	run(callback, "Callback chain, member fn");
+	run(callback_obj, "Callback chain, member fn");
 	run(callback_function, "Callback chain, static fn");
 	run(simple_cb, "Simple callback, static fn");
 	ncallbacks=3;
 	printf("%d functions\n", ncallbacks);
-	run(callback, "Callback chain, member fn");
+	run(callback_obj, "Callback chain, member fn");
 	run(callback_function, "Callback chain, static fn");
 	run(simple_cb, "Simple callback, static fn");
 	ncallbacks=4;
 	printf("%d functions\n", ncallbacks);
-	run(callback, "Callback chain, member fn");
+	run(callback_obj, "Callback chain, member fn");
 	run(callback_function, "Callback chain, static fn");
 	run(simple_cb, "Simple callback, static fn");
 	ncallbacks=5;
 	printf("%d functions\n", ncallbacks);
-	run(callback, "Callback chain, member fn");
+	run(callback_obj, "Callback chain, member fn");
 	run(callback_function, "Callback chain, static fn");
 	run(simple_cb, "Simple callback, static fn");
 	ncallbacks=10;
 	printf("%d functions\n", ncallbacks);
-	run(callback, "Callback chain, member fn");
+	run(callback_obj, "Callback chain, member fn");
 	run(callback_function, "Callback chain, static fn");
 	run(simple_cb, "Simple callback, static fn");
 	ncallbacks=15;
 	printf("%d functions\n", ncallbacks);
-	run(callback, "Callback chain, member fn");
+	run(callback_obj, "Callback chain, member fn");
 	run(callback_function, "Callback chain, static fn");
 	run(simple_cb, "Simple callback, static fn");
 	ncallbacks=20;
 	printf("%d functions\n", ncallbacks);
-	run(callback, "Callback chain, member fn");
+	run(callback_obj, "Callback chain, member fn");
 	run(callback_function, "Callback chain, static fn");
 	run(simple_cb, "Simple callback, static fn");
 	ncallbacks=30;
 	printf("%d functions\n", ncallbacks);
-	run(callback, "Callback chain, member fn");
+	run(callback_obj, "Callback chain, member fn");
 	run(callback_function, "Callback chain, static fn");
 	run(simple_cb, "Simple callback, static fn");
 	ncallbacks=40;
 	printf("%d functions\n", ncallbacks);
-	run(callback, "Callback chain, member fn");
+	run(callback_obj, "Callback chain, member fn");
 	run(callback_function, "Callback chain, static fn");
 	run(simple_cb, "Simple callback, static fn");
 }

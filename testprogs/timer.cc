@@ -6,6 +6,8 @@
  * Refer to the file "COPYING" for details.
  */
 
+#include <boost/bind.hpp>
+
 #define private public
 #define protected public
 
@@ -31,16 +33,16 @@ my_eventflag flag;
 int called=0;
 int released=0;
 
-ref<callback_link> timer_link;
+timer_callback timer_link;
 
-bool my_fn(void *, long long &time)
+bool my_fn(long long &time)
 {
 	time++;
 	called++;
 	return true;
 }
 
-bool my_fn2(void *, long long &time)
+bool my_fn2(long long &time)
 {
 	time++;
 	called++;
@@ -57,21 +59,27 @@ void my_release(void *)
 
 class X {
 public:
+	X(void) : refcount(1) {}
 	bool fn(long long &t) {return false;}
-	void pin(void) {}
-	void release(void) {}
+	void pin(void) {refcount++;}
+	void release(void) {refcount--;}
+	
+	int refcount;
 };
 
 class Y {
 public:
+	Y(void) : refcount(1) {}
 	bool fn(long long &t) {timer_link->cancel(); return false;}
-	void pin(void) {}
-	void release(void) {}
+	void pin(void) {refcount++;}
+	void release(void) {refcount--;}
+	
+	int refcount;
 };
 
 void timer_tests(void)
 {
-	timerqueue_dispatcher tq(&flag);
+	generic_timerqueue_dispatcher<long long> tq(&flag);
 	
 	{
 		long long zero(0);
@@ -88,7 +96,8 @@ void timer_tests(void)
 	{
 		called=0;
 		long long time(0);
-		timer_link=tq.timer<void *, &my_fn, &my_release>(time, (void *)0);
+		
+		timer_link=tq.timer(my_fn, time);
 		ASSERT(timer_link->refcount==2);
 		
 		ASSERT(flag.flagged==true);
@@ -112,33 +121,35 @@ void timer_tests(void)
 	
 	{
 		long long time(0);
-		timer_link=tq.timer<void *, &my_fn2, &my_release>(time, (void *)0);
+		timer_link=tq.timer(my_fn2, time);
 		
 		called=0; released=0;
 		tq.run_queue(time);
 		ASSERT(called==1);
-		ASSERT(released==1);
 		ASSERT(timer_link->refcount==1);
 	}
 	
 	{
 		X x;
 		long long time(0);
-		timer_link=tq.timer<X, &X::fn, &X::release>(time, &x);
+		timer_link=tq.timer(boost::bind(&X::fn, &x, _1), time);
 		timer_link->cancel();
 		ASSERT(timer_link->refcount==1);
 	}
 	{
 		X x;
 		long long time(0);
-		timer_link=tq.ref_timer<X, &X::fn>(time, &x);
+		ASSERT(x.refcount==1);
+		timer_link=tq.timer(boost::bind(&X::fn, boost::intrusive_ptr<X>(&x), _1), time);
+		ASSERT(x.refcount==2);
 		timer_link->cancel();
+		ASSERT(x.refcount==1);
 		ASSERT(timer_link->refcount==1);
 	}
 	{
 		Y y;
 		long long time(0);
-		timer_link=tq.ref_timer<Y, &Y::fn>(time, &y);
+		timer_link=tq.timer(boost::bind(&Y::fn, boost::intrusive_ptr<Y>(&y), _1), time);
 		tq.run_queue(time);
 	}
 }

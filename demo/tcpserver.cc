@@ -6,6 +6,9 @@
  * Refer to the file "COPYING" for details.
  */
 
+#include <boost/bind.hpp>
+#include <boost/intrusive_ptr.hpp>
+
 #include <stdio.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -23,37 +26,62 @@ class echo {
 public:
 	echo(tscb::ioready_service *service, int _fd);
 	~echo(void);
+	
+	inline void pin(void) {refcount++;}
+	inline void release(void) {if (!--refcount) delete this;}
+	
+	tscb::atomic refcount;
 private:
-	void data(int fd, int event);
+	void data(int event);
 	void destroy(void);
 	
 	int fd;
 	tscb::ioready_callback link;
 	tscb::ioready_service *service;
 };
+
+static inline void intrusive_ptr_add_ref(echo *e) throw()
+{
+	e->refcount++;
+}
+static inline void intrusive_ptr_release(echo *e) throw()
+{
+	if (!--e->refcount) delete e;
+}
 
 class acceptor {
 public:
 	acceptor(tscb::ioready_service *service, int _fd);
 	
+	tscb::atomic refcount;
 private:
-	void connection_request(int fd, int event);
-	void destroy(void);
+	void connection_request(int event);
 	
 	int fd;
 	tscb::ioready_callback link;
 	tscb::ioready_service *service;
 };
 
+static inline void intrusive_ptr_add_ref(acceptor *a) throw()
+{
+	a->refcount++;
+}
+static inline void intrusive_ptr_release(acceptor *a) throw()
+{
+	if (!--a->refcount) delete a;
+}
+
 echo::echo(tscb::ioready_service *_service, int _fd)
 	: fd(_fd), service(_service)
 {
-	link=service->watch<echo, &echo::data, &echo::destroy>
-		(fd, tscb::EVMASK_INPUT, this);
-	
 	int flags=fcntl(fd, F_GETFL);
 	flags |= O_NONBLOCK;
 	fcntl(fd, F_SETFL, flags);
+	
+	link=service->watch(boost::bind(&echo::data, boost::intrusive_ptr<echo>(this), _1),
+		fd, tscb::EVMASK_INPUT);
+	//link=service->watch<echo, &echo::data, &echo::destroy>
+	//	(fd, tscb::EVMASK_INPUT, this);
 }
 
 echo::~echo(void)
@@ -62,7 +90,7 @@ echo::~echo(void)
 	close(fd);
 }
 
-void echo::data(int _fd, int event)
+void echo::data(int event)
 {
 	char buffer[16384];
 	int n;
@@ -81,23 +109,18 @@ void echo::data(int _fd, int event)
 	} while(n==16384);
 }
 
-void echo::destroy(void)
-{
-	delete this;
-}
-
 acceptor::acceptor(tscb::ioready_service *_service, int _fd)
 	: fd(_fd), service(_service)
 {
-	link=service->watch<acceptor, &acceptor::connection_request, &acceptor::destroy>
-		(fd, tscb::EVMASK_INPUT, this);
-	
 	int flags=fcntl(fd, F_GETFL);
 	flags |= O_NONBLOCK;
 	fcntl(fd, F_SETFL, flags);
+	
+	link=service->watch(boost::bind(&acceptor::connection_request,
+		boost::intrusive_ptr<acceptor>(this), _1), fd, tscb::EVMASK_INPUT);
 }
 
-void acceptor::connection_request(int _fd, int event)
+void acceptor::connection_request(int event)
 {
 	int s;
 	s=accept(fd, 0, 0);
@@ -105,11 +128,6 @@ void acceptor::connection_request(int _fd, int event)
 		new echo(service, s);
 		s=accept(fd, 0, 0);
 	}
-}
-
-void acceptor::destroy(void)
-{
-	delete this;
 }
 
 int main(int argc, char **argv)

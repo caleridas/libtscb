@@ -6,6 +6,8 @@
  * Refer to the file "COPYING" for details.
  */
 
+#include <boost/bind.hpp>
+
 #define private public
 #define protected public
 
@@ -23,30 +25,28 @@ void function(int *closure, int fd, int event)
 	*closure=1;
 }
 
-void release(int *closure)
-{
-}
-
 class Target {
 public:
 	Target(void) : called(false) {}
-	void function(int fd, int event)
+	void function(int event)
 	{
 		called=true;
-	}
-	void release(void)
-	{
 	}
 	bool called;
 };
 
+class Target2;
+
+static inline void intrusive_ptr_add_ref(Target2 *t) throw();
+static inline void intrusive_ptr_release(Target2 *t) throw();
+
 class Target2 {
 public:
 	Target2(ioready_service *srv, int fd)
-		: called(false), cancelled(false)
+		: called(false), refcount(1)
 	{
-		link=srv->watch<Target2, &Target2::input, &Target2::cleanup>
-			(fd, EVMASK_INPUT, this);
+		link=srv->watch(boost::bind(&Target2::input, boost::intrusive_ptr<Target2>(this), fd, _1), fd, EVMASK_INPUT);
+		ASSERT(refcount==2);
 	}
 	
 	void input(int fd, int event)
@@ -55,21 +55,37 @@ public:
 		read(fd, &c, 1);
 		called=true;
 		link->cancel();
-		ASSERT(!cancelled);
+		ASSERT(refcount==2);
 	}
 	
-	void cleanup(void)
+	void pin(void)
 	{
-		cancelled=true;
+		refcount++;
+	}
+	
+	void release(void)
+	{
+		refcount--;
 	}
 	
 	ioready_callback link;
-	bool called, cancelled;
+	bool called;
+	int refcount;
 };
+
+static inline void intrusive_ptr_add_ref(Target2 *t) throw()
+{
+	t->pin();
+}
+
+static inline void intrusive_ptr_release(Target2 *t) throw()
+{
+	t->release();
+}
 
 void test_dispatcher(ioready_dispatcher *d)
 {
-	long long t(0);
+	boost::posix_time::time_duration t(0);
 	/* verify that an empty dispatcher in fact does nothing */
 	{
 		int count=d->dispatch(&t);
@@ -84,8 +100,8 @@ void test_dispatcher(ioready_dispatcher *d)
 		
 		int called=0;
 		
-		ref<ioready_callback_link> link=d->watch<int *, function, release>(
-			pipefd[0], EVMASK_INPUT, &called);
+		tscb::ioready_callback link=d->watch(boost::bind(function, &called, pipefd[0], _1),
+			pipefd[0], EVMASK_INPUT);
 		
 		int count=d->dispatch(&t);
 		ASSERT(count==0);
@@ -128,8 +144,8 @@ void test_dispatcher(ioready_dispatcher *d)
 		
 		Target target;
 		
-		ref<ioready_callback_link> link=d->watch<Target, &Target::function, &Target::release>(
-			pipefd[0], EVMASK_INPUT, &target);
+		tscb::ioready_callback link=d->watch(boost::bind(&Target::function, &target, _1),
+			pipefd[0], EVMASK_INPUT);
 		
 		int count;
 		write(pipefd[1], &count, 1);
@@ -159,7 +175,7 @@ void test_dispatcher(ioready_dispatcher *d)
 		count=d->dispatch(&t);
 		ASSERT(count==1);
 		ASSERT(target.called==1);
-		ASSERT(target.cancelled);
+		ASSERT(target.refcount==1);
 		
 		write(pipefd[1], &count, 1);
 		count=d->dispatch(&t);
@@ -195,7 +211,6 @@ void test_dispatcher_threading(ioready_dispatcher *d)
 		pthread_create(&thread, 0, &run_dispatcher, d);
 		
 		usleep(10*1000);
-		//sleep(1);
 		
 		int pipefd[2];
 		int oserror=pipe(pipefd);
@@ -203,21 +218,18 @@ void test_dispatcher_threading(ioready_dispatcher *d)
 		
 		int called=0;
 		
-		ref<ioready_callback_link> link=d->watch<int *, function, release>(
-			pipefd[0], EVMASK_INPUT, &called);
+		tscb::ioready_callback link=d->watch(boost::bind(function, &called, pipefd[0], _1),
+			pipefd[0], EVMASK_INPUT);
 		
 		write(pipefd[1], &called, 1);
 		
 		usleep(10*1000);
-		//sleep(1);
 		
 		ASSERT(called==1);
 		
 		cancel_dispatching=1;
 		
 		evflag->set();
-		
-		//write(pipefd[1], &called, 1);
 		
 		pthread_join(thread, 0);
 		link->cancel();

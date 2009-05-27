@@ -6,6 +6,8 @@
  * Refer to the file "COPYING" for details.
  */
 
+#include <boost/bind.hpp>
+
 #include <tscb/ioready-kqueue>
 
 namespace tscb {
@@ -71,7 +73,7 @@ namespace tscb {
 			while(link) {
 				data_dependence_memory_barrier();
 				if (ev&link->event_mask) {
-					(*link)(ev&link->event_mask);
+					link->target(ev&link->event_mask);
 				}
 				link=link->active_next;
 			}
@@ -80,15 +82,15 @@ namespace tscb {
 		if (guard.read_unlock()) synchronize();
 	}
 	
-	int ioready_dispatcher_kqueue::dispatch(const long long *timeout, int max)
+	int ioready_dispatcher_kqueue::dispatch(const boost::posix_time::time_duration *timeout, int max)
 		throw()
 	{
 		pipe_eventflag *evflag=wakeup_flag;
 		
 		struct timespec tv, *t;
 		if (timeout) {
-			tv.tv_sec=*timeout/1000000;
-			tv.tv_nsec=(*timeout%1000000)*1000;
+			tv.tv_sec=timeout->total_seconds();
+			tv.tv_nsec=timeout->total_nanoseconds()%1000000000;
 			t=&tv;
 		} else t=0;
 		
@@ -139,10 +141,8 @@ namespace tscb {
 		pipe_eventflag *tmp=0;
 		try {
 			tmp=new pipe_eventflag();
-			watch<ioready_dispatcher_kqueue,
-				&ioready_dispatcher_kqueue::drain_queue,
-				&ioready_dispatcher_kqueue::release_queue>
-				(tmp->readfd, EVMASK_INPUT, this);
+			watch(boost::bind(&ioready_dispatcher_kqueue::drain_queue, this),
+				tmp->readfd, EVMASK_INPUT);
 		}
 		catch (std::bad_alloc) {
 			delete tmp;
@@ -203,7 +203,7 @@ namespace tscb {
 		callback_tab.set_closure(fd, (void *)newevmask);
 	}
 	
-	void ioready_dispatcher_kqueue::register_ioready_callback(tscb::ref<ioready_callback_link> link)
+	void ioready_dispatcher_kqueue::register_ioready_callback(ioready_callback_link *link)
 		throw(std::bad_alloc)
 	{
 		bool sync=guard.write_lock_async();
@@ -214,15 +214,13 @@ namespace tscb {
 		catch (std::bad_alloc) {
 			if (sync) synchronize();
 			else guard.write_unlock_async();
+			delete link;
 			throw;
 		}
 
 		update_evmask(link->fd);
 		
 		link->service=this;
-		
-		/* object ownership has been taken over by chain */
-		link.unassign();
 		
 		if (sync) synchronize();
 		else guard.write_unlock_async();
@@ -261,11 +259,7 @@ namespace tscb {
 		else guard.write_unlock_async();
 	}
 	
-	void ioready_dispatcher_kqueue::drain_queue(int fd, int event_mask) throw()
-	{
-	}
-	
-	void ioready_dispatcher_kqueue::release_queue(void) throw()
+	void ioready_dispatcher_kqueue::drain_queue(void) throw()
 	{
 	}
 	

@@ -23,18 +23,18 @@ namespace tscb {
 			return;
 		}
 		
-		long long now=current_time();
-		long long t=now;
+		boost::posix_time::ptime now=boost::posix_time::microsec_clock::universal_time();
+		boost::posix_time::ptime t=now;
 		bool pending;
 		do {
 			t=now;
 			pending=tq->run_queue(t);
 			if (!pending) break;
-			now=current_time();
+			now=boost::posix_time::microsec_clock::universal_time();
 		} while(now>=t);
 		
 		if (pending) {
-			long long timeout=t-now;
+			boost::posix_time::time_duration timeout=t-now;
 			io->dispatch(&timeout);
 		} else io->dispatch(0);
 	}

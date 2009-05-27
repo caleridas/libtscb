@@ -99,6 +99,9 @@ namespace tscb {
 			possible attributes.
 		*/
 		inline mutex(const pthread_mutexattr_t *attr) throw();
+		inline mutex(int attributes) throw();
+		
+		static const int recursive=1;
 		
 		/** \brief Exposed handle for low-level access */
 		pthread_mutex_t m;
@@ -219,6 +222,16 @@ namespace tscb {
 	inline mutex::~mutex(void) throw() {pthread_mutex_destroy(&m);}
 	inline mutex::mutex(const pthread_mutexattr_t *attr) throw()
 	{pthread_mutex_init(&m, attr);}
+	inline mutex::mutex(int attributes) throw()
+	{
+		pthread_mutexattr_t attr;
+		pthread_mutexattr_init(&attr);
+		
+		if (attributes & recursive) pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE_NP);
+		
+		pthread_mutex_init(&m, &attr);
+		pthread_mutexattr_destroy(&attr);
+	}
 	inline void mutex::lock(void) throw() {pthread_mutex_lock(&m);}
 	inline bool mutex::trylock(void) throw()
 	{return pthread_mutex_trylock(&m)==0;}

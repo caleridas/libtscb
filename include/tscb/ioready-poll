@@ -38,11 +38,11 @@ namespace tscb {
 			throw(std::bad_alloc, std::runtime_error);
 		virtual ~ioready_dispatcher_poll(void) throw();
 		
-		virtual int dispatch(const long long *timeout, int max) throw();
+		virtual int dispatch(const boost::posix_time::time_duration *timeout, int max) throw();
 		
 		virtual eventflag *get_eventflag(void) throw();
 		
-		virtual void register_ioready_callback(tscb::ref<ioready_callback_link> l)
+		virtual void register_ioready_callback(ioready_callback_link *l)
 			throw(std::bad_alloc);
 		virtual void unregister_ioready_callback(ioready_callback_link *e)
 			throw();
@@ -79,10 +79,9 @@ namespace tscb {
 		
 		pipe_eventflag wakeup_flag;
 		
-		ref<ioready_callback_link> pipe_callback;
+		ioready_callback pipe_callback;
 	private:
-		void drain_queue(int fd, int event_mask) throw();
-		void release_queue(void) throw();
+		void drain_queue(void) throw();
 	};
 	
 }

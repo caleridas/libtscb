@@ -6,6 +6,5 @@ ioready-poll
 ioready-select
 ioready-kqueue
 list
-ref
 timer
 fibheap

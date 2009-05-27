@@ -261,6 +261,7 @@
 
 #include <new>
 
+#include <boost/date_time/posix_time/posix_time_types.hpp>
 #include <tscb/ref>
 #include <tscb/callback>
 #include <tscb/thread>
@@ -298,8 +299,9 @@ namespace tscb {
 	template<typename Timeval>
 	class generic_timer_callback_link : public callback_link {
 	public:
-		inline generic_timer_callback_link(Timeval _expires) throw()
-			: when(_expires)
+		inline generic_timer_callback_link(const boost::function<bool (Timeval &time)> &_target,
+			Timeval _expires) throw()
+			: target(_target), when(_expires)
 		{}
 		virtual ~generic_timer_callback_link(void) throw()
 		{}
@@ -340,8 +342,11 @@ namespace tscb {
 			else cancellation_mutex.unlock();
 		}
 		
-		virtual bool operator()(Timeval &now) throw()=0;
-
+		inline void cancelled(void) throw()
+		{
+			target=0;
+		}
+		
 		inline Timeval expires(void) const throw() {return when;}
 		
 		/* operators that affect and compare the timeout value */
@@ -356,6 +361,9 @@ namespace tscb {
 		
 		/* the following class members should not be touched
 		except by timer_service implementations */
+		
+		/* function to be called when timer expires */
+		boost::function<bool (Timeval &time)> target;
 		
 		/* when is the timer about to expire? */
 		Timeval when;
@@ -394,65 +402,6 @@ namespace tscb {
 			
 		*/
 	};
-	
-	/** \cond NEVER */
-	
-	template<typename Timeval, typename Context, bool (*function)(Context, Timeval &), void (*_release)(Context)>
-	class dynamic_timer_callback_link : public generic_timer_callback_link<Timeval> {
-	public:
-		dynamic_timer_callback_link(Timeval expires, Context _context) throw()
-			: generic_timer_callback_link<Timeval>(expires), context(_context)
-		{}
-		virtual ~dynamic_timer_callback_link(void) throw() {}
-		virtual bool operator()(Timeval &now) throw()
-		{
-			return (*function)(context, now);
-		}
-		virtual void cancelled(void) throw() {(*_release)(context);}
-	protected:
-		Context context;
-	};
-	
-	template<typename Timeval, typename Target, bool (Target::*function)(Timeval &), void (Target::*_release)(void)>
-	class dynamicobj_timer_callback_link : public generic_timer_callback_link<Timeval> {
-	public:
-		dynamicobj_timer_callback_link(Timeval expires, Target *_target) throw()
-			: generic_timer_callback_link<Timeval>(expires), target(_target)
-		{}
-		virtual ~dynamicobj_timer_callback_link(void) throw() {}
-		virtual bool operator()(Timeval &now) throw()
-		{
-			return (target->*function)(now);
-		}
-		virtual void cancelled(void) throw()
-		{
-			(target->*_release)();
-		}
-	protected:
-		Target *target;
-	};
-	
-	template<typename Timeval, typename Target, bool (Target::*function)(Timeval &)>
-	class refobj_timer_callback_link : public generic_timer_callback_link<Timeval> {
-	public:
-		refobj_timer_callback_link(Timeval expires, ref<Target> _target) throw()
-			: generic_timer_callback_link<Timeval>(expires),
-			target(ref_transfer<Target>(_target))
-		{}
-		virtual ~refobj_timer_callback_link(void) throw() {}
-		virtual bool operator()(Timeval &now) throw()
-		{
-			return (target->*function)(now);
-		}
-		virtual void cancelled(void) throw()
-		{
-			target=0;
-		}
-	protected:
-		ref<Target> target;
-	};
-	
-	/** \endcond */
 	
 	/**
 		\brief Registration for timer events
@@ -513,16 +462,6 @@ namespace tscb {
 			<CODE>now</CODE> and return <CODE>true</CODE>, in which case it
 			will be called again at the new point in time.
 		*/
-		template<typename Context, bool (*function)(Context, Timeval &), void (*_release)(Context)>
-		inline ref_transfer<generic_timer_callback_link<Timeval> >
-		timer(Timeval expires, Context context)
-			throw(std::bad_alloc)
-		{
-			generic_timer_callback_link<Timeval> *link=
-				new dynamic_timer_callback_link<Timeval, Context, function, _release>(expires, context);
-			register_timer(link);
-			return link;
-		}
 		
 		/**
 			\brief register callback for timer event
@@ -560,54 +499,18 @@ namespace tscb {
 			<CODE>now</CODE> and return <CODE>true</CODE>, in which case it
 			will be called again at the new point in time.
 		*/
-		template<typename Target, bool (Target::*function)(Timeval &), void (Target::*_release)(void)>
-		inline ref_transfer<generic_timer_callback_link<Timeval> >
-		timer(Timeval expires, Target *instance)
-			throw(std::bad_alloc)
-		{
-			generic_timer_callback_link<Timeval> *link=
-				new dynamicobj_timer_callback_link<Timeval, Target, function, _release>
-				(expires, instance);
-			register_timer(link);
-			return link;
-		}
-		
-		
-		/*
-			\brief register callback for timer event to reference-counted target
-			
-			\param expires
-				The point in time when the callback should be executed
-			\param instance
-				Object instance to which notification should be delivered;
-				the member function <CODE>function</CODE> given as
-				template argument will be called for this instance
-			
-			Works exactly like \ref timer_event, but acquires a reference
-			to the target object that will be dropped when the callback
-			has been cancelled and the implementation can make sure it
-			will never be called again. See the explanation about
-			reference-counting \ref ref_descr "here".
-			
-			References to the target object are acquired and released by
-			calling the \c pin and \c release methods of the object.
-		*/
-		template<typename Target, bool (Target::*function)(Timeval &)>
-		inline ref_transfer<generic_timer_callback_link<Timeval> >
-		ref_timer(Timeval expires, ref<Target> instance)
-			throw(std::bad_alloc)
+		boost::intrusive_ptr<generic_timer_callback_link<Timeval> >
+		timer(const boost::function<bool (Timeval &)> &fn, Timeval expires) throw(std::bad_alloc)
 		{
 			generic_timer_callback_link<Timeval> *link;
-			
-			link=new refobj_timer_callback_link<Timeval, Target, function>(expires,
-				ref_transfer<Target>(instance));
+			link=new generic_timer_callback_link<Timeval>(fn, expires);
 			register_timer(link);
 			return link;
 		}
 		
 		/* internal functions; actual implementation of the timer callback
 		mechanism */
-		virtual void register_timer(ref<generic_timer_callback_link<Timeval> > t) throw()=0;
+		virtual void register_timer(generic_timer_callback_link<Timeval> *ptr) throw()=0;
 		virtual void unregister_timer(generic_timer_callback_link<Timeval> *t) throw()=0;
 	};
 	
@@ -776,7 +679,7 @@ namespace tscb {
 				queue_mutex.unlock();
 				
 				Timeval expires=time;
-				bool rearm=(*t)(expires);
+				bool rearm=t->target(expires);
 				
 				if (!rearm) {
 					t->cancellation_mutex.lock();
@@ -854,11 +757,9 @@ namespace tscb {
 			}
 		}
 		
-		virtual void register_timer(ref<generic_timer_callback_link<Timeval> > t) throw()
+		virtual void register_timer(generic_timer_callback_link<Timeval> *ptr) throw()
 		{
 			queue_mutex.lock();
-			
-			generic_timer_callback_link<Timeval> *ptr=t.unassign();
 			
 			timer_queue.insert(ptr);
 			bool needWakeup=(timer_queue.peek_min()==ptr) && !timer_queue_running;
@@ -897,16 +798,16 @@ namespace tscb {
 	
 	typedef generic_timer_callback_link<long long> timer_callback_link;
 	
-	typedef ref<timer_callback_link> timer_callback;
+	typedef boost::intrusive_ptr<timer_callback_link> timer_callback;
 	
 	/**
 		\brief Timer service using 64 bit integers to represent time values as usecs
 	*/
-	typedef generic_timer_service<long long> timer_service;
+	typedef generic_timer_service<boost::posix_time::ptime> timer_service;
 	/**
 		\brief Timer dispatcher using 64 bit integers to represent time values as usecs
 	*/
-	typedef generic_timerqueue_dispatcher<long long> timerqueue_dispatcher;
+	typedef generic_timerqueue_dispatcher<boost::posix_time::ptime> timerqueue_dispatcher;
 	
 }
 

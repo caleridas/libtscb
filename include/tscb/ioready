@@ -9,9 +9,6 @@
 #ifndef __TSCB_IOREADY_H
 #define __TSCB_IOREADY_H
 
-#include <tscb/eventflag>
-#include <tscb/callback>
-
 /**
 	\page ioready_descr I/O readiness callbacks
 	
@@ -246,6 +243,12 @@
 	</UL>
 */
 
+#include <boost/function.hpp>
+#include <boost/date_time/posix_time/posix_time_types.hpp>
+
+#include <tscb/eventflag>
+#include <tscb/callback>
+
 namespace tscb {
 	
 	class ioready_service;
@@ -289,8 +292,9 @@ namespace tscb {
 	*/
 	class ioready_callback_link : public callback_link {
 	public:
-		inline ioready_callback_link(int _fd, int _event_mask) throw()
-			: fd(_fd), event_mask(_event_mask)
+		inline ioready_callback_link(const boost::function<void (int)> &_target,
+			int _fd, int _event_mask) throw()
+			: target(_target), fd(_fd), event_mask(_event_mask)
 		{}
 		virtual ~ioready_callback_link(void) throw();
 		
@@ -324,6 +328,8 @@ namespace tscb {
 			
 		*/
 		virtual void cancel(void) throw();
+		
+		inline void cancelled(void) throw() {target=0;}
 		/**
 			\brief modify the mask of events the receiver is interested in
 			
@@ -343,9 +349,7 @@ namespace tscb {
 		*/
 		void modify(int new_event_mask) throw();
 		
-		/* called by the dispatcher */
-		virtual void operator()(int event)=0;
-		
+		boost::function<void(int)> target;
 		int fd, event_mask;
 		
 		ioready_callback_link *active_next, *prev, *next, *inactive_next;
@@ -357,7 +361,7 @@ namespace tscb {
 	/**
 		\brief IO readiness callback link
 	*/
-	typedef ref<ioready_callback_link> ioready_callback;
+	typedef boost::intrusive_ptr<ioready_callback_link> ioready_callback;
 	
 	/**
 		\brief Registration for IO readiness events
@@ -410,11 +414,7 @@ namespace tscb {
 				</LI>
 			</UL>
 		*/
-		template<typename Context, void (*function)(Context , int fd, int event), void (*release)(Context )>
-		inline ref_transfer<ioready_callback_link>
-		watch(int fd, int event_mask, Context context)
-			throw(std::bad_alloc);
-
+		
 		/**
 			\brief register callback for file event
 			
@@ -452,41 +452,18 @@ namespace tscb {
 				</LI>
 			</UL>
 		*/
-		template<typename Target, void (Target::*function)(int fd, int event), void (Target::*release)(void)>
-		inline ref_transfer<ioready_callback_link>
-		watch(int fd, int event_mask, Target *instance)
-			throw(std::bad_alloc);
-		
-		/*
-			\brief register callback for file event to reference-counted target
-			
-			\param fd
-				The file descriptor which should be monitored for events
-			\param event_mask
-				Set of events for which notification should be delivered
-			\param instance
-				Object instance to which notification should be delivered;
-				the member function <CODE>function</CODE> given as
-				template argument will be called for this instance
-			
-			Works exactly like \ref file_event, but acquires a reference
-			to the target object that will be dropped when the callback
-			has been cancelled and the implementation can make sure it
-			will never be called again. See the explanation about
-			reference-counting \ref ref_descr "here".
-			
-			References to the target object are acquired and released by
-			calling the \c pin and \c release methods of the object.
-		*/
-		template<class Target, void (Target::*function)(int fd, int event)>
-		inline ref_transfer<ioready_callback_link>
-		ref_watch(int fd, int event_mask, ref<Target> instance)
-			throw(std::bad_alloc);
+		boost::intrusive_ptr<ioready_callback_link>
+		watch(const boost::function<void(int)> &fn, int fd, int event_mask) throw(std::bad_alloc)
+		{
+			ioready_callback_link *link=new ioready_callback_link(fn, fd, event_mask);
+			register_ioready_callback(link);
+			return link;
+		}
 		
 		/* internal functions; actual implementation of the file event
 		callback mechanism */
 		friend class ioready_callback_link;
-		virtual void register_ioready_callback(tscb::ref<ioready_callback_link> l)
+		virtual void register_ioready_callback(ioready_callback_link *l)
 			throw(std::bad_alloc)=0;
 		virtual void unregister_ioready_callback(ioready_callback_link *e)
 			throw()=0;
@@ -603,7 +580,8 @@ namespace tscb {
 			may not be terribly useful, as some dispatchers will
 			dispatch every event by every thread.
 		*/
-		virtual int dispatch(const long long *timeout, int max=2147483647L)
+		virtual int dispatch(const boost::posix_time::time_duration *timeout,
+			int max=2147483647L)
 			throw()=0;
 		
 		/**
@@ -629,6 +607,10 @@ namespace tscb {
 		virtual eventflag *get_eventflag(void)
 			throw(std::bad_alloc, std::runtime_error)=0;
 		
+		static
+		ioready_dispatcher *
+		create(void) throw(std::bad_alloc, std::runtime_error);
+		
 	};
 	
 	/**
@@ -648,112 +630,6 @@ namespace tscb {
 	*/
 	ioready_dispatcher *
 	create_ioready_dispatcher(void) throw(std::bad_alloc, std::runtime_error);
-	
-	/** \cond NEVER */
-	template<typename Context, void (*function)(Context, int, int), void (*_release)(Context)>
-	class dynamic_ioready_callback_link : public ioready_callback_link {
-	public:
-		dynamic_ioready_callback_link(Context _context, int _fd, int _event) throw()
-			: ioready_callback_link(_fd, _event), context(_context)
-		{}
-		virtual ~dynamic_ioready_callback_link(void) throw() {}
-		virtual void operator()(int revent) throw()
-		{
-			(*function)(context, fd, revent);
-		}
-		virtual void cancelled(void) throw()
-		{
-			(*_release)(context);
-		}
-	protected:
-		Context context;
-	};
-	
-	/** \endcond */
-	
-	template<typename Context, void (*function)(Context , int fd, int event), void (*_release)(Context )>
-	inline ref_transfer<ioready_callback_link>
-	ioready_service::watch(int fd, int event_mask, Context context)
-		throw(std::bad_alloc)
-	{
-		ref<ioready_callback_link> link;
-		
-		link.assign(new dynamic_ioready_callback_link<Context, function, _release>
-			(context, fd, event_mask));
-		register_ioready_callback(link);
-		
-		return link;
-	}
-	
-	/** \cond NEVER */
-	template<typename Target, void (Target::*function)(int, int), void (Target::*_release)(void)>
-	class dynamicobj_ioready_callback_link : public ioready_callback_link {
-	public:
-		dynamicobj_ioready_callback_link(Target *_instance, int _fd, int _event) throw()
-			: ioready_callback_link(_fd, _event), instance(_instance)
-		{}
-		virtual ~dynamicobj_ioready_callback_link(void) throw() {}
-		virtual void operator()(int revent) throw()
-		{
-			(instance->*function)(fd, revent);
-		}
-		virtual void cancelled(void) throw()
-		{
-			(instance->*_release)();
-		}
-	protected:
-		Target *instance;
-	};
-	
-	template<typename Target, void (Target::*function)(int, int)>
-	class refobj_ioready_callback_link : public ioready_callback_link {
-	public:
-		refobj_ioready_callback_link(ref<Target> _instance, int _fd, int _event) throw()
-			: ioready_callback_link(_fd, _event),
-			instance(ref_transfer<Target>(_instance))
-		{}
-		virtual ~refobj_ioready_callback_link(void) throw() {}
-		virtual void operator()(int revent) throw()
-		{
-			(instance->*function)(fd, revent);
-		}
-		virtual void cancelled(void) throw()
-		{
-			instance=0;
-		}
-	protected:
-		ref<Target> instance;
-	};
-	
-	/** \endcond */
-	
-	template<typename Target, void (Target::*function)(int, int), void (Target::*_release)(void)>
-	inline ref_transfer<ioready_callback_link>
-	ioready_service::watch(int fd, int event_mask, Target *instance)
-		throw(std::bad_alloc)
-	{
-		ref<ioready_callback_link> link;
-		
-		link.assign(new dynamicobj_ioready_callback_link<Target, function, _release>
-			(instance, fd, event_mask));
-		register_ioready_callback(link);
-		
-		return link;
-	}
-
-	template<class Target, void (Target::*function)(int fd, int event)>
-	inline ref_transfer<ioready_callback_link>
-	ioready_service::ref_watch(int fd, int event_mask, ref<Target> instance)
-		throw(std::bad_alloc)
-	{
-		ref<ioready_callback_link> link;
-		
-		link.assign(new refobj_ioready_callback_link<Target, function>(
-			ref_transfer<Target>(instance), fd, event_mask));
-		register_ioready_callback(link);
-		
-		return link;
-	}
 	
 }
 

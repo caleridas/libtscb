@@ -24,14 +24,14 @@
 	\section callback_declaration Declaration of callback chains
 	
 	Callback chains are declared as global or member variables; the
-	template arguments define the arguments passed with every callback
-	invocation (and thus the signature of the expected callback	functions):
+	template argument defines the signature of the callback
+	functions:
 	
 	\code
 		class MyClass {
 		public:
 			// will report old and new value to callbacks
-			tscb::callback_chain<int, int> onValueChange;
+			tscb::callback_chain<void (int, int)> onValueChange;
 			
 			void setValue(int newval);
 		private:
@@ -69,17 +69,12 @@
 		public:
 			MyObserver(MyClass *c)
 			{
-				c->onValueChange.connect<MyObserver, &MyObserver::notify_change, &MyObserver::finish>
-					(this);
+				c->onValueChange.connect(boost::bind(&MyObserver::notify_change, this, _1, _2));
 			}
 		protected:
 			void notify_change(int oldval, int newval)
 			{
 				printf("Value changed from %d to %d!\n", oldval, newval);
-			}
-			void finish(void)
-			{
-				delete this;
 			}
 		};
 	\endcode
@@ -87,12 +82,11 @@
 	In the previous example, the <TT>notify_change</TT> method of the
 	corresponding <TT>MyObserver</TT> object would be called
 	whenever the callback chain is being activated
-	(see section \ref callback_issue above). The <TT>finish</TT>
-	method will be called after the callback has been
-	cancelled (see section \ref callback_cookies below).
+	(see section \ref callback_issue above). Note the the
+	function object created via <TT>boost::bind</TT> will be
+	destroyed as soon as the callback is cancelled (see section \ref callback_cookies below).
 	
-	Another variant of the \ref tscb::callback_chain::connect "connect"
-	method allows free-standing functions to be called:
+	The same technique can be used to bind "free" functions:
 	
 	\code
 		char *msg="Incredible!";
@@ -102,43 +96,16 @@
 			printf("%s Value changed from %d to %d!\n", ctx, oldval, newval);
 		}
 		
-		void finish(char *ctx)
-		{
-			// nothing to do
-		}
-		
 		int main(void)
 		{
 			MyObject obj;
-			obj.onValueChange.connect<char *, &notify_change, &finish>(msg);
+			obj.onValueChange.connect(boost::bind(notify_change, msg, _1, _2));
 			obj.setValue(42);
 		}
 	\endcode
 	
 	Like in the previous example, the function <TT>notify_change</TT>
-	will be called whenever the callback chain is being activated,
-	and <TT>finish</TT> will be called after the callback has been cancelled.
-	
-	The first template parameter to 
-	\ref tscb::callback_chain::connect "connect"
-	allows to pass arbitrary data structures as contexts in a type-safe
-	manner. Usually the contex object will be a pointer to a data structure
-	containing the required context data. It is possible to pass arbitrary
-	data structures if desired, but the folliwng restrictions have to be
-	kept in mind:
-	
-	<UL>
-		<LI>
-			The <TT>Context</TT> data type must be copy-constructible
-		</LI>
-		<LI>
-			The context object will be copied on creation of the callback link
-		</LI>
-		<LI>
-			The context object will be destroyed when the link is
-			destroyed
-		</LI>
-	</UL>
+	will be called whenever the callback chain is being activated.
 	
 	\section callback_cookies Callback link handles
 	
@@ -150,8 +117,7 @@
 	
 	\code
 		tscb::callback link;
-		link=c->onValueChange.connect<MyObserver, &MyObserver::notify_change, &MyObserver::finish>
-			(this);
+		link=c->onValueChange.connect(boost::bind(&MyObserver::notify_change, this, _1, _2));
 	\endcode
 	
 	The link object can later be used to cancel the
@@ -161,11 +127,22 @@
 		link->cancel();
 	\endcode
 	
-	The callback function will not be invoked subsequently; the registered
-	<TT>release</TT> function (third template parameter to
-	\ref tscb::callback_chain::connect "connect") will be called
-	exactly once as soon as it is guaranteed that the callback function cannot
-	be called again.
+	The callback function will not be invoked subsequently; the data associated
+	with the function object will be released as soon as it is guaranteed that
+	the callback function cannot be called again (e.g. from other threads).
+	This is useful e.g. if <TT>boost::shared_ptr</TT> is used to assist in
+	tracking the lifetime objects:
+	
+	\code
+		tscb::callback link;
+		boost::shared_ptr<MyObserver> obj(new MyObserver);
+		link=c->onValueChange.connect(boost::bind(&MyObserver::notify_change)
+			boost::shared_ptr(obj), _1, _2));
+	\endcode
+	
+	In this case, a <TT>boost::shared_ptr</TT> instance is kept for as long as
+	the callback can be activated -- thus the object will not be deallocated
+	until it is guaranteed that the callback cannot be delivered any longer.
 	
 	\section Performance
 	
@@ -208,8 +185,10 @@
 
 #include <stdexcept>
 
+#include <boost/intrusive_ptr.hpp>
+#include <boost/function.hpp>
+
 #include <tscb/thread>
-#include <tscb/ref>
 #include <tscb/deferred>
 #include <tscb/compiler>
 
@@ -262,21 +241,6 @@ namespace tscb {
 		*/
 		virtual void cancel(void) throw()=0;
 		
-		/**
-			\brief Confirm cancellation of callback
-			
-			This function is called by the sending side of a callback
-			in reaction to a call to \ref cancel, when it can be proven
-			that the callback cannot be triggered any longer. it <I>must
-			not</I> be called by the receiving side of the callback.
-			
-			Implementations will override this method to perform whatever
-			cleanup operation is required after the callback has been
-			cancelled; for example this can be used to release a reference
-			to the target object.
-		*/
-		virtual void cancelled(void) throw();
-		
 		/* reference counting stuff */
 		inline void pin(void) throw() {refcount++;}
 		inline void release(void) throw() {if (!--refcount) delete this;}
@@ -288,21 +252,147 @@ namespace tscb {
 		atomic refcount;
 	};
 	
+	static inline void intrusive_ptr_add_ref(callback_link *t) throw()
+	{
+		t->pin();
+	}
+	
+	static inline void intrusive_ptr_release(callback_link *t) throw()
+	{
+		t->release();
+	}
+	
 	/**
 		\brief Generic callback link.
 		
 		Every other callback link implemented in this library can be
 		downcast to this type.
 	*/
-	typedef ref<callback_link> callback;
+	typedef boost::intrusive_ptr<callback_link> link;
 	
-	template<typename link>
-	class callback_list {
+	template<typename Signature> class function_callback_link;
+	template<typename Signature> class callback_chain;
+	
+	template<typename Signature>
+	class function_callback_link : public callback_link {
 	public:
-		callback_list(void) throw()
+		function_callback_link(const boost::function<Signature> &_target) throw(std::bad_alloc)
+			: target(_target), active_next(0), prev(0), next(0), chain(0)
+		{}
+		virtual ~function_callback_link(void) throw()
+		{}
+		virtual void cancel(void) throw()
+		{
+			registration_mutex.lock();
+			if (chain) chain->remove(this);
+			else registration_mutex.unlock();
+		}
+		void cancelled(void) throw()
+		{
+			target=0;
+		}
+		
+		boost::function<Signature> target;
+		
+		function_callback_link *active_next;
+		function_callback_link *prev, *next;
+		function_callback_link *deferred_cancel_next;
+		
+		callback_chain<Signature> *chain;
+		
+		mutex registration_mutex;
+	};
+	
+	template<typename Signature>
+	class callback_chain {
+	public:
+		typedef function_callback_link<Signature> link_type;
+		
+		boost::intrusive_ptr<link_type>
+		connect(const boost::function<Signature> &target) throw(std::bad_alloc)
+		{
+			link_type *l=new link_type(target);
+			push_back(l);
+			return l;
+		}
+		
+		/**
+			\brief Call all callback functions registered with the chain
+			
+			Calls all callback functions registered trough \ref connect
+			with the given arguments.
+		*/
+		inline void operator()(void)
+		{
+			read_lock();
+			link_type *l=active;
+			while(l) {
+				data_dependence_memory_barrier();
+				l->target();
+				l=l->active_next;
+			}
+			read_unlock();
+		}
+		/**
+			\brief Call all callback functions registered with the chain
+			
+			Calls all callback functions registered trough \ref connect
+			with the given arguments.
+		*/
+		template<typename Arg1>
+		inline void operator()(Arg1 arg1)
+		{
+			read_lock();
+			link_type *l=active;
+			while(l) {
+				data_dependence_memory_barrier();
+				l->target(arg1);
+				l=l->active_next;
+			}
+			read_unlock();
+		}
+		/**
+			\brief Call all callback functions registered with the chain
+			
+			Calls all callback functions registered trough \ref connect
+			with the given arguments.
+		*/
+		template<typename Arg1, typename Arg2>
+		inline void operator()(Arg1 arg1, Arg2 arg2)
+		{
+			read_lock();
+			link_type *l=active;
+			while(l) {
+				data_dependence_memory_barrier();
+				l->target(arg1, arg2);
+				l=l->active_next;
+			}
+			read_unlock();
+		}
+		/**
+			\brief Call all callback functions registered with the chain
+			
+			Calls all callback functions registered trough \ref connect
+			with the given arguments.
+		*/
+		template<typename Arg1, typename Arg2, typename Arg3>
+		inline void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3)
+		{
+			read_lock();
+			link_type *l=active;
+			while(l) {
+				data_dependence_memory_barrier();
+				l->target(arg1, arg2, arg3);
+				l=l->active_next;
+			}
+			read_unlock();
+		}
+		
+		callback_chain(void) throw()
 			: active(0), first(0), last(0), deferred_cancel(0)
 		{}
-		~callback_list(void) throw()
+		
+		~callback_chain(void) throw()
 		{
 			/* there is no point in locking here... if the object
 			is destroyed and anyone is trying to add a callback
@@ -333,10 +423,9 @@ namespace tscb {
 			}
 		}
 		
-		void push_back(link *l) throw()
+		void push_back(link_type *l) throw()
 		{
 			l->registration_mutex.lock();
-			l->pin();
 			bool sync=guard.write_lock_async();
 			
 			l->next=0;
@@ -351,7 +440,7 @@ namespace tscb {
 			from the full list and thus terminate the active list; point them to
 			the newly-added element */
 			
-			link *tmp=last;
+			link_type *tmp=last;
 			while(true) {
 				if (!tmp) {
 					if (!active) active=l;
@@ -375,7 +464,7 @@ namespace tscb {
 			else guard.write_unlock_async();
 		}
 		
-		void remove(link *l) throw()
+		void remove(link_type *l) throw()
 		{
 			bool sync=guard.write_lock_async();
 			if (l->chain==this) {
@@ -384,7 +473,7 @@ namespace tscb {
 				the active chain now point to the following element,
 				so this element is skipped from within the active chain */
 				
-				link *tmp=l->prev;
+				link_type *tmp=l->prev;
 				while(true) {
 					if (!tmp) {
 						if (active==l) active=l->active_next;
@@ -412,7 +501,7 @@ namespace tscb {
 		
 		void synchronize(void) throw()
 		{
-			link *do_cancel=deferred_cancel;
+			link_type *do_cancel=deferred_cancel;
 			
 			/* first, "repair" the list structure by "correcting" all prev
 			pointers */
@@ -438,7 +527,7 @@ namespace tscb {
 			of finalizing the links cannot cause deadlocks */
 			
 			while(do_cancel) {
-				link *tmp=do_cancel->deferred_cancel_next;
+				link_type *tmp=do_cancel->deferred_cancel_next;
 				do_cancel->cancelled();
 				do_cancel->release();
 				do_cancel=tmp;
@@ -456,1050 +545,20 @@ namespace tscb {
 		}
 	protected:
 		/* singly-linked list of active elements */
-		link *active;
+		link_type *active;
 		
 		/* thread synchronization */
 		deferrable_rwlock guard;
 		
 		/* list of all elements in the chain, whether active or not */
-		link *first, *last;
+		link_type *first, *last;
 		
 		/* singly-linked list of elements that have been removed from
 		the active list, but are not yet removed from the full list
 		and not been discarded yet*/
-		link *deferred_cancel;
-	};
-	
-	template<typename Arg1>
-	class callback_chain1;
-	template<typename Arg1, typename Arg2>
-	class callback_chain2;
-	template<typename Arg1, typename Arg2, typename Arg3>
-	class callback_chain3;
-	template<typename Arg1, typename Arg2, typename Arg3, typename Arg4>
-	class callback_chain4;
-	template<typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5>
-	class callback_chain5;
-	template<typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5, typename Arg6>
-	class callback_chain6;
-	
-	/**************************************************************************/
-	
-	/**
-		\brief Link to callback function with 1 argument
-	*/
-	template<typename Arg1>
-	class function_callback_link1 : public callback_link {
-	public:
-		function_callback_link1(void) throw()
-			: active_next(0), prev(0), next(0), chain(0)
-		{}
-		virtual ~function_callback_link1(void) throw()
-		{}
-		virtual void operator()(Arg1 arg1) throw()=0;
-		virtual void cancel(void) throw()
-		{
-			registration_mutex.lock();
-			if (chain) chain->remove(this);
-			else registration_mutex.unlock();
-		}
-		
-		function_callback_link1 *active_next;
-		function_callback_link1 *prev, *next;
-		function_callback_link1 *deferred_cancel_next;
-		
-		callback_list<function_callback_link1> *chain;
-		
-		mutex registration_mutex;
-	};
-	
-	/* \cond NEVER */
-	
-	template<typename Arg1, typename Context, void (*function)(Context, Arg1 arg1), void (*_release)(Context)>
-	class function_link1 : public function_callback_link1<Arg1> {
-	public:
-		inline function_link1(Context _context) throw()
-			: context(_context)
-		{}
-		virtual ~function_link1(void) throw() {}
-		virtual void operator()(Arg1 arg1) throw()
-		{(*function)(context, arg1);}
-	private:
-		Context context;
-		virtual void cancelled(void) throw()
-		{(*_release)(context);}
-	};
-	
-	template<typename Arg1, typename Obj, void (Obj::*function)(Arg1 arg1), void (Obj::*_release)(void)>
-	class obj_link1 : public function_callback_link1<Arg1> {
-	public:
-		inline obj_link1(Obj *instance ) throw()
-			: i(instance)
-		{}
-		virtual ~obj_link1(void) throw() {}
-		virtual void operator()(Arg1 arg1) throw()
-		{(i->*function)(arg1);}
-	private:
-		Obj *i;
-		virtual void cancelled(void) throw()
-		{(i->*_release)();}
-	};
-	
-	template<typename Arg1, typename Obj, void (Obj::*function)(Arg1 arg1)>
-	class refobj_link1 : public function_callback_link1<Arg1> {
-	public:
-		inline refobj_link1(tscb::ref<Obj> instance ) throw()
-			: i(tscb::ref_transfer<Obj>(instance))
-		{}
-		virtual ~refobj_link1(void) throw() {}
-		virtual void operator()(Arg1 arg1) throw()
-		{(i->*function)(arg1);}
-	private:
-		tscb::ref<Obj> i;
-		virtual void cancelled(void) throw()
-		{i=0;}
-	};
-	
-	/* \endcond */
-	
-	/**
-		\brief Chain of callback functions with 1 argument
-		
-		detail
-	*/
-	template<typename Arg1>
-	class callback_chain1 : public callback_list<function_callback_link1<Arg1> > {
-	public:
-		typedef function_callback_link1<Arg1> link_type;
-		typedef callback_list<link_type> parent_type;
-		/**
-			\brief Append new callback function to the chain
-			
-			Appends a new callback function to the chain. It will
-			be called whenever \ref operator() of the chain is invoked,
-			until it is cancelled by calling
-			\ref tscb::callback_link::cancel "callback_link::cancel"
-		*/
-		template<typename Context, void (*function)(Context, Arg1), void (*release)(Context)>
-		ref_transfer<callback_link> connect(Context context) throw(std::bad_alloc)
-		{
-			link_type *l=
-				new function_link1<Arg1, Context, function, release>(context);
-			push_back(l);
-			return l;
-		}
-		/**
-			\brief Append new callback function to the chain
-			
-			Appends a new callback function to the chain. It will
-			be called whenever \ref operator() of the chain is invoked,
-			until it is cancelled by calling
-			\ref tscb::callback_link::cancel "callback_link::cancel"
-		*/
-		template<typename Obj, void(Obj::*function)(Arg1), void(Obj::*release)(void)>
-		ref_transfer<callback_link> connect(Obj *o) throw(std::bad_alloc)
-		{
-			link_type *l=
-				new obj_link1<Arg1, Obj, function, release>(o);
-			push_back(l);
-			return l;
-		}
-		/**
-			\brief Append new callback function to the chain
-			
-			Appends a new callback function to the chain. It will
-			be called whenever \ref operator() of the chain is invoked,
-			until it is cancelled by calling
-			\ref tscb::callback_link::cancel "callback_link::cancel".
-			
-			The target object muss support reference counting through
-			->pin() and ->release() member functions; ->pin() will
-			be used to acquire a reference to the target object; ->release()
-			will be called after the callback has been cancelled.
-		*/
-		template<typename Obj, void(Obj::*function)(Arg1)>
-		ref_transfer<callback_link> ref_connect(ref<Obj> o) throw(std::bad_alloc)
-		{
-			link_type *l=
-				new refobj_link1<Arg1, Obj, function>(o);
-			push_back(l);
-			return l;
-		}
-		/**
-			\brief Call all callback functions registered with the chain
-			
-			Calls all callback functions registered trough \ref connect
-			with the given arguments.
-		*/
-		inline void operator()(Arg1 arg1)
-		{
-			parent_type::read_lock();
-			link_type *l=parent_type::active;
-			while(l) {
-				data_dependence_memory_barrier();
-				(*l)(arg1);
-				l=l->active_next;
-			}
-			parent_type::read_unlock();
-		}
-	};
-	
-	/**************************************************************************/
-	
-	/**
-		\brief Link to callback function with 2 arguments
-	*/
-	template<typename Arg1, typename Arg2>
-	class function_callback_link2 : public callback_link {
-	public:
-		function_callback_link2(void) throw()
-			: active_next(0), prev(0), next(0), chain(0)
-		{}
-		virtual ~function_callback_link2(void) throw()
-		{}
-		virtual void operator()(Arg1 arg1, Arg2 arg2) throw()=0;
-		virtual void cancel(void) throw()
-		{
-			registration_mutex.lock();
-			if (chain) chain->remove(this);
-			else registration_mutex.unlock();
-		}
-		
-		function_callback_link2 *active_next;
-		function_callback_link2 *prev, *next;
-		function_callback_link2 *deferred_cancel_next;
-		
-		callback_list<function_callback_link2> *chain;
-		
-		mutex registration_mutex;
-	};
-	
-	/** \cond NEVER */
-	
-	template<typename Arg1, typename Arg2,
-	typename Context, void (*function)(Context, Arg1 arg1, Arg2 arg2), void (*_release)(Context)>
-	class function_link2 : public function_callback_link2<Arg1, Arg2> {
-	public:
-		inline function_link2(Context _context) throw()
-			: context(_context)
-		{}
-		virtual ~function_link2(void) throw() {}
-		virtual void operator()(Arg1 arg1, Arg2 arg2) throw()
-		{(*function)(context, arg1, arg2);}
-	private:
-		Context context;
-		virtual void cancelled(void) throw()
-		{(*_release)(context);}
-	};
-	
-	template<typename Arg1, typename Arg2,
-	typename Obj, void (Obj::*function)(Arg1 arg1, Arg2 arg2), void (Obj::*_release)(void)>
-	class obj_link2 : public function_callback_link2<Arg1, Arg2> {
-	public:
-		inline obj_link2(Obj *instance ) throw()
-			: i(instance)
-		{}
-		virtual ~obj_link2(void) throw() {}
-		virtual void operator()(Arg1 arg1, Arg2 arg2) throw()
-		{(i->*function)(arg1, arg2);}
-	private:
-		Obj *i;
-		virtual void cancelled(void) throw()
-		{(i->*_release)();}
-	};
-	
-	template<typename Arg1, typename Arg2,
-	typename Obj, void (Obj::*function)(Arg1 arg1, Arg2 arg2)>
-	class refobj_link2 : public function_callback_link2<Arg1, Arg2> {
-	public:
-		inline refobj_link2(tscb::ref<Obj> instance ) throw()
-			: i(tscb::ref_transfer<Obj>(instance))
-		{}
-		virtual ~refobj_link2(void) throw() {}
-		virtual void operator()(Arg1 arg1, Arg2 arg2) throw()
-		{(i->*function)(arg1, arg2);}
-	private:
-		tscb::ref<Obj> i;
-		virtual void cancelled(void) throw()
-		{i=0;}
-	};
-	
-	/** \endcond */
-	
-	/**
-		\brief Chain of callback functions with 2 arguments
-	*/
-	template<typename Arg1, typename Arg2>
-	class callback_chain2 : public callback_list<function_callback_link2<Arg1, Arg2> > {
-	public:
-		typedef function_callback_link2<Arg1, Arg2> link_type;
-		typedef callback_list<link_type> parent_type;
-		/**
-			\brief Append new callback function to the chain
-			
-			Appends a new callback function to the chain. It will
-			be called whenever \ref operator() of the chain is invoked,
-			until it is cancelled by calling
-			\ref tscb::callback_link::cancel "callback_link::cancel"
-		*/
-		template<typename Context, void (*function)(Context, Arg1, Arg2), void (*release)(Context)>
-		ref_transfer<callback_link> connect(Context context) throw(std::bad_alloc)
-		{
-			link_type *l=
-				new function_link2<Arg1, Arg2, Context, function, release>(context);
-			push_back(l);
-			return l;
-		}
-		/**
-			\brief Append new callback function to the chain
-			
-			Appends a new callback function to the chain. It will
-			be called whenever \ref operator() of the chain is invoked,
-			until it is cancelled by calling
-			\ref tscb::callback_link::cancel "callback_link::cancel"
-		*/
-		template<typename Obj, void(Obj::*function)(Arg1, Arg2), void(Obj::*release)(void)>
-		ref_transfer<callback_link> connect(Obj *o) throw(std::bad_alloc)
-		{
-			link_type *l=
-				new obj_link2<Arg1, Arg2, Obj, function, release>(o);
-			push_back(l);
-			return l;
-		}
-		/**
-			\brief Append new callback function to the chain
-			
-			Appends a new callback function to the chain. It will
-			be called whenever \ref operator() of the chain is invoked,
-			until it is cancelled by calling
-			\ref tscb::callback_link::cancel "callback_link::cancel".
-			
-			The target object muss support reference counting through
-			->pin() and ->release() member functions; ->pin() will
-			be used to acquire a reference to the target object; ->release()
-			will be called after the callback has been cancelled.
-		*/
-		template<typename Obj, void(Obj::*function)(Arg1, Arg2)>
-		ref_transfer<callback_link> ref_connect(ref<Obj> o) throw(std::bad_alloc)
-		{
-			link_type *l=
-				new refobj_link2<Arg1, Arg2, Obj, function>(o);
-			push_back(l);
-			return l;
-		}
-		/**
-			\brief Call all callback functions registered with the chain
-			
-			Calls all callback functions registered trough \ref connect
-			with the given arguments.
-		*/
-		inline void operator()(Arg1 arg1, Arg2 arg2)
-		{
-			parent_type::read_lock();
-			link_type *l=parent_type::active;
-			while(l) {
-				data_dependence_memory_barrier();
-				(*l)(arg1, arg2);
-				l=l->active_next;
-			}
-			parent_type::read_unlock();
-		}
-	};
-	
-	/**************************************************************************/
-	
-	/**
-		\brief Link to callback function with 3 arguments
-	*/
-	template<typename Arg1, typename Arg2, typename Arg3>
-	class function_callback_link3 : public callback_link {
-	public:
-		function_callback_link3(void) throw()
-			: active_next(0), prev(0), next(0), chain(0)
-		{}
-		virtual ~function_callback_link3(void) throw()
-		{}
-		virtual void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3) throw()=0;
-		virtual void cancel(void) throw()
-		{
-			registration_mutex.lock();
-			if (chain) chain->remove(this);
-			else registration_mutex.unlock();
-		}
-		
-		function_callback_link3 *active_next;
-		function_callback_link3 *prev, *next;
-		function_callback_link3 *deferred_cancel_next;
-		
-		callback_list<function_callback_link3> *chain;
-		
-		mutex registration_mutex;
-	};
-	
-	/** \cond NEVER */
-	
-	template<typename Arg1, typename Arg2, typename Arg3,
-	typename Context, void (*function)(Context, Arg1 arg1, Arg2 arg2, Arg3 arg3), void (*_release)(Context)>
-	class function_link3 : public function_callback_link3<Arg1, Arg2, Arg3> {
-	public:
-		inline function_link3(Context _context) throw()
-			: context(_context)
-		{}
-		virtual ~function_link3(void) throw() {}
-		virtual void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3) throw()
-		{(*function)(context, arg1, arg2, arg3);}
-	private:
-		Context context;
-		virtual void cancelled(void) throw()
-		{(*_release)(context);}
-	};
-	
-	template<typename Arg1, typename Arg2, typename Arg3,
-	typename Obj, void (Obj::*function)(Arg1 arg1, Arg2 arg2, Arg3 arg3), void (Obj::*_release)(void)>
-	class obj_link3 : public function_callback_link3<Arg1, Arg2, Arg3> {
-	public:
-		inline obj_link3(Obj *instance ) throw()
-			: i(instance)
-		{}
-		virtual ~obj_link3(void) throw() {}
-		virtual void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3) throw()
-		{(i->*function)(arg1, arg2, arg3);}
-	private:
-		Obj *i;
-		virtual void cancelled(void) throw()
-		{(i->*_release)();}
-	};
-	
-	template<typename Arg1, typename Arg2, typename Arg3,
-	typename Obj, void (Obj::*function)(Arg1 arg1, Arg2 arg2, Arg3 arg3)>
-	class refobj_link3 : public function_callback_link3<Arg1, Arg2, Arg3> {
-	public:
-		inline refobj_link3(tscb::ref<Obj> instance ) throw()
-			: i(tscb::ref_transfer<Obj>(instance))
-		{}
-		virtual ~refobj_link3(void) throw() {}
-		virtual void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3) throw()
-		{(i->*function)(arg1, arg2, arg3);}
-	private:
-		tscb::ref<Obj> i;
-		virtual void cancelled(void) throw()
-		{i=0;}
-	};
-	
-	/** \endcond */
-	
-	/**
-		\brief Chain of callback functions with 3 arguments
-	*/
-	template<typename Arg1, typename Arg2, typename Arg3>
-	class callback_chain3 : public callback_list<function_callback_link3<Arg1, Arg2, Arg3> > {
-	public:
-		typedef function_callback_link3<Arg1, Arg2, Arg3> link_type;
-		typedef callback_list<link_type> parent_type;
-		/**
-			\brief Append new callback function to the chain
-			
-			Appends a new callback function to the chain. It will
-			be called whenever \ref operator() of the chain is invoked,
-			until it is cancelled by calling
-			\ref tscb::callback_link::cancel "callback_link::cancel"
-		*/
-		template<typename Context, void (*function)(Context, Arg1, Arg2, Arg3), void (*release)(Context)>
-		ref_transfer<callback_link> connect(Context context) throw(std::bad_alloc)
-		{
-			link_type *l=
-				new function_link3<Arg1, Arg2, Arg3, Context, function, release>(context);
-			push_back(l);
-			return l;
-		}
-		/**
-			\brief Append new callback function to the chain
-			
-			Appends a new callback function to the chain. It will
-			be called whenever \ref operator() of the chain is invoked,
-			until it is cancelled by calling
-			\ref tscb::callback_link::cancel "callback_link::cancel"
-		*/
-		template<typename Obj, void(Obj::*function)(Arg1, Arg2, Arg3), void(Obj::*release)(void)>
-		ref_transfer<callback_link> connect(Obj *o) throw(std::bad_alloc)
-		{
-			link_type *l=
-				new obj_link3<Arg1, Arg2, Arg3, Obj, function, release>(o);
-			push_back(l);
-			return l;
-		}
-		/**
-			\brief Append new callback function to the chain
-			
-			Appends a new callback function to the chain. It will
-			be called whenever \ref operator() of the chain is invoked,
-			until it is cancelled by calling
-			\ref tscb::callback_link::cancel "callback_link::cancel".
-			
-			The target object muss support reference counting through
-			->pin() and ->release() member functions; ->pin() will
-			be used to acquire a reference to the target object; ->release()
-			will be called after the callback has been cancelled.
-		*/
-		template<typename Obj, void(Obj::*function)(Arg1, Arg2, Arg3)>
-		ref_transfer<callback_link> ref_connect(ref<Obj> o) throw(std::bad_alloc)
-		{
-			link_type *l=
-				new refobj_link3<Arg1, Arg2, Arg3, Obj, function>(o);
-			push_back(l);
-			return l;
-		}
-		/**
-			\brief Call all callback functions registered with the chain
-			
-			Calls all callback functions registered trough \ref connect
-			with the given arguments.
-		*/
-		inline void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3)
-		{
-			parent_type::read_lock();
-			link_type *l=parent_type::active;
-			while(l) {
-				data_dependence_memory_barrier();
-				(*l)(arg1, arg2, arg3);
-				l=l->active_next;
-			}
-			parent_type::read_unlock();
-		}
-	};
-	
-	/**************************************************************************/
-	
-	/**
-		\brief Link to callback function with 4 arguments
-	*/
-	template<typename Arg1, typename Arg2, typename Arg3, typename Arg4>
-	class function_callback_link4 : public callback_link {
-	public:
-		function_callback_link4(void) throw()
-			: active_next(0), prev(0), next(0), chain(0)
-		{}
-		virtual ~function_callback_link4(void) throw()
-		{}
-		virtual void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4) throw()=0;
-		virtual void cancel(void) throw()
-		{
-			registration_mutex.lock();
-			if (chain) chain->remove(this);
-			else registration_mutex.unlock();
-		}
-		
-		function_callback_link4 *active_next;
-		function_callback_link4 *prev, *next;
-		function_callback_link4 *deferred_cancel_next;
-		
-		callback_list<function_callback_link4> *chain;
-		
-		mutex registration_mutex;
-	};
-	
-	/** \cond NEVER */
-	
-	template<typename Arg1, typename Arg2, typename Arg3, typename Arg4,
-	typename Context, void (*function)(Context, Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4), void (*_release)(Context)>
-	class function_link4 : public function_callback_link4<Arg1, Arg2, Arg3, Arg4> {
-	public:
-		inline function_link4(Context _context) throw()
-			: context(_context)
-		{}
-		virtual ~function_link4(void) throw() {}
-		virtual void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4) throw()
-		{(*function)(context, arg1, arg2, arg3, arg4);}
-	private:
-		Context context;
-		virtual void cancelled(void) throw()
-		{(*_release)(context);}
-	};
-	
-	template<typename Arg1, typename Arg2, typename Arg3, typename Arg4,
-	typename Obj, void (Obj::*function)(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4), void (Obj::*_release)(void)>
-	class obj_link4 : public function_callback_link4<Arg1, Arg2, Arg3, Arg4> {
-	public:
-		inline obj_link4(Obj *instance ) throw()
-			: i(instance)
-		{}
-		virtual ~obj_link4(void) throw() {}
-		virtual void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4) throw()
-		{(i->*function)(arg1, arg2, arg3, arg4);}
-	private:
-		Obj *i;
-		virtual void cancelled(void) throw()
-		{(i->*_release)();}
-	};
-	
-	template<typename Arg1, typename Arg2, typename Arg3, typename Arg4,
-	typename Obj, void (Obj::*function)(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4)>
-	class refobj_link4 : public function_callback_link4<Arg1, Arg2, Arg3, Arg4> {
-	public:
-		inline refobj_link4(tscb::ref<Obj> instance ) throw()
-			: i(tscb::ref_transfer<Obj>(instance))
-		{}
-		virtual ~refobj_link4(void) throw() {}
-		virtual void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4) throw()
-		{(i->*function)(arg1, arg2, arg3, arg4);}
-	private:
-		tscb::ref<Obj> i;
-		virtual void cancelled(void) throw()
-		{i=0;}
-	};
-	
-	/** \endcond */
-	
-	/**
-		\brief Chain of callback functions with 4 arguments
-	*/
-	template<typename Arg1, typename Arg2, typename Arg3, typename Arg4>
-	class callback_chain4 : public callback_list<function_callback_link4<Arg1, Arg2, Arg3, Arg4> > {
-	public:
-		typedef function_callback_link4<Arg1, Arg2, Arg3, Arg4> link_type;
-		typedef callback_list<link_type> parent_type;
-		/**
-			\brief Append new callback function to the chain
-			
-			Appends a new callback function to the chain. It will
-			be called whenever \ref operator() of the chain is invoked,
-			until it is cancelled by calling
-			\ref tscb::callback_link::cancel "callback_link::cancel"
-		*/
-		template<typename Context, void (*function)(Context, Arg1, Arg2, Arg3, Arg4), void (*release)(Context)>
-		ref_transfer<callback_link> connect(Context context) throw(std::bad_alloc)
-		{
-			link_type *l=
-				new function_link4<Arg1, Arg2, Arg3, Arg4, Context, function, release>(context);
-			push_back(l);
-			return l;
-		}
-		/**
-			\brief Append new callback function to the chain
-			
-			Appends a new callback function to the chain. It will
-			be called whenever \ref operator() of the chain is invoked,
-			until it is cancelled by calling
-			\ref tscb::callback_link::cancel "callback_link::cancel"
-		*/
-		template<typename Obj, void(Obj::*function)(Arg1, Arg2, Arg3, Arg4), void(Obj::*release)(void)>
-		ref_transfer<callback_link> connect(Obj *o) throw(std::bad_alloc)
-		{
-			link_type *l=
-				new obj_link4<Arg1, Arg2, Arg3, Arg4, Obj, function, release>(o);
-			push_back(l);
-			return l;
-		}
-		/**
-			\brief Append new callback function to the chain
-			
-			Appends a new callback function to the chain. It will
-			be called whenever \ref operator() of the chain is invoked,
-			until it is cancelled by calling
-			\ref tscb::callback_link::cancel "callback_link::cancel".
-			
-			The target object muss support reference counting through
-			->pin() and ->release() member functions; ->pin() will
-			be used to acquire a reference to the target object; ->release()
-			will be called after the callback has been cancelled.
-		*/
-		template<typename Obj, void(Obj::*function)(Arg1, Arg2, Arg3, Arg4)>
-		ref_transfer<callback_link> ref_connect(ref<Obj> o) throw(std::bad_alloc)
-		{
-			link_type *l=
-				new refobj_link4<Arg1, Arg2, Arg3, Arg4, Obj, function>(o);
-			push_back(l);
-			return l;
-		}
-		/**
-			\brief Call all callback functions registered with the chain
-			
-			Calls all callback functions registered trough \ref connect
-			with the given arguments.
-		*/
-		inline void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4)
-		{
-			parent_type::read_lock();
-			link_type *l=parent_type::active;
-			while(l) {
-				data_dependence_memory_barrier();
-				(*l)(arg1, arg2, arg3, arg4);
-				l=l->active_next;
-			}
-			parent_type::read_unlock();
-		}
-	};
-	
-	/**************************************************************************/
-	
-	/**
-		\brief Link to callback function with 5 arguments
-	*/
-	template<typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5>
-	class function_callback_link5 : public callback_link {
-	public:
-		function_callback_link5(void) throw()
-			: active_next(0), prev(0), next(0), chain(0)
-		{}
-		virtual ~function_callback_link5(void) throw()
-		{}
-		virtual void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5) throw()=0;
-		virtual void cancel(void) throw()
-		{
-			registration_mutex.lock();
-			if (chain) chain->remove(this);
-			else registration_mutex.unlock();
-		}
-		
-		function_callback_link5 *active_next;
-		function_callback_link5 *prev, *next;
-		function_callback_link5 *deferred_cancel_next;
-		
-		callback_list<function_callback_link5> *chain;
-		
-		mutex registration_mutex;
-	};
-	
-	/** \cond NEVER */
-	
-	template<typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5,
-	typename Context, void (*function)(Context, Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5), void (*_release)(Context)>
-	class function_link5 : public function_callback_link5<Arg1, Arg2, Arg3, Arg4, Arg5> {
-	public:
-		inline function_link5(Context _context) throw()
-			: context(_context)
-		{}
-		virtual ~function_link5(void) throw() {}
-		virtual void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5) throw()
-		{(*function)(context, arg1, arg2, arg3, arg4, arg5);}
-	private:
-		Context context;
-		virtual void cancelled(void) throw()
-		{(*_release)(context);}
-	};
-	
-	template<typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5,
-	typename Obj, void (Obj::*function)(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5), void (Obj::*_release)(void)>
-	class obj_link5 : public function_callback_link5<Arg1, Arg2, Arg3, Arg4, Arg5> {
-	public:
-		inline obj_link5(Obj *instance ) throw()
-			: i(instance)
-		{}
-		virtual ~obj_link5(void) throw() {}
-		virtual void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5) throw()
-		{(i->*function)(arg1, arg2, arg3, arg4, arg5);}
-	private:
-		Obj *i;
-		virtual void cancelled(void) throw()
-		{(i->*_release)();}
-	};
-	
-	template<typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5,
-	typename Obj, void (Obj::*function)(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5)>
-	class refobj_link5 : public function_callback_link5<Arg1, Arg2, Arg3, Arg4, Arg5> {
-	public:
-		inline refobj_link5(tscb::ref<Obj> instance ) throw()
-			: i(tscb::ref_transfer<Obj>(instance))
-		{}
-		virtual ~refobj_link5(void) throw() {}
-		virtual void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5) throw()
-		{(i->*function)(arg1, arg2, arg3, arg4, arg5);}
-	private:
-		tscb::ref<Obj> i;
-		virtual void cancelled(void) throw()
-		{i=0;}
-	};
-	
-	/** \endcond */
-	
-	/**
-		\brief Chain of callback functions with 5 arguments
-	*/
-	template<typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5>
-	class callback_chain5 : public callback_list<function_callback_link5<Arg1, Arg2, Arg3, Arg4, Arg5> > {
-	public:
-		typedef function_callback_link5<Arg1, Arg2, Arg3, Arg4, Arg5> link_type;
-		typedef callback_list<link_type> parent_type;
-		/**
-			\brief Append new callback function to the chain
-			
-			Appends a new callback function to the chain. It will
-			be called whenever \ref operator() of the chain is invoked,
-			until it is cancelled by calling
-			\ref tscb::callback_link::cancel "callback_link::cancel"
-		*/
-		template<typename Context, void (*function)(Context, Arg1, Arg2, Arg3, Arg4, Arg5), void (*release)(Context)>
-		ref_transfer<callback_link> connect(Context context) throw(std::bad_alloc)
-		{
-			link_type *l=
-				new function_link5<Arg1, Arg2, Arg3, Arg4, Arg5, Context, function, release>(context);
-			push_back(l);
-			return l;
-		}
-		/**
-			\brief Append new callback function to the chain
-			
-			Appends a new callback function to the chain. It will
-			be called whenever \ref operator() of the chain is invoked,
-			until it is cancelled by calling
-			\ref tscb::callback_link::cancel "callback_link::cancel"
-		*/
-		template<typename Obj, void(Obj::*function)(Arg1, Arg2, Arg3, Arg4, Arg5), void(Obj::*release)(void)>
-		ref_transfer<callback_link> connect(Obj *o) throw(std::bad_alloc)
-		{
-			link_type *l=
-				new obj_link5<Arg1, Arg2, Arg3, Arg4, Arg5, Obj, function, release>(o);
-			push_back(l);
-			return l;
-		}
-		/**
-			\brief Append new callback function to the chain
-			
-			Appends a new callback function to the chain. It will
-			be called whenever \ref operator() of the chain is invoked,
-			until it is cancelled by calling
-			\ref tscb::callback_link::cancel "callback_link::cancel".
-			
-			The target object muss support reference counting through
-			->pin() and ->release() member functions; ->pin() will
-			be used to acquire a reference to the target object; ->release()
-			will be called after the callback has been cancelled.
-		*/
-		template<typename Obj, void(Obj::*function)(Arg1, Arg2, Arg3, Arg4, Arg5)>
-		ref_transfer<callback_link> ref_connect(ref<Obj> o) throw(std::bad_alloc)
-		{
-			link_type *l=
-				new refobj_link5<Arg1, Arg2, Arg3, Arg4, Arg5, Obj, function>(o);
-			push_back(l);
-			return l;
-		}
-		/**
-			\brief Call all callback functions registered with the chain
-			
-			Calls all callback functions registered trough \ref connect
-			with the given arguments.
-		*/
-		inline void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5)
-		{
-			parent_type::read_lock();
-			link_type *l=parent_type::active;
-			while(l) {
-				data_dependence_memory_barrier();
-				(*l)(arg1, arg2, arg3, arg4, arg5);
-				l=l->active_next;
-			}
-			parent_type::read_unlock();
-		}
-	};
-	
-	/**************************************************************************/
-	
-	/**
-		\brief Link to callback function with 6 arguments
-	*/
-	template<typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5, typename Arg6>
-	class function_callback_link6 : public callback_link {
-	public:
-		function_callback_link6(void) throw()
-			: active_next(0), prev(0), next(0), chain(0)
-		{}
-		virtual ~function_callback_link6(void) throw()
-		{}
-		virtual void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5, Arg6 arg6) throw()=0;
-		virtual void cancel(void) throw()
-		{
-			registration_mutex.lock();
-			if (chain) chain->remove(this);
-			else registration_mutex.unlock();
-		}
-		
-		function_callback_link6 *active_next;
-		function_callback_link6 *prev, *next;
-		function_callback_link6 *deferred_cancel_next;
-		
-		callback_list<function_callback_link6> *chain;
-		
-		mutex registration_mutex;
-	};
-	
-	/** \cond NEVER */
-	
-	template<typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5, typename Arg6,
-	typename Context, void (*function)(Context, Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5, Arg6 arg6), void (*_release)(Context)>
-	class function_link6 : public function_callback_link6<Arg1, Arg2, Arg3, Arg4, Arg5, Arg6> {
-	public:
-		inline function_link6(Context _context) throw()
-			: context(_context)
-		{}
-		virtual ~function_link6(void) throw() {}
-		virtual void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5, Arg6 arg6) throw()
-		{(*function)(context, arg1, arg2, arg3, arg4, arg5, arg6);}
-	private:
-		Context context;
-		virtual void cancelled(void) throw()
-		{(*_release)(context);}
+		link_type *deferred_cancel;
 	};
 
-	
-	template<typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5, typename Arg6,
-	typename Obj, void (Obj::*function)(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5, Arg6 arg6), void (Obj::*_release)(void)>
-	class obj_link6 : public function_callback_link6<Arg1, Arg2, Arg3, Arg4, Arg5, Arg6> {
-	public:
-		inline obj_link6(Obj *instance ) throw()
-			: i(instance)
-		{}
-		virtual ~obj_link6(void) throw() {}
-		virtual void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5, Arg6 arg6) throw()
-		{(i->*function)(arg1, arg2, arg3, arg4, arg5, arg6);}
-	private:
-		Obj *i;
-		virtual void cancelled(void) throw()
-		{(i->*_release)();}
-	};
-	
-	template<typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5, typename Arg6,
-	typename Obj, void (Obj::*function)(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5, Arg6 arg6)>
-	class refobj_link6 : public function_callback_link6<Arg1, Arg2, Arg3, Arg4, Arg5, Arg6> {
-	public:
-		inline refobj_link6(tscb::ref<Obj> instance ) throw()
-			: i(tscb::ref_transfer<Obj>(instance))
-		{}
-		virtual ~refobj_link6(void) throw() {}
-		virtual void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5, Arg6 arg6) throw()
-		{(i->*function)(arg1, arg2, arg3, arg4, arg5, arg6);}
-	private:
-		tscb::ref<Obj> i;
-		virtual void cancelled(void) throw()
-		{i=0;}
-	};
-	
-	/** \endcond */
-	
-	/**
-		\brief Chain of callback functions with 6 arguments
-	*/
-	template<typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5, typename Arg6>
-	class callback_chain6 : public callback_list<function_callback_link6<Arg1, Arg2, Arg3, Arg4, Arg5, Arg6> > {
-	public:
-		typedef function_callback_link6<Arg1, Arg2, Arg3, Arg4, Arg5, Arg6> link_type;
-		typedef callback_list<link_type> parent_type;
-		/**
-			\brief Append new callback function to the chain
-			
-			Appends a new callback function to the chain. It will
-			be called whenever \ref operator() of the chain is invoked,
-			until it is cancelled by calling
-			\ref tscb::callback_link::cancel "callback_link::cancel"
-		*/
-		template<typename Context, void (*function)(Context, Arg1, Arg2, Arg3, Arg4, Arg5, Arg6), void (*release)(Context)>
-		ref_transfer<callback_link> connect(Context context) throw(std::bad_alloc)
-		{
-			link_type *l=
-				new function_link6<Arg1, Arg2, Arg3, Arg4, Arg5, Arg6, Context, function, release>(context);
-			push_back(l);
-			return l;
-		}
-		/**
-			\brief Append new callback function to the chain
-			
-			Appends a new callback function to the chain. It will
-			be called whenever \ref operator() of the chain is invoked,
-			until it is cancelled by calling
-			\ref tscb::callback_link::cancel "callback_link::cancel"
-		*/
-		template<typename Obj, void(Obj::*function)(Arg1, Arg2, Arg3, Arg4, Arg5, Arg6), void(Obj::*release)(void)>
-		ref_transfer<callback_link> connect(Obj *o) throw(std::bad_alloc)
-		{
-			link_type *l=
-				new obj_link6<Arg1, Arg2, Arg3, Arg4, Arg5, Arg6, Obj, function, release>(o);
-			push_back(l);
-			return l;
-		}
-		/**
-			\brief Append new callback function to the chain
-			
-			Appends a new callback function to the chain. It will
-			be called whenever \ref operator() of the chain is invoked,
-			until it is cancelled by calling
-			\ref tscb::callback_link::cancel "callback_link::cancel".
-			
-			The target object muss support reference counting through
-			->pin() and ->release() member functions; ->pin() will
-			be used to acquire a reference to the target object; ->release()
-			will be called after the callback has been cancelled.
-		*/
-		template<typename Obj, void(Obj::*function)(Arg1, Arg2, Arg3, Arg4, Arg5, Arg6)>
-		ref_transfer<callback_link> ref_connect(ref<Obj> o) throw(std::bad_alloc)
-		{
-			link_type *l=
-				new refobj_link6<Arg1, Arg2, Arg3, Arg4, Arg5, Arg6, Obj, function>(o);
-			push_back(l);
-			return l;
-		}
-		/**
-			\brief Call all callback functions registered with the chain
-			
-			Calls all callback functions registered trough \ref connect
-			with the given arguments.
-		*/
-		inline void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5, Arg6 arg6)
-		{
-			parent_type::read_lock();
-			link_type *l=parent_type::active;
-			while(l) {
-				data_dependence_memory_barrier();
-				(*l)(arg1, arg2, arg3, arg4, arg5, arg6);
-				l=l->active_next;
-			}
-			parent_type::read_unlock();
-		}
-	};
-	
-	class none {};
-	
-	/**
-		\brief Generic callback chain
-		
-		This class template can be used to implement thread-safe chains of
-		callback functions; all functions must have matching signature
-		(take argument of the types declared by the template parameters).
-		The signature can be declared with up to 6 parameters, but
-		may use less (every template parameter except for the first
-		one is optional).
-		
-		You can use the \ref connect function to append new callback
-		functions to the chain.
-		
-		See \ref callback_descr for a description of how to use this
-		class template.
-	*/
-	template<typename Arg1, typename Arg2=none, typename Arg3=none, typename Arg4=none, typename Arg5=none, typename Arg6=none>
-	class callback_chain : public callback_chain6<Arg1, Arg2, Arg3, Arg4, Arg5, Arg6>
-	{};
-	
-	/** \cond NEVER */
-	
-	template<typename Arg1>
-	class callback_chain<Arg1, none, none, none, none, none> : public callback_chain1<Arg1>
-	{};
-	
-	template<typename Arg1, typename Arg2>
-	class callback_chain<Arg1, Arg2, none, none, none, none> : public callback_chain2<Arg1, Arg2>
-	{};
-	
-	template<typename Arg1, typename Arg2, typename Arg3>
-	class callback_chain<Arg1, Arg2, Arg3, none, none, none> : public callback_chain3<Arg1, Arg2, Arg3>
-	{};
-	
-	template<typename Arg1, typename Arg2, typename Arg3, typename Arg4>
-	class callback_chain<Arg1, Arg2, Arg3, Arg4, none, none> : public callback_chain4<Arg1, Arg2, Arg3, Arg4>
-	{};
-	
-	template<typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5>
-	class callback_chain<Arg1, Arg2, Arg3, Arg4, Arg5, none> : public callback_chain5<Arg1, Arg2, Arg3, Arg4, Arg5>
-	{};
-	
-	/** \endcond */
 }
 
 #endif

@@ -233,10 +233,10 @@ namespace tscb {
 		&create_ioready_dispatcher_epoll,
 	#endif
 	#ifdef HAVE_POLL
-		&create_ioready_dispatcher_poll,
+		//&create_ioready_dispatcher_poll,
 	#endif
 	#ifdef HAVE_SELECT
-		&create_ioready_dispatcher_select,
+		//&create_ioready_dispatcher_select,
 	#endif
 		0
 	};

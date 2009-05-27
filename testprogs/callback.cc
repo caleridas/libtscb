@@ -6,12 +6,14 @@
  * Refer to the file "COPYING" for details.
  */
 
+#include <boost/bind.hpp>
+
 #define _LIBTSCB_CALLBACK_UNITTESTS 1
 #include <tscb/callback>
 #include <tscb/ref>
 #include "tests.h"
 
-using namespace tscb;
+//using namespace tscb;
 
 int result=0;
 int called=0;
@@ -20,48 +22,58 @@ class Receiver {
 public:
 	Receiver(void) : refcount(1) {}
 	void cbrecv1(int arg) {result=arg;}
-	void cbrecv2(int arg) {result=arg; link->cancel(); ASSERT(refcount==2); link=0; ASSERT(refcount==2);}
+	void cbrecv2(int arg) {
+		result=arg;
+		link1->cancel();
+		ASSERT(refcount==2);
+		link1=0;
+		ASSERT(refcount==2);
+	}
 	void cbrecv3(int arg) {
-		called++; result=arg; link->cancel(); link2->cancel();
+		called++; result=arg; link1->cancel(); link2->cancel();
 	}
 	
 	inline void pin(void) {refcount++;}
 	inline void release(void) {refcount--;}
 	int refcount;
 	
-	ref<callback_link> link, link2;
+	tscb::link link1, link2;
 };
 
-void fn(void *context, int arg)
+static inline void intrusive_ptr_add_ref(Receiver *t) throw()
 {
-	ASSERT(context==0);
-	called+=arg;
+	t->pin();
 }
 
-void release(void *context)
+static inline void intrusive_ptr_release(Receiver *t) throw()
 {
-	ASSERT(context==0);
-	result=1;
+	t->release();
+}
+
+static void fn(int arg)
+{
+	called+=arg;
 }
 
 void callback_tests(void)
 {
-	callback_chain<int> chain;
+	tscb::callback_chain<void (int)> chain;
 	{
 		/* verify that callbacks are invoked correctly at all, that
 		callbacks are cancellable and that references to target objects
 		are handled correctly */
 		Receiver r;
-		r.pin();
-		r.link=chain.connect<Receiver, &Receiver::cbrecv1, &Receiver::release>(&r);
+		
+		r.link1=chain.connect(boost::bind(&Receiver::cbrecv1, boost::intrusive_ptr<Receiver>(&r), _1));
 		ASSERT(r.refcount==2);
+		ASSERT(r.link1->refcount==2);
 		
 		chain(1);
 		ASSERT(result==1);
 		
-		r.link->cancel();
+		r.link1->cancel();
 		ASSERT(r.refcount==1);
-		r.link=0;
+		r.link1=0;
 		
 		chain(2);
 		ASSERT(result==1);
@@ -71,8 +83,7 @@ void callback_tests(void)
 		count to the target object is dropped after the callback has
 		completed */
 		Receiver r;
-		r.pin();
-		r.link=chain.connect<Receiver, &Receiver::cbrecv2, &Receiver::release>(&r);
+		r.link1=chain.connect(boost::bind(&Receiver::cbrecv2, boost::intrusive_ptr<Receiver>(&r), _1));
 		
 		chain(3);
 		ASSERT(result==3);
@@ -87,10 +98,8 @@ void callback_tests(void)
 		executed) and that reference counting still works as expected */
 		
 		Receiver r;
-		r.pin();
-		r.link=chain.connect<Receiver, &Receiver::cbrecv3, &Receiver::release>(&r);
-		r.pin();
-		r.link2=chain.connect<Receiver, &Receiver::cbrecv3, &Receiver::release>(&r);
+		r.link1=chain.connect(boost::bind(&Receiver::cbrecv3, boost::intrusive_ptr<Receiver>(&r), _1));
+		r.link2=chain.connect(boost::bind(&Receiver::cbrecv3, boost::intrusive_ptr<Receiver>(&r), _1));
 		
 		chain(5);
 		
@@ -104,35 +113,33 @@ void callback_tests(void)
 		to target objects are dropped as well */
 		Receiver r;
 		{
-			callback_chain<int> chain;
-			r.pin();
-			r.link=chain.connect<Receiver, &Receiver::cbrecv1, &Receiver::release>(&r);
-			ASSERT(r.link->refcount==2);
+			tscb::callback_chain<void (int)> chain;
+			r.link1=chain.connect(boost::bind(&Receiver::cbrecv1, boost::intrusive_ptr<Receiver>(&r), _1));
+			ASSERT(r.link1->refcount==2);
 			ASSERT(r.refcount==2);
 		}
-		ASSERT(r.link->refcount==1);
+		ASSERT(r.link1->refcount==1);
 		ASSERT(r.refcount==1);
-		r.link->cancel();
+		r.link1->cancel();
 	}
 	{
 		called=result=0;
-		ref<callback_link> link=chain.connect<void *, &fn, &release>(0);
+		tscb::link l=chain.connect(boost::bind(fn, _1));
 		
 		chain(1);
 		ASSERT(called==1);
 		ASSERT(result==0);
 		
-		link->cancel();
-		ASSERT(result==1);
+		l->cancel();
 		chain(1);
 		ASSERT(called==1);
 	}
 	/* check cancellation of first element in list */
 	{
 		called=0;
-		ref<callback_link> link1, link2;
-		link1=chain.connect<void *, &fn, &release>(0);
-		link2=chain.connect<void *, &fn, &release>(0);
+		tscb::link link1, link2;
+		link1=chain.connect(boost::bind(fn, _1));
+		link2=chain.connect(boost::bind(fn, _1));
 		
 		chain(1);
 		ASSERT(called==2);
@@ -147,9 +154,9 @@ void callback_tests(void)
 	/* check cancellation of second element in list */
 	{
 		called=0;
-		ref<callback_link> link1, link2;
-		link1=chain.connect<void *, &fn, &release>(0);
-		link2=chain.connect<void *, &fn, &release>(0);
+		tscb::link link1, link2;
+		link1=chain.connect(boost::bind(fn, _1));
+		link2=chain.connect(boost::bind(fn, _1));
 		
 		chain(1);
 		ASSERT(called==2);
@@ -163,21 +170,11 @@ void callback_tests(void)
 	}
 }
 
-void callback_reftests(void)
-{
-	callback_chain<int> chain;
-	Receiver r;
-	
-	ASSERT(r.refcount==1);
-	tscb::callback link=chain.ref_connect<Receiver, &Receiver::cbrecv1>(&r);
-	ASSERT(r.refcount==2);
-	link->cancel();
-	ASSERT(r.refcount==1);
-}
-
 int main(void)
 {
 	callback_tests();
+	#if 0
 	callback_reftests();
+	#endif
 	return 0;
 }

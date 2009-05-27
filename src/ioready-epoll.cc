@@ -6,6 +6,8 @@
  * Refer to the file "COPYING" for details.
  */
 
+#include <boost/bind.hpp>
+
 #include <sys/fcntl.h>
 #include <sys/epoll.h>
 
@@ -91,7 +93,7 @@ namespace tscb {
 			while(link) {
 				data_dependence_memory_barrier();
 				if (ev&link->event_mask) {
-					(*link)(ev&link->event_mask);
+					link->target(ev&link->event_mask);
 				}
 				link=link->active_next;
 			}
@@ -100,13 +102,13 @@ namespace tscb {
 		if (guard.read_unlock()) synchronize();
 	}
 	
-	int ioready_dispatcher_epoll::dispatch(const long long *timeout, int max)
+	int ioready_dispatcher_epoll::dispatch(const boost::posix_time::time_duration *timeout, int max)
 		throw()
 	{
 		pipe_eventflag *evflag=wakeup_flag;
 		
 		int poll_timeout;
-		if (timeout) poll_timeout=*timeout/1000;
+		if (timeout) poll_timeout=timeout->total_milliseconds();
 		else poll_timeout=-1;
 		
 		if (max>16) max=16;
@@ -152,10 +154,7 @@ namespace tscb {
 		pipe_eventflag *tmp=0;
 		try {
 			tmp=new pipe_eventflag();
-			watch<ioready_dispatcher_epoll,
-				&ioready_dispatcher_epoll::drain_queue,
-				&ioready_dispatcher_epoll::release_queue>
-				(tmp->readfd, EVMASK_INPUT, this);
+			watch(boost::bind(&ioready_dispatcher_epoll::drain_queue, this), tmp->readfd, EVMASK_INPUT);
 		}
 		catch (std::bad_alloc) {
 			delete tmp;
@@ -189,7 +188,7 @@ namespace tscb {
 		}
 	}
 	
-	void ioready_dispatcher_epoll::register_ioready_callback(tscb::ref<ioready_callback_link> link)
+	void ioready_dispatcher_epoll::register_ioready_callback(ioready_callback_link *link)
 		throw(std::bad_alloc)
 	{
 		bool sync=guard.write_lock_async();
@@ -202,6 +201,7 @@ namespace tscb {
 		catch (std::bad_alloc) {
 			if (sync) synchronize();
 			else guard.write_unlock_async();
+			delete link;
 			throw;
 		}
 		
@@ -226,9 +226,6 @@ namespace tscb {
 		}
 		
 		link->service=this;
-		
-		/* object ownership has been taken over by chain */
-		link.unassign();
 		
 		if (sync) synchronize();
 		else guard.write_unlock_async();
@@ -298,11 +295,7 @@ namespace tscb {
 		else guard.write_unlock_async();
 	}
 	
-	void ioready_dispatcher_epoll::drain_queue(int fd, int event_mask) throw()
-	{
-	}
-	
-	void ioready_dispatcher_epoll::release_queue(void) throw()
+	void ioready_dispatcher_epoll::drain_queue(void) throw()
 	{
 	}
 	
