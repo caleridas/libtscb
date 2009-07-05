@@ -33,7 +33,8 @@ my_eventflag flag;
 int called=0;
 int released=0;
 
-timer_callback timer_link;
+boost::intrusive_ptr<generic_timer_callback_link<long long> > timer_link;
+//timer_callback timer_link;
 
 bool my_fn(long long &time)
 {

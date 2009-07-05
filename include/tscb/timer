@@ -795,7 +795,7 @@ namespace tscb {
 		eventflag *timer_added;
 	};
 	
-	typedef generic_timer_callback_link<long long> timer_callback_link;
+	typedef generic_timer_callback_link<boost::posix_time::ptime> timer_callback_link;
 	
 	typedef boost::intrusive_ptr<timer_callback_link> timer_callback;
 	
