@@ -262,7 +262,6 @@
 #include <new>
 
 #include <boost/date_time/posix_time/posix_time_types.hpp>
-#include <tscb/ref>
 #include <tscb/callback>
 #include <tscb/thread>
 #include <tscb/eventflag>

@@ -66,6 +66,8 @@ public:
 	
 	int refcount;
 };
+static inline void intrusive_ptr_add_ref(X *x) {x->pin();}
+static inline void intrusive_ptr_release(X *x) {x->release();}
 
 class Y {
 public:
@@ -76,6 +78,8 @@ public:
 	
 	int refcount;
 };
+static inline void intrusive_ptr_add_ref(Y *y) {y->pin();}
+static inline void intrusive_ptr_release(Y *y) {y->release();}
 
 void timer_tests(void)
 {

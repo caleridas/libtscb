@@ -10,7 +10,6 @@
 
 #define _LIBTSCB_CALLBACK_UNITTESTS 1
 #include <tscb/callback>
-#include <tscb/ref>
 #include "tests.h"
 
 //using namespace tscb;
