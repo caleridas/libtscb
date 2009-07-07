@@ -358,6 +358,16 @@ namespace tscb {
 		mutex cancellation_mutex;
 	};
 	
+	static inline void intrusive_ptr_add_ref(ioready_callback_link *t) throw()
+	{
+		t->pin();
+	}
+	
+	static inline void intrusive_ptr_release(ioready_callback_link *t) throw()
+	{
+		t->release();
+	}
+	
 	/**
 		\brief IO readiness callback link
 	*/
