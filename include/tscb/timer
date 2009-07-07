@@ -402,6 +402,11 @@ namespace tscb {
 		*/
 	};
 	
+	template<typename Timeval>
+	void intrusive_ptr_add_ref(generic_timer_callback_link<Timeval> *t) {t->pin();}
+	template<typename Timeval>
+	void intrusive_ptr_release(generic_timer_callback_link<Timeval> *t) {t->release();}
+	
 	/**
 		\brief Registration for timer events
 		
