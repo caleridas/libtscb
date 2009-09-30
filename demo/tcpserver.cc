@@ -97,7 +97,7 @@ void echo::data(int event)
 	do {
 		n=read(fd, buffer, 16384);
 		if (n<0) {
-			if ((errno=EAGAIN)) break;
+			if (errno==EAGAIN) break;
 		}
 		if (n<=0) {
 			printf("connection closed by client\n");
