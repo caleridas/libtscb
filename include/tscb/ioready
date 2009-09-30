@@ -43,8 +43,8 @@
 			
 			void register(tscb::ioready_service *service) throw(std::bad_alloc)
 			{
-				service->watch<IOHandler, &IOHandler::onDataReady, &IOHandler::finish>
-					(descriptor, tscb::EVMASK_INPUT, this);
+				service->watch(boost::bind(&IOHandler::onDataReady, this, descriptor, _1),
+					descriptor, tscb::EVMASK_INPUT);
 			}
 			
 			int descriptor;
@@ -53,12 +53,8 @@
 	
 	In the previous example, the <TT>onDataReady</TT> method of the
 	corresponding object would be called whenever data is
-	available on <TT>descriptor</TT>. The <TT>finish</TT> method will
-	be called after the callback has been cancelled (see section
-	\ref ioready_callback_cookies below).
-	
-	Another variant of the \ref tscb::ioready_service::watch
-	"ioready_service::watch" method allows free-standing functions to be called:
+	available on <TT>descriptor</TT>. The same approach also allows
+	free-standing functions to be called:
 	
 	\code
 		class IOContext;
@@ -76,34 +72,47 @@
 		void register(IOContext *ctx, int fd, tscb::ioready_service *service)
 			throw(std::bad_alloc)
 		{
-			service->watch<IOContext *, &onDataReady, &finish>
-				(fd, tscb::EVMASK_INPUT, ctx);
+			service->watch(boost::bind(&onDataReady, ctx, fd, _1),
+				fd, tscb::EVMASK_INPUT);
 		}
 	\endcode
 	
 	Like in the previous example, the function <TT>onDataReady</TT> will
-	be called whenever data is available on the file descriptor,
-	and <TT>finish</TT> will be called after the callback has been cancelled.
+	be called whenever data is available on the file descriptor. Note that
+	it is generally advisable to use some sort of "smart pointer" to convey
+	context data to the called function, e.g.:
 	
-	The first template parameter to \ref tscb::ioready_service::watch
-	"ioready_service::watch" allows to pass arbitrary data structures as
-	contexts in a type-safe manner. Usually the context object will be a pointer
-	to a data structure (as it is in the example above) containing the required
-	context data. It is possible to pass arbitrary data structures if desired,
-	but the following restrictions should be kept in mind:
+	\code
+		class IOHandler {
+		public:
+			void onDataReady(int fd, int event_mask) throw()
+			{
+				// process data
+			}
+			
+			void finish(void) throw()
+			{
+				close(descriptor);
+				delete this;
+			}
+			
+			void register(tscb::ioready_service *service) throw(std::bad_alloc)
+			{
+				service->watch(boost::bind(&IOHandler::onDataReady,
+					boost::intrusive_ptr<IOHandler>(this), descriptor, _1),
+					descriptor, tscb::EVMASK_INPUT);
+			}
+			
+			int descriptor;
+			int reference_count;
+		};
+		static inline void intrusive_ptr_add_ref(IOHandler *e) {...}
+		static inline void intrusive_ptr_release(IOHandler *e) {...}
+	\endcode
 	
-	<UL>
-		<LI>
-			The <TT>Context</TT> data type must be copy-constructible
-		</LI>
-		<LI>
-			The context object will be copied on creation of the callback link
-		</LI>
-		<LI>
-			The context object will be destroyed when the link is
-			destroyed
-		</LI>
-	</UL>
+	Using this mechanism, the target object will be retained for as long
+	as the function object is callable. The function object will be destroyed
+	"soon after" cancelling the callback (see next section).
 	
 	\section ioready_callback_cookies Callback link handles for ioready callbacks
 	
@@ -114,8 +123,8 @@
 	
 	\code
 		tscb::ioready_callback link;
-		link=service->watch<IOHandler, &IOHandler::onDataReady, &IOHandler::finish>
-			(descriptor, tscb::EVMASK_INPUT, this);
+		link=service->watch(boost::bind(&IOHandler::onDataReady, this, descriptor, _1),
+			descriptor, tscb::EVMASK_INPUT);
 	\endcode
 	
 	The link object can later be used for two purposes: 1. Cancel the
@@ -125,11 +134,10 @@
 		link->cancel();
 	\endcode
 	
-	The callback function will not be invoked subsequently; the registered
-	<TT>release</TT> function (third template parameter to
-	\ref tscb::ioready_service::watch "ioready_service::watch") will be called
-	exactly once as soon as it is guaranteed that the callback function cannot
-	be called again.
+	The function will no longer be invoked afterwards; the function
+	object along with bound parameters will be destroyed subsequently
+	(but not necessarily immediately, e.g. if there are pending calls
+	from other threads).
 	
 	or 2. modify the event mask:
 	
