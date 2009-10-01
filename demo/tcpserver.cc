@@ -18,7 +18,6 @@
 #include <arpa/inet.h>
 #include <errno.h>
 
-#include <tscb/ref>
 #include <tscb/atomic>
 #include <tscb/ioready>
 
@@ -80,8 +79,6 @@ echo::echo(tscb::ioready_service *_service, int _fd)
 	
 	link=service->watch(boost::bind(&echo::data, boost::intrusive_ptr<echo>(this), _1),
 		fd, tscb::EVMASK_INPUT);
-	//link=service->watch<echo, &echo::data, &echo::destroy>
-	//	(fd, tscb::EVMASK_INPUT, this);
 }
 
 echo::~echo(void)
