@@ -195,16 +195,13 @@
 namespace tscb {
 	
 	/**
-		\brief Generic callback link
+		\brief Abstract base of all callback links
 		
 		This object represents the link between a sender/caller, from
 		which notification is requested, to a reciever/callee, to which
 		notification is to be delivered. It is an abstract base class
 		for all different kinds of links established through the various
 		notification interfaces (callback_chains, file or timer events).
-		
-		Link objects are reference-counted entities, and as such have
-		to be treated according to the rules outlined \ref ref_descr "here".
 	*/
 	class callback_link {
 	public:
@@ -241,8 +238,9 @@ namespace tscb {
 		*/
 		virtual void cancel(void) throw()=0;
 		
-		/* reference counting stuff */
+		/** \internal \brief Increase reference count */
 		inline void pin(void) throw() {refcount++;}
+		/** \internal \brief Decrease reference count */
 		inline void release(void) throw() {if (!--refcount) delete this;}
 		
 	private:
@@ -263,7 +261,7 @@ namespace tscb {
 	}
 	
 	/**
-		\brief Generic callback link.
+		\brief Reference to callback link.
 		
 		Every other callback link implemented in this library can be
 		downcast to this type.
@@ -273,6 +271,16 @@ namespace tscb {
 	template<typename Signature> class function_callback_link;
 	template<typename Signature> class callback_chain;
 	
+	/**
+		\brief Generic callback link
+		
+		This object represents the link between a sender/caller, from
+		which notification is requested, to a reciever/callee, to which
+		notification is to be delivered. It is used for "generic" callbacks,
+		i.e. those registered with a \ref callback_chain.
+		
+		See \ref callback_descr for usage.
+	*/
 	template<typename Signature>
 	class function_callback_link : public callback_link {
 	public:
@@ -287,31 +295,55 @@ namespace tscb {
 			if (chain) chain->remove(this);
 			else registration_mutex.unlock();
 		}
+		/** \internal \brief Called after cancellation to destroy the function object */
 		void cancelled(void) throw()
 		{
 			target=0;
 		}
 		
+		/** \internal \brief Functional to be called on activation */
 		boost::function<Signature> target;
 		
+		/** \internal \brief Next element in list of active callbacks */
 		function_callback_link *active_next;
-		function_callback_link *prev, *next;
+		/** \internal \brief Previous element in list */
+		function_callback_link *prev;
+		/** \internal \brief Next element in list */
+		function_callback_link *next;
+		/** \internal \brief Next element in list of callbacks with pending cancellation */
 		function_callback_link *deferred_cancel_next;
 		
+		/** \internal \brief Chain to which this object is registered */
 		callback_chain<Signature> *chain;
 		
+		/** \internal \brief Serialize deregistration */
 		mutex registration_mutex;
 	};
 	
+	/**
+		\brief Generic notifier chain
+		
+		This object allows interested receivers to register themselves
+		for notification, and it allows a sender to deliver notification
+		to all registered receivers.
+		
+		See \ref callback_descr for usage.
+	*/
 	template<typename Signature>
 	class callback_chain {
 	public:
 		typedef function_callback_link<Signature> link_type;
 		
+		/**
+			\brief Add callback to chain
+			
+			\param function
+				Function to be called when chain is activated
+		*/
 		boost::intrusive_ptr<link_type>
-		connect(const boost::function<Signature> &target) throw(std::bad_alloc)
+		connect(const boost::function<Signature> &function) throw(std::bad_alloc)
 		{
-			link_type *l=new link_type(target);
+			link_type *l=new link_type(function);
 			push_back(l);
 			return l;
 		}

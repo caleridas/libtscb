@@ -62,10 +62,6 @@ documentation page; I don't know where else to put it */
 			\ref atomic_descr - Integer variables that can be manipulated
 			atomically from multiple threads
 		</LI>
-		<LI>
-			\ref ref_descr - classes that simplify management of object
-			references
-		</LI>
 	</UL>
 	
 	\section synchronization Synchronization

@@ -397,20 +397,14 @@ namespace tscb {
 		/**
 			\brief register callback for file event
 			
-			\param Context
-				Data type of the context object that will be passed;
-				usually this will be a pointer to a composite data structure
 			\param function
 				Function to be called in case of readiness for IO
-			\param release
-				Function to be called after the callback has been cancelled
 			\param fd
 				The file descriptor which should be monitored for events
 			\param event_mask
 				Set of events for which notification should be delivered
-			\param context
-				Context to be passed along with each invocation
-				of the callback
+			\return
+				Link object
 			
 			This function requests callbacks for IO readiness on a file
 			descriptor (on Unix systems the objects for which events can be
@@ -431,44 +425,11 @@ namespace tscb {
 					for writing
 				</LI>
 			</UL>
-		*/
-		
-		/**
-			\brief register callback for file event
 			
-			\param Target
-				Class type of the object whose member function will
-				be called
-			\param function
-				Function to be called in case of readiness for IO
-			\param release
-				Function to be called after the callback has been cancelled
-			\param fd
-				The file descriptor which should be monitored for events
-			\param event_mask
-				Set of events for which notification should be delivered
-			\param instance
-				Object instance whose methods will be called
-			
-			This function requests callbacks for IO readiness on a file
-			descriptor (on Unix systems the objects for which events can be
-			delivered include pipes, sockets, terminal lines, and a number of
-			special device files).
-			
-			The event_mask indicates what events the callee
-			is interested in; it is a bitwise "or" of one of the
-			following constants:
-			
-			<UL>
-				<LI>
-					<TT>tscb::EVMASK_INPUT</TT>: descriptor is ready
-					for reading
-				</LI>
-				<LI>
-					<TT>tscb::EVMASK_OUTPUT</TT>: descriptor is ready
-					for writing
-				</LI>
-			</UL>
+			The passed function object will be called with a parameter
+			indicating the set of events that have occurred. The returned
+			link object may be used to modify the set of watched events
+			or cancel the callback.
 		*/
 		boost::intrusive_ptr<ioready_callback_link>
 		watch(const boost::function<void(int)> &fn, int fd, int event_mask) throw(std::bad_alloc)
@@ -481,10 +442,13 @@ namespace tscb {
 		/* internal functions; actual implementation of the file event
 		callback mechanism */
 		friend class ioready_callback_link;
+		/** \internal \brief Register callback link */
 		virtual void register_ioready_callback(ioready_callback_link *l)
 			throw(std::bad_alloc)=0;
+		/** \internal \brief Unregister callback link */
 		virtual void unregister_ioready_callback(ioready_callback_link *e)
 			throw()=0;
+		/** \internal \brief Update event set */
 		virtual void modify_ioready_callback(ioready_callback_link *e, int event_mask)
 			throw()=0;
 	};
@@ -556,7 +520,7 @@ namespace tscb {
 			\brief Dispatch a number of pending events
 			
 			\param timeout
-				Timeout (in microseconds), or a NULL pointer
+				Timeout, or a NULL pointer
 			\param max
 				Maximum number of events to be processed
 			
@@ -625,6 +589,14 @@ namespace tscb {
 		virtual eventflag *get_eventflag(void)
 			throw(std::bad_alloc, std::runtime_error)=0;
 		
+		/**
+			\brief Instantiate ioready_dispatcher
+			
+			Instantiates an object of type \ref ioready_dispatcher,
+			using the dispatching mechanism most suitable for the
+			current platform. Alias for
+			\ref create_ioready_dispatcher
+		*/
 		static
 		ioready_dispatcher *
 		create(void) throw(std::bad_alloc, std::runtime_error);

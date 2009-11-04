@@ -42,13 +42,14 @@ namespace tscb {
 			\brief Set the flag
 			
 			Set the flag, will implicitly wake up all threads waiting
-			for the flag via \ref wait
+			for the flag via \ref eventflag::wait
 		*/
 		virtual void set(void) throw()=0;
 		/**
 			\brief Clear the flag
-			Clear the flag, threads calling \ref wait will block until
-			the flag is set again via \ref set
+			
+			Clear the flag, threads calling \ref eventflag::wait will block until
+			the flag is set again via \ref eventflag::set
 		*/
 		virtual void clear(void) throw()=0;
 		/**
@@ -70,6 +71,7 @@ namespace tscb {
 	*/
 	class pipe_eventflag : public eventflag {
 	public:
+		/** \brief Instantiate event flag, using a pair of pipes */
 		pipe_eventflag(void) throw(std::runtime_error);
 		virtual ~pipe_eventflag(void) throw();
 		
@@ -77,18 +79,29 @@ namespace tscb {
 		virtual void wait(void) throw();
 		virtual void clear(void) throw();
 		
+		/** \internal \brief Mark one thread as waiting */
 		void start_waiting(void) throw();
+		/** \internal \brief Remove one waiting thread */
 		void stop_waiting(void) throw();
 		
-		int readfd, writefd;
-		/* can have three possible states:
-		- 0: not flagged
-		- 1: flagged, but no wakeup via control pipe 
-		- 2: flagged, wakeup sent via control pipe */
+		/** \internal \brief Read side of the pipe pair */
+		int readfd;
+		/** \internal \brief Write side of the pipe pair */
+		int writefd;
+		/** \internal
+			\brief State of the event flag
+			
+			The event flag implementation uses the following internal states:
+			- 0: not flagged
+			- 1: flagged, but no wakeup via control pipe 
+			- 2: flagged, wakeup sent via control pipe
+		*/
 		atomic flagged;
+		/** \internal \brief Number of threads waiting */
 		atomic waiting;
 	};
 	
+	/** \cond NEVER -- ignored by doxygen */
 	class variable_eventflag : public eventflag {
 	public:
 		inline variable_eventflag(void) throw() : flagged(0) {}
@@ -100,6 +113,7 @@ namespace tscb {
 		
 		volatile int flagged;
 	};
+	/** \endcond */
 	
 	/*
 	class signal_event_flag : public event_flag {

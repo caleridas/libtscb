@@ -55,7 +55,7 @@
 	In the previous example, the <TT>onTimer</TT> method of the corresponding object
 	will be called at the specified point in time; moreover the timer will
 	rearm itself 1000 usecs in the future by returning <TT>True</TT>, effectively
-	creating an (imprecise) periodic timer (see section \ref periodic_timer below
+	creating an (imprecise) periodic timer (see section \ref periodic_timers below
 	how to create precise periodic timers). Returning <TT>False</TT> from the
 	timer callback functions indicates that it does not want to be called again.
 	
@@ -402,10 +402,12 @@ namespace tscb {
 		*/
 	};
 	
+	/** \cond NEVER -- ignored by doxygen */
 	template<typename Timeval>
 	void intrusive_ptr_add_ref(generic_timer_callback_link<Timeval> *t) {t->pin();}
 	template<typename Timeval>
 	void intrusive_ptr_release(generic_timer_callback_link<Timeval> *t) {t->release();}
+	/** \endcond */
 	
 	/**
 		\brief Registration for timer events
@@ -800,16 +802,18 @@ namespace tscb {
 		eventflag *timer_added;
 	};
 	
+	/** \brief Timer callback link using posix_time::ptime to represent time values */
 	typedef generic_timer_callback_link<boost::posix_time::ptime> timer_callback_link;
 	
+	/** \brief Reference to timer callback link using posix_time::ptime to represent time values */
 	typedef boost::intrusive_ptr<timer_callback_link> timer_callback;
 	
 	/**
-		\brief Timer service using 64 bit integers to represent time values as usecs
+		\brief Timer service using posix_time::ptime to represent time values
 	*/
 	typedef generic_timer_service<boost::posix_time::ptime> timer_service;
 	/**
-		\brief Timer dispatcher using 64 bit integers to represent time values as usecs
+		\brief Timer dispatcher using posix_time::ptime to represent time values
 	*/
 	typedef generic_timerqueue_dispatcher<boost::posix_time::ptime> timerqueue_dispatcher;
 	
