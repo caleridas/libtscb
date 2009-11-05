@@ -335,6 +335,7 @@ namespace tscb {
 	public:
 		/** \internal \brief Type of link connection to this chain */
 		typedef function_callback_link<Signature> link_type;
+		friend class function_callback_link<Signature>;
 		
 		/**
 			\brief Add callback to chain
@@ -457,6 +458,7 @@ namespace tscb {
 			}
 		}
 		
+	protected:
 		/** \internal \brief Add link to end of chain */
 		void push_back(link_type *l) throw()
 		{
@@ -578,7 +580,6 @@ namespace tscb {
 		{
 			if (guard.read_unlock()) synchronize();
 		}
-	protected:
 		/** \internal \brief singly-linked list of active elements */
 		link_type *active;
 		
@@ -586,7 +587,7 @@ namespace tscb {
 		deferrable_rwlock guard;
 		
 		/** \internal \brief First element in the chain, whether active or not */
-		link_type *first
+		link_type *first;
 		/** \internal \brief Last element in the chain, whether active or not */
 		link_type *last;
 		
