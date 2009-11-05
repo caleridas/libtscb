@@ -11,6 +11,7 @@
 
 #include <stdexcept>
 #include <tscb/atomic>
+#include <pthread.h>
 
 namespace tscb {
 	
@@ -102,37 +103,21 @@ namespace tscb {
 	};
 	
 	/** \cond NEVER -- ignored by doxygen */
-	class variable_eventflag : public eventflag {
+	class platform_eventflag : public eventflag {
 	public:
-		inline variable_eventflag(void) throw() : flagged(0) {}
-		virtual ~variable_eventflag(void) throw();
+		platform_eventflag(void) throw();
+		virtual ~platform_eventflag(void) throw();
 		
 		virtual void set(void) throw();
 		virtual void wait(void) throw();
 		virtual void clear(void) throw();
-		
-		volatile int flagged;
-	};
-	/** \endcond */
-	
-	/*
-	class signal_event_flag : public event_flag {
-	public:
-		signal_event_flag(pthread_t thread, int signo) throw();
-		virtual ~signal_event_flag(void) throw();
-		
-		virtual void set(void) throw();
-		virtual void wait(void) throw();
-		virtual void clear(void) throw();
-		
-		inline void _set_no_signal(void) throw() {flagged=true;}
-		inline void _clear_no_signal(void) throw() {flagged=false;}
-		
-		pthread_t thread;
-		int signo;
+	private:
+		pthread_mutex_t mutex;
+		pthread_cond_t cond;
 		bool flagged;
 	};
-	*/
+	/** \endcond */
+
 }
 
 #endif

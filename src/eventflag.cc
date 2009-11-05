@@ -120,25 +120,38 @@ namespace tscb {
 		/* we assume that a system call is an implicit memory barrier */
 	}
 	
-	variable_eventflag::~variable_eventflag(void) throw()
+	platform_eventflag::platform_eventflag(void) throw()
+		: mutex((pthread_mutex_t)PTHREAD_MUTEX_INITIALIZER),
+		cond((pthread_cond_t)PTHREAD_COND_INITIALIZER),
+		flagged(false)
 	{
 	}
 	
-	void variable_eventflag::set(void) throw()
+	platform_eventflag::~platform_eventflag(void) throw()
 	{
-		flagged=1;
 	}
 	
-	void variable_eventflag::wait(void) throw()
+	void platform_eventflag::set(void) throw()
 	{
-		while (!flagged);
+		if (flagged) return;
+		pthread_mutex_lock(&mutex);
+		flagged=true;
+		pthread_mutex_unlock(&mutex);
+		pthread_cond_broadcast(&cond);
 	}
 	
-	void variable_eventflag::clear(void) throw()
+	void platform_eventflag::wait(void) throw()
 	{
-		flagged=0;
+		if (flagged) return;
+		pthread_mutex_lock(&mutex);
+		while (!flagged) pthread_cond_wait(&cond, &mutex);
+		pthread_mutex_unlock(&mutex);
 	}
-		
+	
+	void platform_eventflag::clear(void) throw()
+	{
+		flagged=false;
+	}
 	
 	#if 0
 	
