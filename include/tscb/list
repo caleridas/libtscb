@@ -53,19 +53,26 @@ namespace tscb {
 	template <typename T, T *T::*prev = &T::prev, T *T::*next = &T::next>
 	class list {
 	public:
-		/**
-			\brief List iterator
-		*/
+		/** \brief List iterator */
 		class iterator {
 		public:
+			/** \brief List iterator */
 			inline iterator(void) throw() : ptr(0) {}
+			/** \brief Next element */
 			inline const iterator &operator++(void) throw() {ptr=(*ptr).*next; return *this;}
+			/** \brief Next element */
 			inline iterator operator++(int) throw() {iterator tmp=*this; ptr=(*ptr).*next; return tmp;}
+			/** \brief Previous element */
 			inline const iterator &operator--(void) throw() {if (ptr) ptr=(*ptr).*prev; else ptr=l->last; return *this;}
+			/** \brief Previous element */
 			inline iterator operator--(int) throw() {iterator tmp=*this; if (ptr) ptr=(*ptr).*prev; else ptr=l->last; return tmp;}
+			/** \brief Dereference iterator */
 			inline operator T *(void) const throw() {return ptr;}
+			/** \brief Dereference iterator */
 			inline T* operator->(void) const throw() {return ptr;}
+			/** \brief Test for equality */
 			inline bool operator==(const iterator &i) const throw() {return ptr==i.ptr;}
+			/** \brief Test for inequality */
 			inline bool operator!=(const iterator &i) const throw() {return ptr!=i.ptr;}
 		private:
 			T *ptr;
@@ -73,7 +80,9 @@ namespace tscb {
 			inline iterator(T *p, const list *_l) throw() : ptr(p) , l(_l) {}
 			friend class list;
 		};
+		/** \brief Create empty list */
 		inline list(void) throw() : first(0), last(0) {}
+		/** \brief Add element to back of list */
 		inline void push_back(T *obj) throw()
 		{
 			if (last) (*last).*next=obj; else first=obj;
@@ -81,6 +90,7 @@ namespace tscb {
 			(*obj).*next=0;
 			last=obj;
 		}
+		/** \brief Add element to front of list */
 		inline void push_front(T *obj) throw()
 		{
 			if (first) (*first).*prev=obj; else last=obj;
@@ -88,6 +98,7 @@ namespace tscb {
 			(*obj).*next=first;
 			first=obj;
 		}
+		/** \brief Remove element from list */
 		inline void remove(T *obj) throw()
 		{
 			if ((*obj).*prev) *((*obj).*prev).*next=(*obj).*next;
@@ -95,6 +106,7 @@ namespace tscb {
 			if ((*obj).*next) *((*obj).*next).*prev=(*obj).*prev;
 			else last=(*obj).*prev;
 		}
+		/** \brief Add elements from source list to front */
 		inline void join_front(list &l) throw()
 		{
 			if (l.last) l.last->*next=first;
@@ -107,6 +119,7 @@ namespace tscb {
 			l.first=0;
 			l.last=0;
 		}
+		/** \brief Add elements from source list to back */
 		inline void join_back(list &l) throw()
 		{
 			if (l.first) l.first->*prev=last;
@@ -120,9 +133,11 @@ namespace tscb {
 			l.last=0;
 		}
 		
+		/** \brief Iterator pointing to first element in list */
 		inline iterator begin(void) throw() {return iterator(first, this);}
+		/** \brief Iterator pointing to last element in list */
 		inline iterator end(void) throw() {return iterator(0, this);}
-		
+		/** \brief Insert element before given position */
 		inline void insert_before(T *obj, T *at) throw()
 		{
 			if (at->*prev) at->*prev->*next=obj;
@@ -131,6 +146,7 @@ namespace tscb {
 			obj->*next=at;
 			at->*prev=obj;
 		}
+		/** \brief Insert element after given position */
 		inline void insert_after(T *obj, T *at) throw()
 		{
 			if (at->*next) at->*next->*prev=obj;
@@ -139,11 +155,15 @@ namespace tscb {
 			obj->*prev=at;
 			at->*next=obj;
 		}
+		/** \brief Insert element before given position */
 		inline void insert_before(T *obj, const iterator &at) throw()
 			{insert_before(obj, at.ptr);}
+		/** \brief Insert element after given position */
 		inline void insert_after(T *obj, const iterator &at) throw()
 			{insert_after(obj, at.ptr);}
+		/** \brief Obtain iterator pointing to specific list element */
 		inline iterator make_iterator(T *obj) const throw() {return iterator(obj, this);}
+		/** \brief Test for emptiness */
 		inline bool empty(void) const throw() {return first==0;}
 	private:
 		T *first, *last;
