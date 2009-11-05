@@ -284,6 +284,7 @@ namespace tscb {
 	template<typename Signature>
 	class function_callback_link : public callback_link {
 	public:
+		/** \internal \brief Instantiate callback link */
 		function_callback_link(const boost::function<Signature> &_target) throw(std::bad_alloc)
 			: target(_target), active_next(0), prev(0), next(0), chain(0)
 		{}
@@ -332,6 +333,7 @@ namespace tscb {
 	template<typename Signature>
 	class callback_chain {
 	public:
+		/** \internal \brief Type of link connection to this chain */
 		typedef function_callback_link<Signature> link_type;
 		
 		/**
@@ -455,6 +457,7 @@ namespace tscb {
 			}
 		}
 		
+		/** \internal \brief Add link to end of chain */
 		void push_back(link_type *l) throw()
 		{
 			l->registration_mutex.lock();
@@ -495,7 +498,7 @@ namespace tscb {
 			if (sync) synchronize();
 			else guard.write_unlock_async();
 		}
-		
+		/** \internal \brief Remove link from chain */
 		void remove(link_type *l) throw()
 		{
 			bool sync=guard.write_lock_async();
@@ -530,7 +533,7 @@ namespace tscb {
 			if (sync) synchronize();
 			else guard.write_unlock_async();
 		}
-		
+		/** \internal \brief Synchronize when reaching quiescent state */
 		void synchronize(void) throw()
 		{
 			link_type *do_cancel=deferred_cancel;
@@ -565,29 +568,34 @@ namespace tscb {
 				do_cancel=tmp;
 			}
 		}
-		
+		/** \internal \brief Lock for reading (before notifying receivers) */
 		inline void read_lock(void) throw()
 		{
 			while(guard.read_lock()) synchronize();
 		}
-		
+		/** \internal \brief Unlock for reading (after notifying receivers) */
 		inline void read_unlock(void) throw()
 		{
 			if (guard.read_unlock()) synchronize();
 		}
 	protected:
-		/* singly-linked list of active elements */
+		/** \internal \brief singly-linked list of active elements */
 		link_type *active;
 		
-		/* thread synchronization */
+		/** \internal \brief thread synchronization */
 		deferrable_rwlock guard;
 		
-		/* list of all elements in the chain, whether active or not */
-		link_type *first, *last;
+		/** \internal \brief First element in the chain, whether active or not */
+		link_type *first
+		/** \internal \brief Last element in the chain, whether active or not */
+		link_type *last;
 		
-		/* singly-linked list of elements that have been removed from
-		the active list, but are not yet removed from the full list
-		and not been discarded yet*/
+		/** \internal \brief List of elements to be cancelled
+		 
+			singly-linked list of elements that have been removed from
+			the active list, but are not yet removed from the full list
+			and have not been discarded yet
+		*/
 		link_type *deferred_cancel;
 	};
 
