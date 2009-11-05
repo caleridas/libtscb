@@ -434,55 +434,10 @@ namespace tscb {
 		/**
 			\brief register callback for timer event
 			
-			\param Context
-				Data type of the context object that will be passed;
-				usually this will be a pointer to a composite data structure
 			\param function
 				Function to be called at specific point in time
-			\param release
-				Function to be called after the callback has been cancelled
 			\param expires
 				The point in time when the callback should be executed
-			\param context
-				Context to be passed along with each invocation
-				of the callback
-			
-			This function requests a callback at a given point in time. The
-			point in time is given as an absolute value, so if you want a
-			relative point in time, use \ref tscb::current_time and add an
-			appropriate time interval.
-			
-			No hard real-time guarantees are made about when the callback
-			will be executed. It will usually be executed a little after the
-			point in time indicated by <CODE>expires</CODE>, dependent on
-			the resolution of the system clock (about 1 millisecond for
-			most systems) and load of the system.
-			
-			For this reason the function is called with the current time (as
-			known to the caller), so the callback can determine how much it is
-			too late and act accordingly.
-			
-			The called function may either return <CODE>false</CODE>, in
-			which case the timer is considered "cancelled" and will not
-			be called again; or it may modify the value passed in
-			<CODE>now</CODE> and return <CODE>true</CODE>, in which case it
-			will be called again at the new point in time.
-		*/
-		
-		/**
-			\brief register callback for timer event
-			
-			\param Target
-				Class type of the object whose member function will
-				be called
-			\param function
-				Function to be called at specific point in time
-			\param release
-				Function to be called after the callback has been cancelled
-			\param expires
-				The point in time when the callback should be executed
-			\param instance
-				Object instance whose methods will be called
 			
 			This function requests a callback at a given point in time. The
 			point in time is given as an absolute value, so if you want a
@@ -506,17 +461,17 @@ namespace tscb {
 			will be called again at the new point in time.
 		*/
 		boost::intrusive_ptr<generic_timer_callback_link<Timeval> >
-		timer(const boost::function<bool (Timeval &)> &fn, Timeval expires) throw(std::bad_alloc)
+		timer(const boost::function<bool (Timeval &)> &function, Timeval expires) throw(std::bad_alloc)
 		{
 			generic_timer_callback_link<Timeval> *link;
-			link=new generic_timer_callback_link<Timeval>(fn, expires);
+			link=new generic_timer_callback_link<Timeval>(function, expires);
 			register_timer(link);
 			return link;
 		}
 		
-		/* internal functions; actual implementation of the timer callback
-		mechanism */
+		/** \internal \brief Register timer with internal data structure */
 		virtual void register_timer(generic_timer_callback_link<Timeval> *ptr) throw()=0;
+		/** \internal \brief Unregister timer with internal data structure */
 		virtual void unregister_timer(generic_timer_callback_link<Timeval> *t) throw()=0;
 	};
 	
@@ -535,6 +490,21 @@ namespace tscb {
 	template<typename Timeval>
 	class generic_timerqueue_dispatcher : public generic_timer_service<Timeval> {
 	public:
+		/**
+			\brief Create timer dispatcher
+			
+			\param flag
+				Event flag that will be signalled when time to the
+				next pending timer has been changed
+			
+			Instantiates a timer dispatcher. It supports dispatching of
+			registered timers as well as calculating the "deadline" when
+			the next pending timer needs to be dispatched
+			(see \ref run_queue). This deadline
+			may change intermittently when new timers are added -- in this
+			case, the given event flag is signalled and \ref run_queue should
+			be called again as soon as possible.
+		*/
 		generic_timerqueue_dispatcher(eventflag *flag) throw()
 			: timer_queue_running(false), timer_added(flag)
 		{
@@ -763,6 +733,7 @@ namespace tscb {
 			}
 		}
 		
+		/** \internal \brief Register timer with internal data structure */
 		virtual void register_timer(generic_timer_callback_link<Timeval> *ptr) throw()
 		{
 			queue_mutex.lock();
@@ -774,6 +745,7 @@ namespace tscb {
 			
 			if (needWakeup) timer_added->set();
 		}
+		/** \internal \brief Unregister timer with internal data structure */
 		virtual void unregister_timer(generic_timer_callback_link<Timeval> *t) throw()
 		{
 			queue_mutex.lock();
@@ -793,12 +765,13 @@ namespace tscb {
 		}
 		
 	protected:
+		/** \internal \brief Fibonacci heap of pending timers */
 		fibheap<generic_timer_callback_link<Timeval> > timer_queue;
-		
+		/** \internal \brief Protect timer queue data structure */
 		mutable mutex queue_mutex;
-		
+		/** \internal \brief Set to true while timers are being processed */
 		bool timer_queue_running;
-		
+		/** \internal \brief Event flag signalled when timer has been added */
 		eventflag *timer_added;
 	};
 	
