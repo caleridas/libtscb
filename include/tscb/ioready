@@ -300,6 +300,7 @@ namespace tscb {
 	*/
 	class ioready_callback_link : public callback_link {
 	public:
+		/** \internal \brief Instantiate ioready callback link */
 		inline ioready_callback_link(const boost::function<void (int)> &_target,
 			int _fd, int _event_mask) throw()
 			: target(_target), fd(_fd), event_mask(_event_mask)
@@ -337,6 +338,7 @@ namespace tscb {
 		*/
 		virtual void cancel(void) throw();
 		
+		/** \internal \brief Destroy function object after completing cancellation */
 		inline void cancelled(void) throw() {target=0;}
 		/**
 			\brief modify the mask of events the receiver is interested in
@@ -357,15 +359,28 @@ namespace tscb {
 		*/
 		void modify(int new_event_mask) throw();
 		
+		/** \internal \brief Function object to call */
 		boost::function<void(int)> target;
-		int fd, event_mask;
+		/** \internal \brief File descriptor to watch */
+		int fd;
+		/** \internal \brief Events to watch file descriptor for */
+		int event_mask;
 		
-		ioready_callback_link *active_next, *prev, *next, *inactive_next;
+		/** \internal \brief Next active element */
+		ioready_callback_link *active_next;
+		/** \internal \brief Previous element (active or to be removed) */
+		ioready_callback_link *prev;
+		/** \internal \brief Next element (active or to be removed) */
+		ioready_callback_link *next;
+		/** \internal \brief Next element scheduled for deferred cancellation */
+		ioready_callback_link *inactive_next;
+		/** \internal \brief ioready_service this element is linked to */
 		ioready_service *service;
-		
+		/** \internal \brief Protect against concurrent cancellation */
 		mutex cancellation_mutex;
 	};
 	
+	/** \cond NEVER -- ignored by doxygen */
 	static inline void intrusive_ptr_add_ref(ioready_callback_link *t) throw()
 	{
 		t->pin();
@@ -375,6 +390,7 @@ namespace tscb {
 	{
 		t->release();
 	}
+	/** \endcond */
 	
 	/**
 		\brief IO readiness callback link
@@ -432,9 +448,9 @@ namespace tscb {
 			or cancel the callback.
 		*/
 		boost::intrusive_ptr<ioready_callback_link>
-		watch(const boost::function<void(int)> &fn, int fd, int event_mask) throw(std::bad_alloc)
+		watch(const boost::function<void(int)> &function, int fd, int event_mask) throw(std::bad_alloc)
 		{
-			ioready_callback_link *link=new ioready_callback_link(fn, fd, event_mask);
+			ioready_callback_link *link=new ioready_callback_link(function, fd, event_mask);
 			register_ioready_callback(link);
 			return link;
 		}
@@ -559,19 +575,20 @@ namespace tscb {
 			The function is generally reentrant, multiple threads
 			can enter the dispatching loop simultaneously. However depending
 			on the concrete dispatcher implementation the behaviour
-			may not be terribly useful, as some dispatchers will
-			dispatch every event by every thread.
+			may not be terribly useful, as some dispatchers will attempt
+			to dispatch the same event in multiple threads.
 		*/
 		virtual int dispatch(const boost::posix_time::time_duration *timeout,
 			int max=2147483647L)
 			throw()=0;
 		
 		/**
-			\brief Event flag to interrupt dispatching
+			\brief Event flag to wake up prematurely
 			
 			Returns a pointer to an event flag that allows interrupting
-			the dispatching operation. Setting this flag (from an
-			arbitrary thread) via \ref tscb::eventflag::set will cause
+			waiting for the timeout specified as argument to \ref dispatch.
+			Setting this flag (possibly from another thread) via \ref
+			tscb::eventflag::set will cause
 			the \ref dispatch function to return immediately. The flag
 			will be cleared by the \ref dispatch function before returning.
 			
