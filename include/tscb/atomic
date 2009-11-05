@@ -151,7 +151,25 @@ namespace tscb {
 			<CODE>atomic</CODE> is useless to begin with.
 		*/
 		inline operator long(void) const {return value;}
+		/**
+			\brief Read value
+
+			Return the current value of the counter; usually there is no point in reading
+			the value of an atomic variable and acting on its value except for debugging
+			purposes -- because, by definition, the value of the variable might change
+			under the feet of the caller. If the caller knows the value cannot change,
+			<CODE>atomic</CODE> is useless to begin with.
+		*/
 		inline operator int(void) const {return value;}
+		/**
+			\brief Read value
+
+			Return the current value of the counter; usually there is no point in reading
+			the value of an atomic variable and acting on its value except for debugging
+			purposes -- because, by definition, the value of the variable might change
+			under the feet of the caller. If the caller knows the value cannot change,
+			<CODE>atomic</CODE> is useless to begin with.
+		*/
 		inline operator bool(void) const {return (bool)value;}
 		
 		/**
@@ -165,6 +183,16 @@ namespace tscb {
 			
 		*/
 		inline bool operator==(long v) const {return value==v;}
+		/**
+			\brief Compare against a value
+			
+			Compare the current value of the counter; usually there is no point in reading
+			the value of an atomic variable and acting on its value except for debugging
+			purposes -- because, by definition, the value of the variable might change
+			under the feet of the caller. If the caller knows the value cannot change,
+			then there is usually no point in using <CODE>atomic</CODE>.
+			
+		*/
 		inline bool operator==(int v) const {return value==v;}
 		/**
 			\brief Compare against a value
@@ -177,6 +205,16 @@ namespace tscb {
 			
 		*/
 		inline bool operator!=(long v) const {return value!=v;}
+		/**
+			\brief Compare against a value
+			
+			Compare the current value of the counter; usually there is no point in reading
+			the value of an atomic variable and acting on its value except for debugging
+			purposes -- because, by definition, the value of the variable might change
+			under the feet of the caller. If the caller knows the value cannot change,
+			then there is usually no point in using <CODE>atomic</CODE>.
+			
+		*/
 		inline bool operator!=(int v) const {return value!=v;}
 		
 		/**
@@ -259,6 +297,18 @@ namespace tscb {
 			pthread_mutex_unlock(&mutex);
 			return notzero;
 		}
+		/**
+			\brief perform atomic "compare and swap"
+			
+			\param oldvalue Expected value to test against
+			\param newvalue New value to be set
+			
+			Atomically test if variable equals <TT>oldvalue</TT>,
+			and if it does, set it to <TT>newvalue</TT>. Returns
+			the value of the variable before this operation so the
+			caller can check whether the replacement operation was
+			performed.
+		*/
 		inline long cmpxchg(long oldvalue, long newvalue) {
 			long retvalue;
 			pthread_mutex_lock(&mutex);
