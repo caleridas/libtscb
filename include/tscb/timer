@@ -298,6 +298,7 @@ namespace tscb {
 	template<typename Timeval>
 	class generic_timer_callback_link : public callback_link {
 	public:
+		/** \internal \brief instantiate timer callback link */
 		inline generic_timer_callback_link(const boost::function<bool (Timeval &time)> &_target,
 			Timeval _expires) throw()
 			: target(_target), when(_expires)
@@ -341,17 +342,22 @@ namespace tscb {
 			else cancellation_mutex.unlock();
 		}
 		
+		/** \internal \brief Destroy function object after completing cancellation */
 		inline void cancelled(void) throw()
 		{
 			target=0;
 		}
 		
+		/** \brief return expiry time */
 		inline Timeval expires(void) const throw() {return when;}
 		
-		/* operators that affect and compare the timeout value */
+		/** \internal \brief compare timeout values */
 		inline bool operator>(const generic_timer_callback_link &x) const {return when>x.when;}
+		/** \internal \brief compare timeout values */
 		inline bool operator<(const generic_timer_callback_link &x) const {return when<x.when;}
+		/** \internal \brief compare timeout values */
 		inline bool operator<=(const generic_timer_callback_link &x) const {return when<=x.when;}
+		/** \internal \brief assign new timeout value */
 		inline const generic_timer_callback_link &operator=(const Timeval newval)
 		{
 			when=newval;
@@ -361,21 +367,27 @@ namespace tscb {
 		/* the following class members should not be touched
 		except by timer_service implementations */
 		
-		/* function to be called when timer expires */
+		/** \internal \brief function to be called when timer expires */
 		boost::function<bool (Timeval &time)> target;
 		
-		/* when is the timer about to expire? */
+		/** \internal \brief when is the timer about to expire? */
 		Timeval when;
 		
-		/* protect against concurrent cancellation from multiple sides */
+		/** \internal \brief protect against concurrent cancellation from multiple sides */
 		mutex cancellation_mutex;
 		
-		/* timer service provider we are registered with */
+		/** \internal \brief Timer service provider we are registered with */
 		generic_timer_service<Timeval> *service;
 		
-		/* fields required for fibonacci heap; unfortunately they have
-		to be public */
-		generic_timer_callback_link *next, *prev, *parent, *child;
+		/** \internal \brief Fields required for fibonacci heap structure */
+		generic_timer_callback_link *next;
+		/** \internal \brief Fields required for fibonacci heap structure */
+		generic_timer_callback_link *prev;
+		/** \internal \brief Fields required for fibonacci heap structure */
+		generic_timer_callback_link *parent;
+		/** \internal \brief Fields required for fibonacci heap structure */
+		generic_timer_callback_link *child;
+		/** \internal \brief Fields required for fibonacci heap structure */
 		int degree;
 		
 		/*
