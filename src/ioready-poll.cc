@@ -139,7 +139,7 @@ namespace tscb {
 				int fd=ptab->pfd[n].fd;
 				int ev=translate_os_to_tscb(ptab->pfd[n].revents);
 				
-				ioready_callback_link *link=
+				ioready_callback *link=
 					callback_tab.lookup_first_callback(fd);
 				while(link) {
 					data_dependence_memory_barrier();
@@ -163,7 +163,7 @@ namespace tscb {
 	
 	void ioready_dispatcher_poll::synchronize(void) throw()
 	{
-		ioready_callback_link *stale=callback_tab.synchronize();
+		ioready_callback *stale=callback_tab.synchronize();
 		
 		polltab *discard_ptab=master_ptab->old;
 		master_ptab->old=0;
@@ -171,7 +171,7 @@ namespace tscb {
 		guard.sync_finished();
 		
 		while(stale) {
-			ioready_callback_link *next=stale->inactive_next;
+			ioready_callback *next=stale->inactive_next;
 			stale->cancelled();
 			stale->release();
 			stale=next;
@@ -197,7 +197,7 @@ namespace tscb {
 		return ptab;
 	}
 	
-	void ioready_dispatcher_poll::create_polltab_entry(ioready_callback_link *link)
+	void ioready_dispatcher_poll::create_polltab_entry(ioready_callback *link)
 		throw(std::bad_alloc)
 	{
 		polltab *p=clone_polltab_for_extension();
@@ -217,7 +217,7 @@ namespace tscb {
 		int index=(long)callback_tab.get_closure(fd);
 		
 		int newevmask=0;
-		ioready_callback_link *tmp=callback_tab.lookup_first_callback(fd);
+		ioready_callback *tmp=callback_tab.lookup_first_callback(fd);
 		while(tmp) {
 			newevmask|=translate_tscb_to_os(tmp->event_mask);
 			tmp=tmp->active_next;
@@ -238,7 +238,7 @@ namespace tscb {
 		master_ptab->size--;
 	}
 	
-	void ioready_dispatcher_poll::register_ioready_callback(ioready_callback_link *link)
+	void ioready_dispatcher_poll::register_ioready_callback(ioready_callback *link)
 		throw(std::bad_alloc)
 	{
 		bool sync=guard.write_lock_async();
@@ -275,7 +275,7 @@ namespace tscb {
 		wakeup_flag.set();
 	}
 	
-	void ioready_dispatcher_poll::unregister_ioready_callback(ioready_callback_link *link)
+	void ioready_dispatcher_poll::unregister_ioready_callback(ioready_callback *link)
 		throw()
 	{
 		bool sync=guard.write_lock_async();
@@ -300,7 +300,7 @@ namespace tscb {
 		wakeup_flag.set();
 	}
 	
-	void ioready_dispatcher_poll::modify_ioready_callback(ioready_callback_link *link, int event_mask)
+	void ioready_dispatcher_poll::modify_ioready_callback(ioready_callback *link, int event_mask)
 		throw()
 	{
 		bool sync=guard.write_lock_async();

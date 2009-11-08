@@ -1,18 +1,18 @@
 /* -*- C++ -*-
- * (c) 2006 Helge Bahmann <hcb@chaoticmind.net>
+ * (c) 2009 Helge Bahmann <hcb@chaoticmind.net>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License version 2.1.
  * Refer to the file "COPYING" for details.
  */
 
-#ifndef __TSCB_CALLBACK_H
-#define __TSCB_CALLBACK_H
+#ifndef __TSCB_SIGNAL_H
+#define __TSCB_SIGNAL_H
 
 /**
 	\page callback_descr Generic callbacks
 	
-	The \ref tscb::callback_chain "callback_chain" ... template class provides
+	The \ref tscb::signal "signal" ... template class provides
 	a generic callback mechanism. It allows one object
 	(the "sender") to notify an arbitray number of other objects
 	(the "receivers") of events by calling specified functions.
@@ -31,7 +31,7 @@
 		class MyClass {
 		public:
 			// will report old and new value to callbacks
-			tscb::callback_chain<void (int, int)> onValueChange;
+			tscb::signal<void (int, int)> onValueChange;
 			
 			void setValue(int newval);
 		private:
@@ -60,7 +60,7 @@
 	
 	\section callback_register Registration for callbacks
 	
-	Callback chains provide the \ref tscb::callback_chain::connect "connect"
+	Callback chains provide the \ref tscb::signal::connect "connect"
 	template member functions to allow receivers to add a callback
 	function to the chain. They can be used in the following fashion:
 	
@@ -107,36 +107,36 @@
 	Like in the previous example, the function <TT>notify_change</TT>
 	will be called whenever the callback chain is being activated.
 	
-	\section callback_cookies Callback link handles
+	\section callback_cookies Connection management
 	
 	The
-	\ref tscb::callback_chain::connect "connect"
-	return a reference to a callback link object that represents the
+	\ref tscb::signal::connect "connect" method
+	return a reference to a callback connection object that represents the
 	connection between the callback service provider and the receiver. The
 	return value can be stored by the caller:
 	
 	\code
-		tscb::callback link;
-		link=c->onValueChange.connect(boost::bind(&MyObserver::notify_change, this, _1, _2));
+		tscb::connection conn;
+		conn=c->onValueChange.connect(boost::bind(&MyObserver::notify_change, this, _1, _2));
 	\endcode
 	
 	The link object can later be used to cancel the
 	callback:
 	
 	\code
-		link->cancel();
+		conn->cancel();
 	\endcode
 	
 	The callback function will not be invoked subsequently; the data associated
 	with the function object will be released as soon as it is guaranteed that
 	the callback function cannot be called again (e.g. from other threads).
 	This is useful e.g. if <TT>boost::shared_ptr</TT> is used to assist in
-	tracking the lifetime objects:
+	tracking the lifetime of objects:
 	
 	\code
-		tscb::callback link;
+		tscb::connection conn;
 		boost::shared_ptr<MyObserver> obj(new MyObserver);
-		link=c->onValueChange.connect(boost::bind(&MyObserver::notify_change)
+		conn=c->onValueChange.connect(boost::bind(&MyObserver::notify_change)
 			boost::shared_ptr(obj), _1, _2));
 	\endcode
 	
@@ -148,8 +148,8 @@
 	
 	The synchronization mechanism used to protect the integrity of the
 	callback chains is \ref tscb::deferred_rwlock. Thus overhead
-	incurred by the synchronization mechanism has to be paid for callback
-	chains as well.
+	incurred by the synchronization mechanism has to be paid for signals
+	as well.
 	
 	The implementation assumes that callback processing (in contrast
 	to callback registration/cancellation) is the fast path
@@ -170,7 +170,7 @@
 		</LI>
 	</UL>
 	
-	Some measurement were made to estimate the number of clock cycles
+	Some measurements were made to estimate the number of clock cycles
 	it takes to call an empty function which takes a single integer parameter:
 	
 	<TABLE>
@@ -195,7 +195,7 @@
 namespace tscb {
 	
 	/**
-		\brief Abstract base of all callback links
+		\brief Abstract base of all callback objects
 		
 		This object represents the link between a sender/caller, from
 		which notification is requested, to a reciever/callee, to which
@@ -203,40 +203,46 @@ namespace tscb {
 		for all different kinds of links established through the various
 		notification interfaces (callback_chains, file or timer events).
 	*/
-	class callback_link {
+	class abstract_callback {
 	public:
-		inline callback_link(void) throw() : refcount(1) {}
-		virtual ~callback_link(void) throw();
+		inline abstract_callback(void) throw() : refcount(1) {}
+		virtual ~abstract_callback(void) throw();
 		/**
-			\brief Break the link
+			\brief Break the connection
 			
-			Calling this function will break the notification link. It will
+			Calling this function will break the notification connection. It will
 			usually cease notifications to be delivered some time after this
 			function has returned. The exact semantic guarantee is:
 			
 			<UL>
 				<LI>
 					no notification will be delivered within the same thread
-					that has called \ref cancel after \ref cancel has
-					returned (i.e. within the same thread, \ref cancel
+					that has called \ref disconnect after \ref disconnect has
+					returned (i.e. within the same thread, \ref disconnect
 					is synchronous)
 				</LI>
 				<LI>
 					notifications in other threads may be delivered after
-					\ref cancel has returned in one thread, but only
-					for events that occured before \ref cancel has returned
+					\ref disconnect has returned in one thread, but only
+					for events that occured before \ref disconnect has returned
 					(i.e. for other threads, cancellation is asynchronous).
 				</LI>
 			</UL>
 			
 			The weak synchronicity guarantee allows implementations that
 			provide excellent concurrency. Furthermore it allows
-			\ref cancel to be called from arbitrary contexts: from within
+			\ref disconnect to be called from arbitrary contexts: from within
 			the callback to be cancelled, from different threads etc. It
 			is guaranteed to be deadlock free.
 			
 		*/
-		virtual void cancel(void) throw()=0;
+		virtual void disconnect(void) throw()=0;
+		/**
+			\brief Test if connection is alive
+			
+			\return True if connected, false if disconnected
+		*/
+		virtual bool connected(void) const throw()=0;
 		
 		/** \internal \brief Increase reference count */
 		inline void pin(void) throw() {refcount++;}
@@ -250,75 +256,109 @@ namespace tscb {
 		atomic refcount;
 	};
 	
-	static inline void intrusive_ptr_add_ref(callback_link *t) throw()
+	static inline void intrusive_ptr_add_ref(abstract_callback *t) throw()
 	{
 		t->pin();
 	}
 	
-	static inline void intrusive_ptr_release(callback_link *t) throw()
+	static inline void intrusive_ptr_release(abstract_callback *t) throw()
 	{
 		t->release();
 	}
 	
 	/**
-		\brief Reference to callback link.
+		\brief Connection between signal and receiver
 		
-		Every other callback link implemented in this library can be
+		Every other connection implemented in this library can be
 		downcast to this type.
 	*/
-	typedef boost::intrusive_ptr<callback_link> link;
+	typedef boost::intrusive_ptr<abstract_callback> connection;
 	
-	template<typename Signature> class function_callback_link;
-	template<typename Signature> class callback_chain;
+	template<typename Signature> class signal_callback;
+	template<typename Signature> class signal_proxy;
+	template<typename Signature> class signal;
 	
 	/**
-		\brief Generic callback link
+		\brief Callback from signals link
 		
 		This object represents the link between a sender/caller, from
 		which notification is requested, to a reciever/callee, to which
 		notification is to be delivered. It is used for "generic" callbacks,
-		i.e. those registered with a \ref callback_chain.
+		i.e. those registered with a \ref signal.
 		
 		See \ref callback_descr for usage.
 	*/
 	template<typename Signature>
-	class function_callback_link : public callback_link {
+	class signal_callback : public abstract_callback {
 	public:
 		/** \internal \brief Instantiate callback link */
-		function_callback_link(const boost::function<Signature> &_target) throw(std::bad_alloc)
-			: target(_target), active_next(0), prev(0), next(0), chain(0)
+		signal_callback(const boost::function<Signature> &_target) throw(std::bad_alloc)
+			: function(_target), active_next(0), prev(0), next(0), chain(0)
 		{}
-		virtual ~function_callback_link(void) throw()
+		virtual ~signal_callback(void) throw()
 		{}
-		virtual void cancel(void) throw()
+		virtual void disconnect(void) throw()
 		{
 			registration_mutex.lock();
 			if (chain) chain->remove(this);
 			else registration_mutex.unlock();
 		}
+		virtual bool connected(void) const throw()
+		{
+			return chain!=0;
+		}
 		/** \internal \brief Called after cancellation to destroy the function object */
 		void cancelled(void) throw()
 		{
-			target=0;
+			function=0;
 		}
+	private:
+		friend class signal<Signature>;
 		
 		/** \internal \brief Functional to be called on activation */
-		boost::function<Signature> target;
+		boost::function<Signature> function;
 		
 		/** \internal \brief Next element in list of active callbacks */
-		function_callback_link *active_next;
+		signal_callback *active_next;
 		/** \internal \brief Previous element in list */
-		function_callback_link *prev;
+		signal_callback *prev;
 		/** \internal \brief Next element in list */
-		function_callback_link *next;
+		signal_callback *next;
 		/** \internal \brief Next element in list of callbacks with pending cancellation */
-		function_callback_link *deferred_cancel_next;
+		signal_callback *deferred_cancel_next;
 		
 		/** \internal \brief Chain to which this object is registered */
-		callback_chain<Signature> *chain;
+		signal<Signature> *chain;
 		
 		/** \internal \brief Serialize deregistration */
 		mutex registration_mutex;
+	};
+	
+	/**
+		\brief Registration interface for generic notifiers
+		
+		This object allows interested receivers to register themselves
+		for notification.
+		
+		See \ref callback_descr for usage.
+	*/
+	template<typename Signature>
+	class signal_proxy {
+	public:
+		/** \internal \brief Type of link connection to this chain */
+		typedef signal_callback<Signature> callback_type;
+		
+		virtual ~signal_proxy(void) throw() {}
+		
+		/**
+			\brief Add callback to signal
+			
+			\param function
+				Function to be called when signal is activated
+		*/
+		virtual
+		boost::intrusive_ptr<callback_type>
+		connect(const boost::function<Signature> &function) throw(std::bad_alloc)=0;
 	};
 	
 	/**
@@ -331,22 +371,18 @@ namespace tscb {
 		See \ref callback_descr for usage.
 	*/
 	template<typename Signature>
-	class callback_chain {
+	class signal : public signal_proxy<Signature> {
 	public:
 		/** \internal \brief Type of link connection to this chain */
-		typedef function_callback_link<Signature> link_type;
-		friend class function_callback_link<Signature>;
+		friend class signal_callback<Signature>;
+		/** \internal \brief Type of link connection to this chain */
+		typedef signal_callback<Signature> callback_type;
 		
-		/**
-			\brief Add callback to chain
-			
-			\param function
-				Function to be called when chain is activated
-		*/
-		boost::intrusive_ptr<link_type>
+		virtual
+		boost::intrusive_ptr<callback_type>
 		connect(const boost::function<Signature> &function) throw(std::bad_alloc)
 		{
-			link_type *l=new link_type(function);
+			callback_type *l=new callback_type(function);
 			push_back(l);
 			return l;
 		}
@@ -360,7 +396,7 @@ namespace tscb {
 		inline void operator()(void)
 		{
 			read_lock();
-			link_type *l=active;
+			callback_type *l=active;
 			while(l) {
 				data_dependence_memory_barrier();
 				l->target();
@@ -378,10 +414,10 @@ namespace tscb {
 		inline void operator()(Arg1 arg1)
 		{
 			read_lock();
-			link_type *l=active;
+			callback_type *l=active;
 			while(l) {
 				data_dependence_memory_barrier();
-				l->target(arg1);
+				l->function(arg1);
 				l=l->active_next;
 			}
 			read_unlock();
@@ -396,10 +432,10 @@ namespace tscb {
 		inline void operator()(Arg1 arg1, Arg2 arg2)
 		{
 			read_lock();
-			link_type *l=active;
+			callback_type *l=active;
 			while(l) {
 				data_dependence_memory_barrier();
-				l->target(arg1, arg2);
+				l->function(arg1, arg2);
 				l=l->active_next;
 			}
 			read_unlock();
@@ -414,30 +450,27 @@ namespace tscb {
 		inline void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3)
 		{
 			read_lock();
-			link_type *l=active;
+			callback_type *l=active;
 			while(l) {
 				data_dependence_memory_barrier();
-				l->target(arg1, arg2, arg3);
+				l->function(arg1, arg2, arg3);
 				l=l->active_next;
 			}
 			read_unlock();
 		}
 		
-		callback_chain(void) throw()
+		signal(void) throw()
 			: active(0), first(0), last(0), deferred_cancel(0)
 		{}
 		
-		~callback_chain(void) throw()
+		~signal(void) throw()
 		{
-			/* there is no point in locking here... if the object
-			is destroyed and anyone is trying to add a callback
-			at this moment we are hosed anyways */
-			
-			/* but we can protect against anyone *removing*
-			callbacks concurrently */
+			/* we cannot protect against anyone concurrently adding
+			a new callback, but we must protect against concurrent
+			removal */
 			
 			while(guard.read_lock()) synchronize();
-			while (active) active->cancel();
+			while (active) active->disconnect();
 			if (guard.read_unlock()) {
 				/* the above cancel operations will cause synchronization
 				to be performed at the next possible point in time; if
@@ -460,7 +493,7 @@ namespace tscb {
 		
 	protected:
 		/** \internal \brief Add link to end of chain */
-		void push_back(link_type *l) throw()
+		void push_back(callback_type *l) throw()
 		{
 			l->registration_mutex.lock();
 			bool sync=guard.write_lock_async();
@@ -477,7 +510,7 @@ namespace tscb {
 			from the full list and thus terminate the active list; point them to
 			the newly-added element */
 			
-			link_type *tmp=last;
+			callback_type *tmp=last;
 			while(true) {
 				if (!tmp) {
 					if (!active) active=l;
@@ -501,7 +534,7 @@ namespace tscb {
 			else guard.write_unlock_async();
 		}
 		/** \internal \brief Remove link from chain */
-		void remove(link_type *l) throw()
+		void remove(callback_type *l) throw()
 		{
 			bool sync=guard.write_lock_async();
 			if (l->chain==this) {
@@ -510,7 +543,7 @@ namespace tscb {
 				the active chain now point to the following element,
 				so this element is skipped from within the active chain */
 				
-				link_type *tmp=l->prev;
+				callback_type *tmp=l->prev;
 				while(true) {
 					if (!tmp) {
 						if (active==l) active=l->active_next;
@@ -538,7 +571,7 @@ namespace tscb {
 		/** \internal \brief Synchronize when reaching quiescent state */
 		void synchronize(void) throw()
 		{
-			link_type *do_cancel=deferred_cancel;
+			callback_type *do_cancel=deferred_cancel;
 			
 			/* first, "repair" the list structure by "correcting" all prev
 			pointers */
@@ -564,7 +597,7 @@ namespace tscb {
 			of finalizing the links cannot cause deadlocks */
 			
 			while(do_cancel) {
-				link_type *tmp=do_cancel->deferred_cancel_next;
+				callback_type *tmp=do_cancel->deferred_cancel_next;
 				do_cancel->cancelled();
 				do_cancel->release();
 				do_cancel=tmp;
@@ -581,15 +614,15 @@ namespace tscb {
 			if (guard.read_unlock()) synchronize();
 		}
 		/** \internal \brief singly-linked list of active elements */
-		link_type *active;
+		callback_type *active;
 		
 		/** \internal \brief thread synchronization */
 		deferrable_rwlock guard;
 		
 		/** \internal \brief First element in the chain, whether active or not */
-		link_type *first;
+		callback_type *first;
 		/** \internal \brief Last element in the chain, whether active or not */
-		link_type *last;
+		callback_type *last;
 		
 		/** \internal \brief List of elements to be cancelled
 		 
@@ -597,7 +630,7 @@ namespace tscb {
 			the active list, but are not yet removed from the full list
 			and have not been discarded yet
 		*/
-		link_type *deferred_cancel;
+		callback_type *deferred_cancel;
 	};
 
 }

@@ -9,7 +9,7 @@
 #include <boost/bind.hpp>
 
 #define _LIBTSCB_CALLBACK_UNITTESTS 1
-#include <tscb/callback>
+#include <tscb/signal>
 #include "tests.h"
 
 //using namespace tscb;
@@ -23,20 +23,20 @@ public:
 	void cbrecv1(int arg) {result=arg;}
 	void cbrecv2(int arg) {
 		result=arg;
-		link1->cancel();
+		link1->disconnect();
 		ASSERT(refcount==2);
 		link1=0;
 		ASSERT(refcount==2);
 	}
 	void cbrecv3(int arg) {
-		called++; result=arg; link1->cancel(); link2->cancel();
+		called++; result=arg; link1->disconnect(); link2->disconnect();
 	}
 	
 	inline void pin(void) {refcount++;}
 	inline void release(void) {refcount--;}
 	int refcount;
 	
-	tscb::link link1, link2;
+	tscb::connection link1, link2;
 };
 
 static inline void intrusive_ptr_add_ref(Receiver *t) throw()
@@ -56,7 +56,7 @@ static void fn(int arg)
 
 void callback_tests(void)
 {
-	tscb::callback_chain<void (int)> chain;
+	tscb::signal<void (int)> chain;
 	{
 		/* verify that callbacks are invoked correctly at all, that
 		callbacks are cancellable and that references to target objects
@@ -70,7 +70,7 @@ void callback_tests(void)
 		chain(1);
 		ASSERT(result==1);
 		
-		r.link1->cancel();
+		r.link1->disconnect();
 		ASSERT(r.refcount==1);
 		r.link1=0;
 		
@@ -112,60 +112,60 @@ void callback_tests(void)
 		to target objects are dropped as well */
 		Receiver r;
 		{
-			tscb::callback_chain<void (int)> chain;
+			tscb::signal<void (int)> chain;
 			r.link1=chain.connect(boost::bind(&Receiver::cbrecv1, boost::intrusive_ptr<Receiver>(&r), _1));
 			ASSERT(r.link1->refcount==2);
 			ASSERT(r.refcount==2);
 		}
 		ASSERT(r.link1->refcount==1);
 		ASSERT(r.refcount==1);
-		r.link1->cancel();
+		r.link1->disconnect();
 	}
 	{
 		called=result=0;
-		tscb::link l=chain.connect(boost::bind(fn, _1));
+		tscb::connection l=chain.connect(boost::bind(fn, _1));
 		
 		chain(1);
 		ASSERT(called==1);
 		ASSERT(result==0);
 		
-		l->cancel();
+		l->disconnect();
 		chain(1);
 		ASSERT(called==1);
 	}
 	/* check cancellation of first element in list */
 	{
 		called=0;
-		tscb::link link1, link2;
+		tscb::connection link1, link2;
 		link1=chain.connect(boost::bind(fn, _1));
 		link2=chain.connect(boost::bind(fn, _1));
 		
 		chain(1);
 		ASSERT(called==2);
 		
-		link1->cancel();
+		link1->disconnect();
 		called=0;
 		chain(1);
 		ASSERT(called==1);
 		
-		link2->cancel();
+		link2->disconnect();
 	}
 	/* check cancellation of second element in list */
 	{
 		called=0;
-		tscb::link link1, link2;
+		tscb::connection link1, link2;
 		link1=chain.connect(boost::bind(fn, _1));
 		link2=chain.connect(boost::bind(fn, _1));
 		
 		chain(1);
 		ASSERT(called==2);
 		
-		link2->cancel();
+		link2->disconnect();
 		called=0;
 		chain(1);
 		ASSERT(called==1);
 		
-		link1->cancel();
+		link1->disconnect();
 	}
 }
 

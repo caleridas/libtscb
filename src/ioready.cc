@@ -12,21 +12,26 @@
 
 namespace tscb {
 	
-	void ioready_callback_link::cancel(void) throw()
+	void ioready_callback::disconnect(void) throw()
 	{
 		cancellation_mutex.lock();
 		if (service) service->unregister_ioready_callback(this);
 		else cancellation_mutex.unlock();
 	}
 	
-	void ioready_callback_link::modify(int evmask) throw()
+	bool ioready_callback::connected(void) const throw()
+	{
+		return service!=0;
+	}
+	
+	void ioready_callback::modify(int evmask) throw()
 	{
 		cancellation_mutex.lock();
 		if (service) service->modify_ioready_callback(this, evmask);
 		cancellation_mutex.unlock();
 	}
 	
-	ioready_callback_link::~ioready_callback_link(void) throw()
+	ioready_callback::~ioready_callback(void) throw()
 	{
 	}
 	
@@ -92,12 +97,12 @@ namespace tscb {
 		table->size=min_size;
 	}
 	
-	ioready_callback_link *ioready_callback_table::lookup_first_callback(int fd)
+	ioready_callback *ioready_callback_table::lookup_first_callback(int fd)
 	{
 		return table->chains[fd].active;
 	}
 	
-	void ioready_callback_table::insert(ioready_callback_link *link) throw(std::bad_alloc)
+	void ioready_callback_table::insert(ioready_callback *link) throw(std::bad_alloc)
 	{
 		ensure_size(link->fd+1);
 		ioready_callback_chain &chain=table->chains[link->fd];
@@ -112,7 +117,7 @@ namespace tscb {
 		from the full list and thus terminate the active list; point them to
 		the newly-added element */
 		
-		ioready_callback_link *tmp=chain.last;
+		ioready_callback *tmp=chain.last;
 		while(true) {
 			if (!tmp) {
 				if (!chain.active) chain.active=link;
@@ -139,7 +144,7 @@ namespace tscb {
 		table->chains[fd].closure=closure;
 	}
 	
-	void ioready_callback_table::remove(ioready_callback_link *link) throw()
+	void ioready_callback_table::remove(ioready_callback *link) throw()
 	{
 		ioready_callback_chain &chain=table->chains[link->fd];
 		/* remove protocol */
@@ -148,7 +153,7 @@ namespace tscb {
 		sure that all elements that pointed to "us" within
 		the active chain now point to the following element,
 		so this element is skipped from within the active chain */
-		ioready_callback_link *tmp=link->prev;
+		ioready_callback *tmp=link->prev;
 		while(true) {
 			if (!tmp) {
 				if (chain.active==link) chain.active=link->active_next;
@@ -164,7 +169,7 @@ namespace tscb {
 		inactive=link;
 	}
 	
-	ioready_callback_link *ioready_callback_table::synchronize(void) throw()
+	ioready_callback *ioready_callback_table::synchronize(void) throw()
 	{
 		chain_table *tab=table->old;
 		/* deallocate old tables */
@@ -176,7 +181,7 @@ namespace tscb {
 		}
 		
 		/* remove inactive callbacks */
-		ioready_callback_link *link=inactive;
+		ioready_callback *link=inactive;
 		while(link) {
 			ioready_callback_chain &chain=table->chains[link->fd];
 			if (link->prev) link->prev->next=link->next;
@@ -197,7 +202,7 @@ namespace tscb {
 	{
 		size_t n=0;
 		for(n=0; n<table->size; n++)
-			while(table->chains[n].active) table->chains[n].active->cancel();
+			while(table->chains[n].active) table->chains[n].active->disconnect();
 	}
 	
 	static ioready_dispatcher *

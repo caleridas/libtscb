@@ -42,11 +42,11 @@ namespace tscb {
 		
 		virtual eventflag *get_eventflag(void) throw();
 		
-		virtual void register_ioready_callback(ioready_callback_link *l)
+		virtual void register_ioready_callback(ioready_callback *l)
 			throw(std::bad_alloc);
-		virtual void unregister_ioready_callback(ioready_callback_link *e)
+		virtual void unregister_ioready_callback(ioready_callback *e)
 			throw();
-		virtual void modify_ioready_callback(ioready_callback_link *e, int event_mask)
+		virtual void modify_ioready_callback(ioready_callback *e, int event_mask)
 			throw();
 	protected:
 		/** \cond NEVER */
@@ -63,7 +63,7 @@ namespace tscb {
 		/** \endcond */
 		
 		polltab *clone_polltab_for_extension(void) throw(std::bad_alloc);
-		void create_polltab_entry(ioready_callback_link *link)
+		void create_polltab_entry(ioready_callback *link)
 			throw(std::bad_alloc);
 		void update_polltab_entry(int fd) throw();
 		void remove_polltab_entry(int fd) throw();
@@ -79,7 +79,7 @@ namespace tscb {
 		
 		pipe_eventflag wakeup_flag;
 		
-		ioready_callback pipe_callback;
+		ioready_connection pipe_callback;
 	private:
 		void drain_queue(void) throw();
 	};

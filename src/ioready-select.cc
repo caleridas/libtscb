@@ -121,7 +121,7 @@ namespace tscb {
 				/* deliver exception events to everyone */
 				if (e) ev|=EVMASK_OUTPUT|EVMASK_INPUT|EVMASK_HANGUP;
 				
-				ioready_callback_link *link=
+				ioready_callback *link=
 					callback_tab.lookup_first_callback(n);
 				while(link) {
 					data_dependence_memory_barrier();
@@ -143,7 +143,7 @@ namespace tscb {
 		return handled;
 	}
 	
-	void ioready_dispatcher_select::register_ioready_callback(ioready_callback_link *link)
+	void ioready_dispatcher_select::register_ioready_callback(ioready_callback *link)
 		throw(std::bad_alloc)
 	{
 		if (link->fd>=(int)FD_SETSIZE) {
@@ -175,7 +175,7 @@ namespace tscb {
 		wakeup_flag.set();
 	}
 	
-	void ioready_dispatcher_select::unregister_ioready_callback(ioready_callback_link *link)
+	void ioready_dispatcher_select::unregister_ioready_callback(ioready_callback *link)
 		throw()
 	{
 		bool sync=guard.write_lock_async();
@@ -210,7 +210,7 @@ namespace tscb {
 		wakeup_flag.set();
 	}
 	
-	void ioready_dispatcher_select::modify_ioready_callback(ioready_callback_link *link, int event_mask)
+	void ioready_dispatcher_select::modify_ioready_callback(ioready_callback *link, int event_mask)
 		throw()
 	{
 		bool sync=guard.write_lock_async();
@@ -227,7 +227,7 @@ namespace tscb {
 	
 	void ioready_dispatcher_select::update_fdsets(int fd) throw()
 	{
-		ioready_callback_link *tmp=callback_tab.lookup_first_callback(fd);
+		ioready_callback *tmp=callback_tab.lookup_first_callback(fd);
 		int evmask=0;
 		while(tmp) {
 			evmask|=tmp->event_mask;
@@ -243,12 +243,12 @@ namespace tscb {
 	
 	void ioready_dispatcher_select::synchronize(void) throw()
 	{
-		ioready_callback_link *stale=callback_tab.synchronize();
+		ioready_callback *stale=callback_tab.synchronize();
 		
 		guard.sync_finished();
 		
 		while(stale) {
-			ioready_callback_link *next=stale->inactive_next;
+			ioready_callback *next=stale->inactive_next;
 			stale->cancelled();
 			stale->release();
 			stale=next;

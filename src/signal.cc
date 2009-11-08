@@ -6,13 +6,13 @@
  * Refer to the file "COPYING" for details.
  */
 
-#include <tscb/callback>
+#include <tscb/signal>
 
 #include <stdio.h>
 
 namespace tscb {
 	
-	callback_link::~callback_link(void) throw()
+	abstract_callback::~abstract_callback(void) throw()
 	{
 	}
 	

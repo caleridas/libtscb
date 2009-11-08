@@ -51,11 +51,11 @@ namespace tscb {
 		virtual eventflag *get_eventflag(void)
 			throw(std::runtime_error, std::bad_alloc);
 		
-		virtual void register_ioready_callback(ioready_callback_link *l)
+		virtual void register_ioready_callback(ioready_callback *l)
 			throw(std::bad_alloc);
-		virtual void unregister_ioready_callback(ioready_callback_link *e)
+		virtual void unregister_ioready_callback(ioready_callback *e)
 			throw();
-		virtual void modify_ioready_callback(ioready_callback_link *e, int event_mask)
+		virtual void modify_ioready_callback(ioready_callback *e, int event_mask)
 			throw();
 	protected:
 		void drain_queue(void) throw();

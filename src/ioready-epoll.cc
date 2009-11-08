@@ -88,7 +88,7 @@ namespace tscb {
 			int fd=events[n].data.fd;
 			int ev=translate_os_to_tscb(events[n].events);
 			
-			ioready_callback_link *link=
+			ioready_callback *link=
 				callback_tab.lookup_first_callback(fd);
 			while(link) {
 				data_dependence_memory_barrier();
@@ -177,18 +177,18 @@ namespace tscb {
 		
 	void ioready_dispatcher_epoll::synchronize(void) throw()
 	{
-		ioready_callback_link *stale=callback_tab.synchronize();
+		ioready_callback *stale=callback_tab.synchronize();
 		guard.sync_finished();
 		
 		while(stale) {
-			ioready_callback_link *next=stale->inactive_next;
+			ioready_callback *next=stale->inactive_next;
 			stale->cancelled();
 			stale->release();
 			stale=next;
 		}
 	}
 	
-	void ioready_dispatcher_epoll::register_ioready_callback(ioready_callback_link *link)
+	void ioready_dispatcher_epoll::register_ioready_callback(ioready_callback *link)
 		throw(std::bad_alloc)
 	{
 		bool sync=guard.write_lock_async();
@@ -211,7 +211,7 @@ namespace tscb {
 			event.data.fd=link->fd;
 			epoll_ctl(epoll_fd, EPOLL_CTL_ADD, link->fd, &event);
 		} else {
-			ioready_callback_link *tmp=callback_tab.lookup_first_callback(link->fd);
+			ioready_callback *tmp=callback_tab.lookup_first_callback(link->fd);
 			int newevmask=0;
 			while(tmp) {
 				newevmask|=tmp->event_mask;
@@ -231,7 +231,7 @@ namespace tscb {
 		else guard.write_unlock_async();
 	}
 	
-	void ioready_dispatcher_epoll::unregister_ioready_callback(ioready_callback_link *link)
+	void ioready_dispatcher_epoll::unregister_ioready_callback(ioready_callback *link)
 		throw()
 	{
 		bool sync=guard.write_lock_async();
@@ -248,7 +248,7 @@ namespace tscb {
 				event.data.fd=link->fd;
 				epoll_ctl(epoll_fd, EPOLL_CTL_DEL, link->fd, &event);
 			} else {
-				ioready_callback_link *tmp=callback_tab.lookup_first_callback(link->fd);
+				ioready_callback *tmp=callback_tab.lookup_first_callback(link->fd);
 				int newevmask=0;
 				while(tmp) {
 					newevmask|=tmp->event_mask;
@@ -271,14 +271,14 @@ namespace tscb {
 		
 	}
 	
-	void ioready_dispatcher_epoll::modify_ioready_callback(ioready_callback_link *link, int event_mask)
+	void ioready_dispatcher_epoll::modify_ioready_callback(ioready_callback *link, int event_mask)
 		throw()
 	{
 		bool sync=guard.write_lock_async();
 		
 		link->event_mask=event_mask;
 		
-		ioready_callback_link *tmp=callback_tab.lookup_first_callback(link->fd);
+		ioready_callback *tmp=callback_tab.lookup_first_callback(link->fd);
 		int newevmask=0;
 		while(tmp) {
 			newevmask|=tmp->event_mask;

@@ -54,7 +54,7 @@ public:
 		char c;
 		read(fd, &c, 1);
 		called=true;
-		link->cancel();
+		link->disconnect();
 		ASSERT(refcount==2);
 	}
 	
@@ -68,7 +68,7 @@ public:
 		refcount--;
 	}
 	
-	ioready_callback link;
+	ioready_connection link;
 	bool called;
 	int refcount;
 };
@@ -100,7 +100,7 @@ void test_dispatcher(ioready_dispatcher *d)
 		
 		int called=0;
 		
-		tscb::ioready_callback link=d->watch(boost::bind(function, &called, pipefd[0], _1),
+		tscb::ioready_connection link=d->watch(boost::bind(function, &called, pipefd[0], _1),
 			pipefd[0], EVMASK_INPUT);
 		
 		int count=d->dispatch(&t);
@@ -126,7 +126,7 @@ void test_dispatcher(ioready_dispatcher *d)
 		
 		write(pipefd[1], &count, 1);
 		called=0;
-		link->cancel();
+		link->disconnect();
 		count=d->dispatch(&t);
 		ASSERT(count==0);
 		ASSERT(called==0);
@@ -144,7 +144,7 @@ void test_dispatcher(ioready_dispatcher *d)
 		
 		Target target;
 		
-		tscb::ioready_callback link=d->watch(boost::bind(&Target::function, &target, _1),
+		tscb::ioready_connection link=d->watch(boost::bind(&Target::function, &target, _1),
 			pipefd[0], EVMASK_INPUT);
 		
 		int count;
@@ -153,7 +153,7 @@ void test_dispatcher(ioready_dispatcher *d)
 		ASSERT(count==1);
 		ASSERT(target.called==1);
 		
-		link->cancel();
+		link->disconnect();
 		count=d->dispatch(&t);
 		ASSERT(count==0);
 		
@@ -218,7 +218,7 @@ void test_dispatcher_threading(ioready_dispatcher *d)
 		
 		int called=0;
 		
-		tscb::ioready_callback link=d->watch(boost::bind(function, &called, pipefd[0], _1),
+		tscb::ioready_connection link=d->watch(boost::bind(function, &called, pipefd[0], _1),
 			pipefd[0], EVMASK_INPUT);
 		
 		write(pipefd[1], &called, 1);
@@ -232,7 +232,7 @@ void test_dispatcher_threading(ioready_dispatcher *d)
 		evflag->set();
 		
 		pthread_join(thread, 0);
-		link->cancel();
+		link->disconnect();
 		
 		close(pipefd[0]);
 		close(pipefd[1]);

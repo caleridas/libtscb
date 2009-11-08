@@ -33,7 +33,7 @@ my_eventflag flag;
 int called=0;
 int released=0;
 
-boost::intrusive_ptr<generic_timer_callback_link<long long> > timer_link;
+boost::intrusive_ptr<tscb::abstract_timer_callback<long long> > timer_link;
 //timer_callback timer_link;
 
 bool my_fn(long long &time)
@@ -48,7 +48,7 @@ bool my_fn2(long long &time)
 	time++;
 	called++;
 	ASSERT(released==0);
-	timer_link->cancel();
+	timer_link->disconnect();
 	ASSERT(released==0);
 	return true;
 }
@@ -73,7 +73,7 @@ static inline void intrusive_ptr_release(X *x) {x->release();}
 class Y {
 public:
 	Y(void) : refcount(1) {}
-	bool fn(long long &t) {timer_link->cancel(); return false;}
+	bool fn(long long &t) {timer_link->disconnect(); return false;}
 	void pin(void) {refcount++;}
 	void release(void) {refcount--;}
 	
@@ -113,7 +113,7 @@ void timer_tests(void)
 		ASSERT(called==1);
 		ASSERT(time==1);
 		ASSERT(flag.flagged==false);
-		timer_link->cancel();
+		timer_link->disconnect();
 		ASSERT(flag.flagged==true);
 		flag.clear();
 		pending=tq.run_queue(time);
@@ -138,7 +138,7 @@ void timer_tests(void)
 		X x;
 		long long time(0);
 		timer_link=tq.timer(boost::bind(&X::fn, &x, _1), time);
-		timer_link->cancel();
+		timer_link->disconnect();
 		ASSERT(timer_link->refcount==1);
 	}
 	{
@@ -147,7 +147,7 @@ void timer_tests(void)
 		ASSERT(x.refcount==1);
 		timer_link=tq.timer(boost::bind(&X::fn, boost::intrusive_ptr<X>(&x), _1), time);
 		ASSERT(x.refcount==2);
-		timer_link->cancel();
+		timer_link->disconnect();
 		ASSERT(x.refcount==1);
 		ASSERT(timer_link->refcount==1);
 	}

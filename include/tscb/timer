@@ -139,13 +139,13 @@
 	The link object can later be used to cancel the timer:
 	
 	\code
-		link->cancel();
+		link->disconect();
 	\endcode
 	
 	Afterwards, the timer function will not be called again. If the timer
 	callback function is running concurrently in another thread and it
 	returns <TT>True</TT> (indicating that it would like to rearm itself)
-	it is cancelled <I>nevertheless</I>. Calling <TT>cancel</TT> always
+	it is cancelled <I>nevertheless</I>. Calling <TT>disconnect</TT> always
 	takes precedence.
 	
 	\section periodic_timers Precise periodic timers
@@ -262,7 +262,7 @@
 #include <new>
 
 #include <boost/date_time/posix_time/posix_time_types.hpp>
-#include <tscb/callback>
+#include <tscb/signal>
 #include <tscb/thread>
 #include <tscb/eventflag>
 #include <tscb/fibheap>
@@ -281,14 +281,14 @@ namespace tscb {
 	extern long long current_time(void) throw();
 	
 	template<typename Timeval> class generic_timer_service;
-	template<typename Timeval> class generic_timer_callback_link;
+	template<typename Timeval> class abstract_timer_callback;
 	
 	/**
 		\brief callback link for timer events
 		
 		This class represents a link that has been established for timer
 		callback functions (see \ref tscb::timer_service). Like its base
-		class, \ref tscb::callback_link, it supports cancellation.
+		class, \ref tscb::abstract_callback, it supports cancellation.
 		
 		Since timer callbacks are bound to a specific point in time, the
 		callback function has to provide a new timeout value and request
@@ -296,50 +296,26 @@ namespace tscb {
 		implicitly.
 	*/
 	template<typename Timeval>
-	class generic_timer_callback_link : public callback_link {
+	class abstract_timer_callback : public abstract_callback {
 	public:
 		/** \internal \brief instantiate timer callback link */
-		inline generic_timer_callback_link(const boost::function<bool (Timeval &time)> &_target,
+		inline abstract_timer_callback(const boost::function<bool (Timeval &time)> &_target,
 			Timeval _expires) throw()
 			: target(_target), when(_expires)
 		{}
-		virtual ~generic_timer_callback_link(void) throw()
+		virtual ~abstract_timer_callback(void) throw()
 		{}
 		
-		/**
-			\brief Break the link
-			
-			Calling this function will break the notification link. It will
-			usually cease notifications to be delivered some time after this
-			function has returned. The exact semantic guarantee is:
-			
-			<UL>
-				<LI>
-					no notification will be delivered within the same thread
-					that has called \ref cancel after \ref cancel has
-					returned (i.e. within the same thread, \ref cancel
-					is synchronous)
-				</LI>
-				<LI>
-					notifications in other threads may be delivered after
-					\ref cancel has returned in one thread, but only
-					for events that occured before \ref cancel has returned
-					(i.e. for other threads, cancellation is asynchronous).
-				</LI>
-			</UL>
-			
-			The weak synchronicity guarantee allows implementations that
-			provide excellent concurrency. Furthermore it allows
-			\ref cancel to be called from arbitrary contexts: from within
-			the callback to be cancelled, from different threads etc. It
-			is guaranteed to be deadlock free.
-			
-		*/
-		virtual void cancel(void) throw()
+		virtual void disconnect(void) throw()
 		{
 			cancellation_mutex.lock();
 			if (service) service->unregister_timer(this);
 			else cancellation_mutex.unlock();
+		}
+		
+		virtual bool connected(void) const throw()
+		{
+			return service!=0;
 		}
 		
 		/** \internal \brief Destroy function object after completing cancellation */
@@ -352,13 +328,13 @@ namespace tscb {
 		inline Timeval expires(void) const throw() {return when;}
 		
 		/** \internal \brief compare timeout values */
-		inline bool operator>(const generic_timer_callback_link &x) const {return when>x.when;}
+		inline bool operator>(const abstract_timer_callback &x) const {return when>x.when;}
 		/** \internal \brief compare timeout values */
-		inline bool operator<(const generic_timer_callback_link &x) const {return when<x.when;}
+		inline bool operator<(const abstract_timer_callback &x) const {return when<x.when;}
 		/** \internal \brief compare timeout values */
-		inline bool operator<=(const generic_timer_callback_link &x) const {return when<=x.when;}
+		inline bool operator<=(const abstract_timer_callback &x) const {return when<=x.when;}
 		/** \internal \brief assign new timeout value */
-		inline const generic_timer_callback_link &operator=(const Timeval newval)
+		inline const abstract_timer_callback &operator=(const Timeval newval)
 		{
 			when=newval;
 			return *this;
@@ -380,13 +356,13 @@ namespace tscb {
 		generic_timer_service<Timeval> *service;
 		
 		/** \internal \brief Fields required for fibonacci heap structure */
-		generic_timer_callback_link *next;
+		abstract_timer_callback *next;
 		/** \internal \brief Fields required for fibonacci heap structure */
-		generic_timer_callback_link *prev;
+		abstract_timer_callback *prev;
 		/** \internal \brief Fields required for fibonacci heap structure */
-		generic_timer_callback_link *parent;
+		abstract_timer_callback *parent;
 		/** \internal \brief Fields required for fibonacci heap structure */
-		generic_timer_callback_link *child;
+		abstract_timer_callback *child;
 		/** \internal \brief Fields required for fibonacci heap structure */
 		int degree;
 		
@@ -416,9 +392,9 @@ namespace tscb {
 	
 	/** \cond NEVER -- ignored by doxygen */
 	template<typename Timeval>
-	void intrusive_ptr_add_ref(generic_timer_callback_link<Timeval> *t) {t->pin();}
+	void intrusive_ptr_add_ref(abstract_timer_callback<Timeval> *t) {t->pin();}
 	template<typename Timeval>
-	void intrusive_ptr_release(generic_timer_callback_link<Timeval> *t) {t->release();}
+	void intrusive_ptr_release(abstract_timer_callback<Timeval> *t) {t->release();}
 	/** \endcond */
 	
 	/**
@@ -472,19 +448,19 @@ namespace tscb {
 			<CODE>now</CODE> and return <CODE>true</CODE>, in which case it
 			will be called again at the new point in time.
 		*/
-		boost::intrusive_ptr<generic_timer_callback_link<Timeval> >
+		boost::intrusive_ptr<abstract_timer_callback<Timeval> >
 		timer(const boost::function<bool (Timeval &)> &function, Timeval expires) throw(std::bad_alloc)
 		{
-			generic_timer_callback_link<Timeval> *link;
-			link=new generic_timer_callback_link<Timeval>(function, expires);
+			abstract_timer_callback<Timeval> *link;
+			link=new abstract_timer_callback<Timeval>(function, expires);
 			register_timer(link);
 			return link;
 		}
 		
 		/** \internal \brief Register timer with internal data structure */
-		virtual void register_timer(generic_timer_callback_link<Timeval> *ptr) throw()=0;
+		virtual void register_timer(abstract_timer_callback<Timeval> *ptr) throw()=0;
 		/** \internal \brief Unregister timer with internal data structure */
-		virtual void unregister_timer(generic_timer_callback_link<Timeval> *t) throw()=0;
+		virtual void unregister_timer(abstract_timer_callback<Timeval> *t) throw()=0;
 	};
 	
 	/**
@@ -525,7 +501,7 @@ namespace tscb {
 		virtual ~generic_timerqueue_dispatcher(void) throw()
 		{
 			queue_mutex.lock();
-			generic_timer_callback_link<Timeval> *link=timer_queue.extract_min();
+			abstract_timer_callback<Timeval> *link=timer_queue.extract_min();
 			while (link) {
 				/* mark item as "unqueued" */
 				link->next=0;
@@ -617,7 +593,7 @@ namespace tscb {
 		inline bool next_timer(Timeval &tv) const throw()
 		{
 			queue_mutex.lock();
-			generic_timer_callback_link<Timeval> *t=timer_queue.peek_min();
+			abstract_timer_callback<Timeval> *t=timer_queue.peek_min();
 			if (t) {
 				tv=t->when;
 				queue_mutex.unlock();
@@ -648,7 +624,7 @@ namespace tscb {
 		{
 			queue_mutex.lock();
 			
-			generic_timer_callback_link<Timeval> *t=timer_queue.peek_min();
+			abstract_timer_callback<Timeval> *t=timer_queue.peek_min();
 			
 			if (!t) {
 				queue_mutex.unlock();
@@ -746,7 +722,7 @@ namespace tscb {
 		}
 		
 		/** \internal \brief Register timer with internal data structure */
-		virtual void register_timer(generic_timer_callback_link<Timeval> *ptr) throw()
+		virtual void register_timer(abstract_timer_callback<Timeval> *ptr) throw()
 		{
 			queue_mutex.lock();
 			
@@ -758,7 +734,7 @@ namespace tscb {
 			if (needWakeup) timer_added->set();
 		}
 		/** \internal \brief Unregister timer with internal data structure */
-		virtual void unregister_timer(generic_timer_callback_link<Timeval> *t) throw()
+		virtual void unregister_timer(abstract_timer_callback<Timeval> *t) throw()
 		{
 			queue_mutex.lock();
 			t->service=0;
@@ -778,7 +754,7 @@ namespace tscb {
 		
 	protected:
 		/** \internal \brief Fibonacci heap of pending timers */
-		fibheap<generic_timer_callback_link<Timeval> > timer_queue;
+		fibheap<abstract_timer_callback<Timeval> > timer_queue;
 		/** \internal \brief Protect timer queue data structure */
 		mutable mutex queue_mutex;
 		/** \internal \brief Set to true while timers are being processed */
@@ -788,10 +764,10 @@ namespace tscb {
 	};
 	
 	/** \brief Timer callback link using posix_time::ptime to represent time values */
-	typedef generic_timer_callback_link<boost::posix_time::ptime> timer_callback_link;
+	typedef abstract_timer_callback<boost::posix_time::ptime> timer_callback;
 	
 	/** \brief Reference to timer callback link using posix_time::ptime to represent time values */
-	typedef boost::intrusive_ptr<timer_callback_link> timer_callback;
+	typedef boost::intrusive_ptr<timer_callback> timer_connection;
 	
 	/**
 		\brief Timer service using posix_time::ptime to represent time values

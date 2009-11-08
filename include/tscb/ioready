@@ -255,12 +255,12 @@
 #include <boost/date_time/posix_time/posix_time_types.hpp>
 
 #include <tscb/eventflag>
-#include <tscb/callback>
+#include <tscb/signal>
 
 namespace tscb {
 	
 	class ioready_service;
-	class ioready_callback_link;
+	class ioready_callback;
 	
 	/**
 		\brief Input event mask
@@ -293,50 +293,21 @@ namespace tscb {
 		This class represents a link that has been established by registering
 		a callback for I/O readiness events on file (or socket) descriptor
 		events (see \ref tscb::ioready_service). Like its base class,
-		\ref tscb::callback_link, it supports cancellation, but additionally
+		\ref tscb::abstract_callback, it supports cancellation, but additionally
 		it also allows to dynamically change the event notification mask
 		(which is much more efficient than to cancel the previous callback and
 		register a new one).
 	*/
-	class ioready_callback_link : public callback_link {
+	class ioready_callback : public abstract_callback {
 	public:
 		/** \internal \brief Instantiate ioready callback link */
-		inline ioready_callback_link(const boost::function<void (int)> &_target,
+		inline ioready_callback(const boost::function<void (int)> &_target,
 			int _fd, int _event_mask) throw()
 			: target(_target), fd(_fd), event_mask(_event_mask)
 		{}
-		virtual ~ioready_callback_link(void) throw();
+		virtual ~ioready_callback(void) throw();
 		
-		/**
-			\brief Break the link
-			
-			Calling this function will break the notification link. It will
-			usually cease notifications to be delivered some time after this
-			function has returned. The exact semantic guarantee is:
-			
-			<UL>
-				<LI>
-					no notification will be delivered within the same thread
-					that has called \ref cancel after \ref cancel has
-					returned (i.e. within the same thread, \ref cancel
-					is synchronous)
-				</LI>
-				<LI>
-					notifications in other threads may be delivered after
-					\ref cancel has returned in one thread, but only
-					for events that occured before \ref cancel has returned
-					(i.e. for other threads, cancellation is asynchronous).
-				</LI>
-			</UL>
-			
-			The weak synchronicity guarantee allows implementations that
-			provide excellent concurrency. Furthermore it allows
-			\ref cancel to be called from arbitrary contexts: from within
-			the callback to be cancelled, from different threads etc. It
-			is guaranteed to be deadlock free.
-			
-		*/
-		virtual void cancel(void) throw();
+		virtual void disconnect(void) throw();
 		
 		/** \internal \brief Destroy function object after completing cancellation */
 		inline void cancelled(void) throw() {target=0;}
@@ -359,6 +330,8 @@ namespace tscb {
 		*/
 		void modify(int new_event_mask) throw();
 		
+		virtual bool connected(void) const throw();
+		
 		/** \internal \brief Function object to call */
 		boost::function<void(int)> target;
 		/** \internal \brief File descriptor to watch */
@@ -367,13 +340,13 @@ namespace tscb {
 		int event_mask;
 		
 		/** \internal \brief Next active element */
-		ioready_callback_link *active_next;
+		ioready_callback *active_next;
 		/** \internal \brief Previous element (active or to be removed) */
-		ioready_callback_link *prev;
+		ioready_callback *prev;
 		/** \internal \brief Next element (active or to be removed) */
-		ioready_callback_link *next;
+		ioready_callback *next;
 		/** \internal \brief Next element scheduled for deferred cancellation */
-		ioready_callback_link *inactive_next;
+		ioready_callback *inactive_next;
 		/** \internal \brief ioready_service this element is linked to */
 		ioready_service *service;
 		/** \internal \brief Protect against concurrent cancellation */
@@ -381,12 +354,12 @@ namespace tscb {
 	};
 	
 	/** \cond NEVER -- ignored by doxygen */
-	static inline void intrusive_ptr_add_ref(ioready_callback_link *t) throw()
+	static inline void intrusive_ptr_add_ref(ioready_callback *t) throw()
 	{
 		t->pin();
 	}
 	
-	static inline void intrusive_ptr_release(ioready_callback_link *t) throw()
+	static inline void intrusive_ptr_release(ioready_callback *t) throw()
 	{
 		t->release();
 	}
@@ -395,7 +368,7 @@ namespace tscb {
 	/**
 		\brief IO readiness callback link
 	*/
-	typedef boost::intrusive_ptr<ioready_callback_link> ioready_callback;
+	typedef boost::intrusive_ptr<ioready_callback> ioready_connection;
 	
 	/**
 		\brief Registration for IO readiness events
@@ -447,25 +420,25 @@ namespace tscb {
 			link object may be used to modify the set of watched events
 			or cancel the callback.
 		*/
-		boost::intrusive_ptr<ioready_callback_link>
+		boost::intrusive_ptr<ioready_callback>
 		watch(const boost::function<void(int)> &function, int fd, int event_mask) throw(std::bad_alloc)
 		{
-			ioready_callback_link *link=new ioready_callback_link(function, fd, event_mask);
+			ioready_callback *link=new ioready_callback(function, fd, event_mask);
 			register_ioready_callback(link);
 			return link;
 		}
 		
 		/* internal functions; actual implementation of the file event
 		callback mechanism */
-		friend class ioready_callback_link;
+		friend class ioready_callback;
 		/** \internal \brief Register callback link */
-		virtual void register_ioready_callback(ioready_callback_link *l)
+		virtual void register_ioready_callback(ioready_callback *l)
 			throw(std::bad_alloc)=0;
 		/** \internal \brief Unregister callback link */
-		virtual void unregister_ioready_callback(ioready_callback_link *e)
+		virtual void unregister_ioready_callback(ioready_callback *e)
 			throw()=0;
 		/** \internal \brief Update event set */
-		virtual void modify_ioready_callback(ioready_callback_link *e, int event_mask)
+		virtual void modify_ioready_callback(ioready_callback *e, int event_mask)
 			throw()=0;
 	};
 	
@@ -475,8 +448,8 @@ namespace tscb {
 		ioready_callback_table(size_t initial=32) throw(std::bad_alloc);
 		~ioready_callback_table(void) throw();
 		
-		ioready_callback_link *lookup_first_callback(int fd);
-		void insert(ioready_callback_link *link) throw(std::bad_alloc);
+		ioready_callback *lookup_first_callback(int fd);
+		void insert(ioready_callback *link) throw(std::bad_alloc);
 		
 		inline bool chain_empty(size_t fd) const throw()
 		{
@@ -486,8 +459,8 @@ namespace tscb {
 		
 		void *get_closure(int fd) throw();
 		void set_closure(int fd, void *closure) throw(std::bad_alloc);
-		void remove(ioready_callback_link *link) throw();
-		ioready_callback_link *synchronize(void) throw();
+		void remove(ioready_callback *link) throw();
+		ioready_callback *synchronize(void) throw();
 		
 		void cancel_all(void) throw();
 		
@@ -495,8 +468,8 @@ namespace tscb {
 		
 		class ioready_callback_chain {
 		public:
-			ioready_callback_link *active;
-			ioready_callback_link *first, *last;
+			ioready_callback *active;
+			ioready_callback *first, *last;
 			void *closure;
 		};
 		
@@ -510,7 +483,7 @@ namespace tscb {
 			chain_table *old;
 		};
 		
-		ioready_callback_link *inactive;
+		ioready_callback *inactive;
 		
 		chain_table *table;
 		void grow(size_t new_size) throw(std::bad_alloc);

@@ -64,7 +64,7 @@ endif
 
 CXXFLAGS+=-Iinclude
 
-LIBTSCB_SOURCES=src/callback.cc src/thread.cc src/eventflag.cc src/timer.cc\
+LIBTSCB_SOURCES=src/signal.cc src/thread.cc src/eventflag.cc src/timer.cc\
 	src/ioready.cc src/deferred.cc src/dispatch.cc
 
 # include dispatcher implementations depending on configuration

@@ -68,7 +68,7 @@ namespace tscb {
 			if (events[n].filter==EVFILT_READ) ev=EVMASK_INPUT;
 			else if (events[n].filter==EVFILT_WRITE) ev=EVMASK_OUTPUT;
 			
-			ioready_callback_link *link=
+			ioready_callback *link=
 				callback_tab.lookup_first_callback(fd);
 			while(link) {
 				data_dependence_memory_barrier();
@@ -165,11 +165,11 @@ namespace tscb {
 		
 	void ioready_dispatcher_kqueue::synchronize(void) throw()
 	{
-		ioready_callback_link *stale=callback_tab.synchronize();
+		ioready_callback *stale=callback_tab.synchronize();
 		guard.sync_finished();
 		
 		while(stale) {
-			ioready_callback_link *next=stale->inactive_next;
+			ioready_callback *next=stale->inactive_next;
 			stale->cancelled();
 			stale->release();
 			stale=next;
@@ -179,7 +179,7 @@ namespace tscb {
 	void ioready_dispatcher_kqueue::update_evmask(int fd) throw()
 	{
 		int oldevmask=(long)callback_tab.get_closure(fd);
-		ioready_callback_link *tmp=callback_tab.lookup_first_callback(fd);
+		ioready_callback *tmp=callback_tab.lookup_first_callback(fd);
 		int newevmask=0;
 		while(tmp) {
 			newevmask|=tmp->event_mask;
@@ -203,7 +203,7 @@ namespace tscb {
 		callback_tab.set_closure(fd, (void *)newevmask);
 	}
 	
-	void ioready_dispatcher_kqueue::register_ioready_callback(ioready_callback_link *link)
+	void ioready_dispatcher_kqueue::register_ioready_callback(ioready_callback *link)
 		throw(std::bad_alloc)
 	{
 		bool sync=guard.write_lock_async();
@@ -226,7 +226,7 @@ namespace tscb {
 		else guard.write_unlock_async();
 	}
 	
-	void ioready_dispatcher_kqueue::unregister_ioready_callback(ioready_callback_link *link)
+	void ioready_dispatcher_kqueue::unregister_ioready_callback(ioready_callback *link)
 		throw()
 	{
 		bool sync=guard.write_lock_async();
@@ -246,7 +246,7 @@ namespace tscb {
 		
 	}
 	
-	void ioready_dispatcher_kqueue::modify_ioready_callback(ioready_callback_link *link, int event_mask)
+	void ioready_dispatcher_kqueue::modify_ioready_callback(ioready_callback *link, int event_mask)
 		throw()
 	{
 		bool sync=guard.write_lock_async();
