@@ -120,7 +120,7 @@ public:
 	void pass_token(int fd, int event);
 	void release(void);
 	
-	tscb::ioready_callback link;
+	tscb::ioready_connection link;
 private:
 	int from, to;
 	perfcounter &counter;
@@ -145,7 +145,7 @@ void receiver::release(void)
 
 receiver::~receiver(void)
 {
-	link->cancel();
+	link->disconnect();
 }
 
 void receiver::pass_token(int fd, int event)

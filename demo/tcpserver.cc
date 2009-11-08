@@ -35,7 +35,7 @@ private:
 	void destroy(void);
 	
 	int fd;
-	tscb::ioready_callback link;
+	tscb::ioready_connection link;
 	tscb::ioready_service *service;
 };
 
@@ -57,7 +57,7 @@ private:
 	void connection_request(int event);
 	
 	int fd;
-	tscb::ioready_callback link;
+	tscb::ioready_connection link;
 	tscb::ioready_service *service;
 };
 
@@ -98,7 +98,7 @@ void echo::data(int event)
 		}
 		if (n<=0) {
 			printf("connection closed by client\n");
-			link->cancel();
+			link->disconnect();
 			break;
 		}
 		write(1, buffer, n);

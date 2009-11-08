@@ -5,7 +5,7 @@
 #include <tscb/atomic>
 #include <tscb/thread>
 #include <tscb/deferred>
-#include <tscb/callback>
+#include <tscb/signal>
 
 boost::posix_time::ptime start, end;
 
@@ -76,7 +76,7 @@ int ncallbacks;
 
 void callback_obj(int times)
 {
-	tscb::callback_chain<void (int)> chain;
+	tscb::signal<void (int)> chain;
 	
 	int num=ncallbacks;
 	
@@ -92,7 +92,7 @@ inline void callback_fn(int n)
 
 void callback_function(int times)
 {
-	tscb::callback_chain<void (int)> chain;
+	tscb::signal<void (int)> chain;
 	
 	int num=ncallbacks;
 	
