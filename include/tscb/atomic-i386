@@ -97,6 +97,68 @@ namespace tscb {
 	
 	/** \endcond */
 	
+	namespace atomics {
+		
+		enum memory_order {
+			memory_order_relaxed, memory_order_acquire,
+			memory_order_release, memory_order_acq_rel,
+			memory_order_seq_cst
+		};
+		
+		struct atomic_int {
+		private:
+			volatile int i;
+		public:
+			atomic_int(void) {}
+			atomic_int(int __i) : i(__i) { }
+			
+			inline operator int() const {return load();}
+			inline int operator=(int __i) {store(__i); return __i;}
+			
+			inline void
+			store(int __i, memory_order order=memory_order_seq_cst) volatile
+			{
+				i=__i;
+			}
+			
+			inline int
+			load(memory_order order=memory_order_seq_cst) const volatile
+			{
+				return i;
+			}
+			
+			bool compare_exchange_strong(int &expected, int desired,
+				memory_order order=memory_order_seq_cst)
+			{
+				int prev=expected;
+				__asm__ __volatile__(
+					"lock cmpxchgl %1, %2\n"
+					: "=a" (prev)
+					: "q" (desired), "m" (i), "a" (expected)
+					: "memory"
+				);
+				bool success=(prev==expected);
+				return success;
+			}
+			inline int atomic_fetch_add(int c, memory_order order=memory_order_seq_cst)
+			{
+				asm volatile("lock xaddl %0, %1" : "+r" (c), "+m" (i) :: "memory");
+				return c;
+			}
+			inline int atomic_fetch_sub(int c, memory_order order=memory_order_seq_cst)
+			{
+				return atomic_fetch_add(-c);
+			}
+			
+			inline int operator++(void) {return atomic_fetch_add(1)+1;}
+			inline int operator++(int) {return atomic_fetch_add(1);}
+			inline int operator--(void) {return atomic_fetch_add(-1)-1;}
+			inline int operator--(int) {return atomic_fetch_add(-1);}
+		public:
+			explicit atomic_int(const atomic_int &a) {}
+			void operator=(const atomic_int &a) {}
+		};
+	}
 }
 
 #endif
