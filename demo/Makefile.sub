@@ -1,6 +1,10 @@
-DEMOS=tcpserver pipetest primitive-timings
+DEMOS=tcpserver pipetest primitive-timings signalperf
 
 DEMOEXECUTABLES=$(patsubst %, demo/%, $(DEMOS))
 EXECUTABLES+=$(DEMOEXECUTABLES)
 
 $(DEMOEXECUTABLES): % : %.o libtscb.a
+
+demo/signalperf: LDFLAGS+=-lboost_signals `pkg-config --libs sigc++-2.0`
+
+demo/signalperf.o: CXXFLAGS+=`pkg-config --cflags sigc++-2.0`
