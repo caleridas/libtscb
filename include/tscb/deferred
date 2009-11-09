@@ -295,7 +295,7 @@
 	<UL>
 		<LI>
 			<CODE>read_lock</CODE>: one successful atomic test-and-increment
-			operation (\ref tscb::atomic::inc_if_not_zero)
+			operation (\ref tscb::atomics::inc_if_not_zero)
 		</LI>
 		<LI>
 			<CODE>read_unlock</CODE>: one atomic
@@ -367,11 +367,7 @@ namespace tscb {
 		*/
 		inline bool read_lock(void) throw()
 		{
-			if (__builtin_expect(readers.inc_if_not_zero(), true)) {
-				memory_barrier();
-				return false;
-			}
-			
+			if (read_acquire()) return false;
 			return read_lock_slow();
 		}
 		
@@ -389,9 +385,7 @@ namespace tscb {
 		*/
 		inline bool read_unlock(void) throw()
 		{
-			memory_barrier();
-			if (__builtin_expect(--readers, true)) return false;
-			
+			if (read_release()) return false;
 			return read_unlock_slow();
 		}
 		
@@ -421,7 +415,7 @@ namespace tscb {
 			writers.lock();
 			if (!queued) {
 				queued=true;
-				return !--readers;
+				return readers.atomic_fetch_sub(1, atomics::memory_order_acquire)==1;
 			}
 			return false;
 		}
@@ -448,16 +442,33 @@ namespace tscb {
 		inline void sync_finished(void)
 		{
 			queued=false;
-			readers++;
+			readers.atomic_fetch_add(1, atomics::memory_order_release);
 			write_unlock_async();
 		}
-
-	private:
+		
+	//private:
 		/* out of line slow-path functions */
 		bool read_lock_slow(void) throw();
 		bool read_unlock_slow(void) throw();
 		
-		atomic readers;
+		inline bool read_acquire(void) throw()
+		{
+			int expected;
+			bool success;
+			do {
+				expected=readers.load(atomics::memory_order_relaxed);
+				if (__builtin_expect(expected==0, 0)) return false;;
+				success=readers.compare_exchange_strong(expected, expected+1, atomics::memory_order_acquire);
+			} while(__builtin_expect(!success, 0));
+			return true;
+		}
+		
+		inline bool read_release(void) throw()
+		{
+			return __builtin_expect(readers.atomic_fetch_sub(1, atomics::memory_order_release)!=1, 1);
+		}
+		
+		atomics::atomic_int readers;
 		mutex writers;
 		bool queued;
 	};
@@ -505,13 +516,9 @@ namespace tscb {
 			If this function returns "false", then the caller may simply 
 			proceed.
 		*/
-		inline bool read_lock(void)
+		inline bool read_lock(void) throw()
 		{
-			if (__builtin_expect(readers.inc_if_not_zero(), true)) {
-				memory_barrier();
-				return false;
-			}
-			
+			if (read_acquire()) return false;
 			return read_lock_slow();
 		}
 		
@@ -527,17 +534,15 @@ namespace tscb {
 			If this function returns "false", then the caller may simply
 			proceed.
 		*/
-		inline bool read_unlock(void)
+		inline bool read_unlock(void) throw()
 		{
-			memory_barrier();
-			if (__builtin_expect(--readers, true)) return false;
-			
+			if (read_release()) return false;
 			return read_unlock_slow();
 		}
 		
 		/**
 			\brief Try to acquire write lock
-
+			
 			Tries to acquire a write lock; write locks are "exclusive", that
 			is they exclude both other readers and writers.
 			
@@ -561,7 +566,7 @@ namespace tscb {
 			writers.lock();
 			bool sync=false;
 			
-			if ((!queued) && (!waiting)) sync=!--readers;
+			if ((!queued) && (!waiting)) sync=readers.atomic_fetch_sub(1, atomics::memory_order_acquire)==1;
 			queued=true;
 
 			return sync;
@@ -591,7 +596,7 @@ namespace tscb {
 			writers.lock();
 			while(1) {
 				if ((!queued) && (!waiting)) {
-					if (!--readers) return;
+					if (readers.atomic_fetch_sub(1, atomics::memory_order_acquire)==1) return;
 				}
 				waiting=true;
 				waiting_writers.wait(writers);
@@ -609,7 +614,7 @@ namespace tscb {
 		{
 			queued=false;
 			waiting=false;
-			readers++;
+			readers.atomic_fetch_sub(1, atomics::memory_order_release);
 			writers.unlock();
 		}
 		
@@ -625,7 +630,7 @@ namespace tscb {
 		{
 			queued=false;
 			waiting=false;
-			readers++;
+			readers.atomic_fetch_add(1, atomics::memory_order_release);
 			write_unlock_async();
 		}
 
@@ -634,7 +639,24 @@ namespace tscb {
 		bool read_lock_slow(void) throw();
 		bool read_unlock_slow(void) throw();
 		
-		atomic readers;
+		inline bool read_acquire(void) throw()
+		{
+			int expected;
+			bool success;
+			do {
+				expected=readers.load(atomics::memory_order_relaxed);
+				if (__builtin_expect(expected==0, 0)) return false;;
+				success=readers.compare_exchange_strong(expected, expected+1, atomics::memory_order_acquire);
+			} while(__builtin_expect(!success, 0));
+			return true;
+		}
+		
+		inline bool read_release(void) throw()
+		{
+			return __builtin_expect(readers.atomic_fetch_sub(1, atomics::memory_order_release)!=1, 1);
+		}
+		
+		atomics::atomic_int readers;
 		mutex writers;
 		conditional waiting_writers;
 		bool queued, waiting;

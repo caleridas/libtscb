@@ -13,7 +13,7 @@ namespace tscb {
 	bool deferred_rwlock::read_lock_slow(void) throw()
 	{
 		writers.lock();
-		if (readers.inc_if_not_zero()) {
+		if (read_acquire()) {
 			writers.unlock();
 			return false;
 		}
@@ -24,7 +24,13 @@ namespace tscb {
 	bool deferred_rwlock::read_unlock_slow(void) throw()
 	{
 		writers.lock();
-		if (readers!=0) {
+		/* note: if another thread obsevers 1->0 transition, it will
+		take the mutex afterwards (and thus serialize with us)
+		
+		conversely, a 0->1 transition can only happen with the
+		mutex held; therefore, the acquire/release implicit in
+		the mutex is sufficient to enforce memory ordering here */
+		if (readers.load(atomics::memory_order_relaxed)!=0) {
 			writers.unlock();
 			return false;
 		}
@@ -41,7 +47,7 @@ namespace tscb {
 			waiting_writers.broadcast();
 			writers.lock();
 		}
-		if (readers.inc_if_not_zero()) {
+		if (read_acquire()) {
 			writers.unlock();
 			return false;
 		}
@@ -58,7 +64,13 @@ namespace tscb {
 			waiting_writers.broadcast();
 			writers.lock();
 		}
-		if (readers!=0) {
+		/* note: if another thread obsevers 1->0 transition, it will
+		take the mutex afterwards (and thus serialize with us)
+		
+		conversely, a 0->1 transition can only happen with the
+		mutex held; therefore, the acquire/release implicit in
+		the mutex is sufficient to enforce memory ordering here */
+		if (readers.load(atomics::memory_order_relaxed)!=0) {
 			writers.unlock();
 			return false;
 		}
