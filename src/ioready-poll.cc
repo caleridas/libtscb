@@ -139,14 +139,17 @@ namespace tscb {
 				int fd=ptab->pfd[n].fd;
 				int ev=translate_os_to_tscb(ptab->pfd[n].revents);
 				
-				ioready_callback *link=
-					callback_tab.lookup_first_callback(fd);
+				/* note: dereference_dependent is required because
+				new elements may be added to the list while it is
+				being traversed */
+				ioready_callback *link=atomics::dereference_dependent(
+					callback_tab.lookup_first_callback(fd)
+				);
 				while(link) {
-					data_dependence_memory_barrier();
 					if (ev&link->event_mask) {
 						link->target(ev&link->event_mask);
 					}
-					link=link->active_next;
+					link=atomics::dereference_dependent(link->active_next);
 				}
 				count--;
 				handled++;
@@ -207,7 +210,7 @@ namespace tscb {
 		
 		callback_tab.set_closure(link->fd, (void *)(p->size-1));
 		
-		memory_barrier();
+		atomics::fence();
 		
 		master_ptab=p;
 	}

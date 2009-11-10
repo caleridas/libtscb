@@ -13,6 +13,7 @@ namespace tscb {
 	
 	/** \cond NEVER */
 	
+	#if 0
 	class atomic {
 	public:
 		inline atomic(long initial=0) : value(initial) {}
@@ -95,6 +96,8 @@ namespace tscb {
 	{
 	}
 	
+	#endif
+	
 	/** \endcond */
 	
 	namespace atomics {
@@ -138,13 +141,16 @@ namespace tscb {
 					: "memory"
 				);
 				bool success=(prev==expected);
+				expected=prev;
 				return success;
 			}
+			
 			inline int atomic_fetch_add(int c, memory_order order=memory_order_seq_cst)
 			{
 				asm volatile("lock xaddl %0, %1" : "+r" (c), "+m" (i) :: "memory");
 				return c;
 			}
+			
 			inline int atomic_fetch_sub(int c, memory_order order=memory_order_seq_cst)
 			{
 				return atomic_fetch_add(-c);
@@ -158,6 +164,22 @@ namespace tscb {
 			explicit atomic_int(const atomic_int &a) {}
 			void operator=(const atomic_int &a) {}
 		};
+		
+		static inline void fence(memory_order order=memory_order_seq_cst)
+		{
+			__asm__ __volatile__("" ::: "memory");
+		}
+		
+		/* enforce that data access to the element follows
+		reading the pointer */
+		template<typename T>
+		static inline T * dereference_dependent(T *t)
+		{
+			T *tmp=(T * volatile)t;
+			/* on i386, it is sufficient to just enforce compiler ordering */
+			__asm__ __volatile__("" ::: "memory");
+			return tmp;
+		}
 	}
 }
 

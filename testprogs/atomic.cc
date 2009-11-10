@@ -13,18 +13,34 @@
 
 using namespace tscb;
 
+static inline bool inc_if_not_zero(atomics::atomic_int &a)
+{
+	int expected;
+	do {
+		expected=a.load(atomics::memory_order_relaxed);
+		if (expected==0) return false;
+	} while (!a.compare_exchange_strong(expected, expected+1, atomics::memory_order_acquire));
+	return true;
+}
+
+
+/* note: the following code obviously does not even try to test
+the atomicity of the operations in question -- this is not
+really feasible as a unit test, but testing that the operations
+behave correctly when executed sequentially has already caught
+a sizable number of bugs */
 void atomictests()
 {
-	atomic a(0);
+	tscb::atomics::atomic_int a(0);
 	
 	ASSERT((int)a==0);
-	ASSERT(a.inc_if_not_zero()==false);
+	ASSERT(inc_if_not_zero(a)==false);
 	ASSERT((int)a==0);
 	a++;
 	ASSERT((int)a==1);
 	++a;
 	ASSERT((int)a==2);
-	ASSERT(a.inc_if_not_zero()==true);
+	ASSERT(inc_if_not_zero(a)==true);
 	ASSERT((int)a==3);
 	a--;
 	ASSERT((int)a==2);
@@ -33,15 +49,21 @@ void atomictests()
 	ASSERT((--a)==false);
 	ASSERT((int)a==0);
 	
-	int oldval=a.cmpxchg(0, 1);
+	int oldval=0;
+	bool success=a.compare_exchange_strong(oldval, 1);
+	ASSERT(success);
 	ASSERT((int)a==1);
 	ASSERT(oldval==0);
 	
-	oldval=a.cmpxchg(1, 2);
+	oldval=1;
+	success=a.compare_exchange_strong(oldval, 2);
+	ASSERT(success);
 	ASSERT((int)a==2);
 	ASSERT(oldval==1);
 	
-	oldval=a.cmpxchg(3, 1);
+	oldval=3;
+	success=a.compare_exchange_strong(oldval, 1);
+	ASSERT(!success);
 	ASSERT((int)a==2);
 	ASSERT(oldval==2);
 }

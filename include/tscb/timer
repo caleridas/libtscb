@@ -561,13 +561,15 @@ namespace tscb {
 			queue is non-zero; we assume that pointer loads/stores are
 			atomic anyway, so this kind of access is safe (we rely on
 			the specific internal representation of the timer queue as
-			a fibonacci heap here).
+			a fibonacci heap here).*/
 			
-			However since this test should always be coupled with a 
+			/* However since this test should always be coupled with a 
 			"clear" operation on the event flag associated with the timer,
 			a memory barrier is required to provide correct
 			ordering between flag and tested condition */
-			memory_barrier();
+			
+			atomics::fence();
+			
 			return (bool)timer_queue.peek_min();
 		}
 		

@@ -79,7 +79,10 @@ namespace tscb {
 		tmp->size=table->size;
 		memcpy(tmp->chains, table->chains,
 			sizeof(ioready_callback_chain)*table->size);
-		memory_barrier();
+		
+		/* enforce ordering between populating the data structure
+		and publishing the pointer to it */
+		atomics::fence();
 		table=tmp;
 	}
 	
@@ -104,14 +107,25 @@ namespace tscb {
 	
 	void ioready_callback_table::insert(ioready_callback *link) throw(std::bad_alloc)
 	{
+		/* Inserting an element into a list that might be traversed
+		concurrently. The following insertion protocol must be honoured:
+		
+		1. prepare the element to be inserted in its designated state
+		2. link the element to the list
+		
+		all memory stores from step 1 must strictly precede the store(s)
+		from step 2, therefore the two must be separated by a memory fence  */
 		ensure_size(link->fd+1);
 		ioready_callback_chain &chain=table->chains[link->fd];
 		
-		/* insertion protocol */
+		/* 1. prepare element */
 		link->prev=chain.last;
 		link->next=0;
 		link->active_next=0;
-		memory_barrier();
+		
+		atomics::fence();
+		
+		/* 2. insert into list */
 		
 		/* add element to active list; find all elements that have been removed
 		from the full list and thus terminate the active list; point them to

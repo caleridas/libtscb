@@ -245,15 +245,15 @@ namespace tscb {
 		virtual bool connected(void) const throw()=0;
 		
 		/** \internal \brief Increase reference count */
-		inline void pin(void) throw() {refcount++;}
+		inline void pin(void) throw() {refcount.atomic_fetch_add(1, atomics::memory_order_relaxed);}
 		/** \internal \brief Decrease reference count */
-		inline void release(void) throw() {if (!--refcount) delete this;}
+		inline void release(void) throw() {if (refcount.atomic_fetch_sub(1, atomics::memory_order_relaxed)==1) delete this;}
 		
 	private:
 #ifdef _LIBTSCB_CALLBACK_UNITTESTS
 	public:
 #endif
-		atomic refcount;
+		atomics::atomic_int refcount;
 	};
 	
 	static inline void intrusive_ptr_add_ref(abstract_callback *t) throw()
@@ -398,7 +398,6 @@ namespace tscb {
 			read_lock();
 			callback_type *l=active;
 			while(l) {
-				data_dependence_memory_barrier();
 				l->target();
 				l=l->active_next;
 			}
@@ -416,7 +415,6 @@ namespace tscb {
 			read_lock();
 			callback_type *l=active;
 			while(l) {
-				data_dependence_memory_barrier();
 				l->function(arg1);
 				l=l->active_next;
 			}
@@ -434,7 +432,6 @@ namespace tscb {
 			read_lock();
 			callback_type *l=active;
 			while(l) {
-				data_dependence_memory_barrier();
 				l->function(arg1, arg2);
 				l=l->active_next;
 			}
@@ -452,7 +449,6 @@ namespace tscb {
 			read_lock();
 			callback_type *l=active;
 			while(l) {
-				data_dependence_memory_barrier();
 				l->function(arg1, arg2, arg3);
 				l=l->active_next;
 			}
@@ -495,6 +491,15 @@ namespace tscb {
 		/** \internal \brief Add link to end of chain */
 		void push_back(callback_type *l) throw()
 		{
+			/* note: object has been fully constructed at this point,
+			but the following lock acquisition only provides "acquire"
+			semantics so that the memory references constructing
+			this object are allowed to "leak" into the locked
+			region. We therefore need an explicit fence here in
+			order to avoid making an uninitialized element visible
+			during traversal of the chain */
+			atomics::fence(atomics::memory_order_release);
+			
 			l->registration_mutex.lock();
 			bool sync=guard.write_lock_async();
 			
@@ -502,9 +507,6 @@ namespace tscb {
 			l->prev=last;
 			
 			l->active_next=0;
-			
-			/* prevent traversal of chain from seeing "incomplete" entries */
-			memory_barrier();
 			
 			/* add element to active list; find all elements that have been removed
 			from the full list and thus terminate the active list; point them to

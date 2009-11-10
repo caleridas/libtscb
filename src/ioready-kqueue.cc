@@ -68,14 +68,14 @@ namespace tscb {
 			if (events[n].filter==EVFILT_READ) ev=EVMASK_INPUT;
 			else if (events[n].filter==EVFILT_WRITE) ev=EVMASK_OUTPUT;
 			
-			ioready_callback *link=
-				callback_tab.lookup_first_callback(fd);
+			ioready_callback *link=atomics::dereference_dependent(
+				callback_tab.lookup_first_callback(fd)
+			);
 			while(link) {
-				data_dependence_memory_barrier();
 				if (ev&link->event_mask) {
 					link->target(ev&link->event_mask);
 				}
-				link=link->active_next;
+				link=atomics::dereference_dependent(link->active_next);
 			}
 		}
 		
@@ -105,7 +105,7 @@ namespace tscb {
 			if (nevents>0) process_events(events, nevents);
 			else nevents=0;
 		} else {
-			data_dependence_memory_barrier();
+			atomics::fence();
 			evflag->start_waiting();
 			if (evflag->flagged!=0) {
 				tv.tv_sec=0;
@@ -126,15 +126,18 @@ namespace tscb {
 	eventflag *ioready_dispatcher_kqueue::get_eventflag(void)
 		throw(std::runtime_error, std::bad_alloc)
 	{
-		if (wakeup_flag) {
-			data_dependence_memory_barrier();
-			return wakeup_flag;
-		}
+		/* singleton pattern, even safe on Alpha */
+		
+		if (wakeup_flag)
+			return atomics::dereference_dependent(wakeup_flag);
+		
 		singleton_mutex.lock();
 		
 		if (wakeup_flag) {
-			data_dependence_memory_barrier();
+			atomics::fence();
 			singleton_mutex.unlock();
+			/* note: dereference_dependent not required as lock/unlock
+			implies an acquire/release fence */
 			return wakeup_flag;
 		}
 		
@@ -155,7 +158,8 @@ namespace tscb {
 			throw;
 		}
 		
-		memory_barrier();
+		/* make sure object is initialized fully before publishing */
+		atomics::fence();
 		wakeup_flag=tmp;
 		singleton_mutex.unlock();
 		

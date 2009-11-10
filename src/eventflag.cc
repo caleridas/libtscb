@@ -16,7 +16,7 @@ namespace tscb {
 	
 	
 	pipe_eventflag::pipe_eventflag(void) throw(std::runtime_error)
-		: flagged(0)
+		: flagged(0), waiting(0)
 	{
 		int filedes[2];
 		int error=pipe(filedes);
@@ -35,33 +35,27 @@ namespace tscb {
 	
 	void pipe_eventflag::set(void) throw()
 	{
-		/* setting a flag always occurs after a writing state to memory
-		objects to indicate that a certain condition now holds; ensure
-		that setting the condition does not overtake setting the
-		event flag */
-		memory_barrier();
-		
 		/* fast path (to avoid atomic op) if flag is already set */
-		if (flagged!=0) return;
+		if (flagged.load(atomics::memory_order_relaxed)!=0) return;
 		
 		/* atomic exchange to ensure only one setter can "see" the
 		0->1 transition; otherwise we could have spurious wakeups */
-		int oldval=flagged.cmpxchg(0, 1);
-		if (oldval!=0) return;
+		int expected=0;
+		if (!flagged.compare_exchange_strong(expected, 1, atomics::memory_order_release)) return;
 		
 		/* we are now certain that we have switched the flag from 0 to 1;
 		if no one has been waiting before we switched the flag,
 		there is no one to wakeup */
 		
-		memory_barrier();
-		if (__builtin_expect(waiting==0, true)) return;
+		if (__builtin_expect(waiting.load(atomics::memory_order_relaxed)==0, true)) return;
 		
 		/* at least one thread has been marked "waiting"; we have to
 		post a wakeup; the last thread that was waiting will clear
 		the control pipe */
 		
-		oldval=flagged.cmpxchg(1, 2);
-		if (oldval!=1) return;
+		expected=1;
+		if (!flagged.compare_exchange_strong(expected, 2, atomics::memory_order_relaxed))
+			return;
 		
 		char c=0;
 		write(writefd, &c, 1);
@@ -70,19 +64,18 @@ namespace tscb {
 	void pipe_eventflag::start_waiting(void) throw()
 	{
 		/* slow path */
-		waiting++;
-		memory_barrier();
+		waiting.atomic_fetch_add(1, atomics::memory_order_relaxed);
 	}
 	
 	void pipe_eventflag::wait(void) throw()
 	{
 		/* fast path to avoid atomic op if flag is already set */
-		if (flagged!=0) return;
+		if (flagged.load(atomics::memory_order_acquire)!=0) return;
 		
 		/* slow path */
 		start_waiting();
 		
-		if (flagged==0) {
+		if (flagged.load(atomics::memory_order_acquire)==0) {
 			/* poll file descriptor */
 		}
 		
@@ -92,32 +85,27 @@ namespace tscb {
 	
 	void pipe_eventflag::stop_waiting(void) throw()
 	{
-		--waiting;
+		waiting.atomic_fetch_sub(1, atomics::memory_order_relaxed);
 	}
 	
 	void pipe_eventflag::clear(void) throw()
 	{
-		int oldval, tmp;
+		int oldval;
 		{
-			oldval=flagged;
+			oldval=flagged.load(atomics::memory_order_relaxed);
 			/* fast path (to avoid atomic op) if flag is already cleared */
 			if (oldval==0) return;
-			tmp=flagged.cmpxchg(oldval, 0);
-		} while(tmp!=oldval);
-		
-		if (__builtin_expect(oldval==1, true)) {
 			/* after clearing a flag, the application will test a
 			condition in a data structure; make sure test of the
-			condition and clearing of the flag are not reordered */
-			memory_barrier();
-			return;
-		}
+			condition and clearing of the flag are not reordered by
+			changing the flag with "acquire" semantics */
+		} while(!flagged.compare_exchange_strong(oldval, 0, atomics::memory_order_acquire));
+		if (__builtin_expect(oldval==1, true)) return;
 		
 		/* a wakeup has been sent the last time the flag was raised;
 		clear the control pipe */
 		char c;
 		read(readfd, &c, 1);
-		/* we assume that a system call is an implicit memory barrier */
 	}
 	
 	platform_eventflag::platform_eventflag(void) throw()
@@ -172,9 +160,7 @@ namespace tscb {
 			wakeups */
 			flagged=true;
 			
-			/* PREMISE: system calls are implicit memory barriers */
-			/* I think I can safely assume this premise to hold; if
-			it does not, I have to add a memory_barrier here */
+			/* PREMISE: system calls are implicit memory fences */
 			
 			pthread_kill(thread, signo);
 		}

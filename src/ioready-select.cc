@@ -121,14 +121,14 @@ namespace tscb {
 				/* deliver exception events to everyone */
 				if (e) ev|=EVMASK_OUTPUT|EVMASK_INPUT|EVMASK_HANGUP;
 				
-				ioready_callback *link=
-					callback_tab.lookup_first_callback(n);
+				ioready_callback *link=atomics::dereference_dependent(
+					callback_tab.lookup_first_callback(n)
+				);
 				while(link) {
-					data_dependence_memory_barrier();
 					if (ev&link->event_mask) {
 						link->target(ev&link->event_mask);
 					}
-					link=link->active_next;
+					link=atomics::dereference_dependent(link->active_next);
 				}
 				count--;
 				handled++;
