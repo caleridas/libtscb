@@ -9,6 +9,8 @@
 #ifndef __TSCB_ATOMIC_SPARC_H
 #define __TSCB_ATOMIC_SPARC_H
 
+#error Currently broken
+
 namespace tscb {
 	
 	/** \cond NEVER */
