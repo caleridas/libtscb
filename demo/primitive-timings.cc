@@ -39,7 +39,7 @@ void atomic_condincr(int times)
 void atomic_decandtest(int times)
 {
 	atomic_var=-1;
-	while(times--) if (!atomic_var.atomic_fetch_sub(1, tscb::atomics::memory_order_relaxed)) break;
+	while(times--) if (atomic_var.atomic_fetch_sub(1, tscb::atomics::memory_order_relaxed)==1) break;
 }
 
 void pthread_mutex_lockunlock(int times)
