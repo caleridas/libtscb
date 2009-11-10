@@ -13,93 +13,6 @@ namespace tscb {
 	
 	/** \cond NEVER */
 	
-	#if 0
-	class atomic {
-	public:
-		inline atomic(long initial=0) : value(initial) {}
-		inline void operator++(void) {
-			__asm__ __volatile__("lock ; incl %0" : "=m" (value) : "m" (value));
-		}
-		inline void operator++(int) {
-			__asm__ __volatile__("lock ; incl %0" : "=m" (value) : "m" (value));
-		}
-		inline bool operator--(void) {
-			char c;
-			__asm__ __volatile__("lock ; decl %0; sete %1" : "=m" (value), "=qm" (c) : "m" (value));
-			return !(bool)c;
-		}
-		inline void operator--(int) {
-			__asm__ __volatile__("lock ; decl %0" : "=m" (value) : "m" (value));
-		}
-		inline bool inc_if_not_zero(void) {
-	#if 0
-			long oldval, newval, verify;
-			do {
-				oldval=value;
-				if (!oldval) return false;
-				verify=oldval; newval=oldval+1;
-				__asm__ __volatile__(
-					"lock cmpxchgl %1, %2\n"
-					: "=a" (oldval)
-					: "q" (newval), "m" (value), "a" (verify)
-				);
-			} while(oldval!=verify);
-			return true;
-	#endif
-			/* the following assembler is still a bit faster on my system... */
-			long oldval, verify, newval;
-			__asm__ __volatile__(
-				"1: movl %3, %0\n"
-				"test %0, %0\n"
-				"lea 1(%0), %2\n"
-				"movl %0, %1\n"
-				"je 2f\n"
-				"lock cmpxchgl %2, %3\n"
-				"cmp %0, %1\n"
-				"jne 1b\n"
-				"2:"
-				: "=&a" (oldval), "=&r" (verify), "=&DS" (newval)
-				: "m" (value)
-				: "cc"
-			);
-			return oldval;
-		}
-		inline long cmpxchg(long oldvalue, long newvalue)
-		{
-			long retval;
-			__asm__ __volatile__(
-				"lock cmpxchgl %1, %2\n"
-				: "=a" (retval)
-				: "q" (newvalue), "m" (value), "a" (oldvalue)
-			);
-			return retval;
-		}
-		inline operator long(void) const {return value;}
-		inline bool operator==(long v) const {return value==v;}
-		inline bool operator==(int v) const {return value==v;}
-		inline void operator=(long n) {value=n;}
-	private:
-		volatile long value;
-	};
-	
-	inline void memory_barrier(void)
-	{
-		/* I am confused - i386 is *supposed* to be sequentially consistent,
-		right ? */
-		/* hm... mfence is only P3 and up, right? */
-		/* __asm__ __volatile__( "mfence" ::: "memory"); */
-		/* Linux folks do it this way, hope this is right */
-		/* __asm__ __volatile__ ("lock addl $0,0(%%esp)" ::: "memory"); */
-	}
-	
-	inline void data_dependence_memory_barrier(void)
-	{
-	}
-	
-	#endif
-	
-	/** \endcond */
-	
 	namespace atomics {
 		
 		enum memory_order {
@@ -181,6 +94,9 @@ namespace tscb {
 			return tmp;
 		}
 	}
+	
+	/** \endcond */
+	
 }
 
 #endif
