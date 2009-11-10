@@ -21,108 +21,178 @@ namespace tscb {
 	  name "MPCFPE32B.pdf", Google is your friend...)
 	 */
 	
-	class atomic {
-	public:
-		inline atomic(long initial=0) : value(initial) {}
-		inline void operator++(void) {
-			long tmp;
-			/* note: "b" constraint instructs gcc to use any register except
-			r0; this is required because r0 is not allowed in some places;
-			since I am sometimes unsure if it is allowed or not just play
-			it safe and avoid r0 entirely :) */
-			__asm__ __volatile__(
-				"1: lwarx %0,0,%1 \n"
-				"addi %0,%0,1 \n"
-				"stwcx. %0,0,%1"
-				"\n bne- 1b"
-				: "=&b" (tmp)
-				: "b" (&value)
-				: "cc");
-		}
-		inline void operator++(int) {
-			int tmp;
-			__asm__ __volatile__(
-				"1: lwarx %0,0,%1 \n"
-				"addi %0,%0,1 \n"
-				"stwcx. %0,0,%1 \n"
-				"bne- 1b"
-				: "=&b" (tmp)
-				: "b" (&value)
-				: "cc");
-		}
-		inline bool operator--(void) {
-			int tmp;
-			__asm__ __volatile__(
-				"1: lwarx %0,0,%1 \n"
-				"subi %0,%0,1 \n"
-				"stwcx. %0,0,%1 \n"
-				"bne- 1b \n"
-				: "=&b" (tmp)
-				: "b" (&value)
-				: "cc");
-			return (bool)tmp;
-		}
-		inline void operator--(int) {
-			int tmp;
-			__asm__ __volatile__(
-				"1: lwarx %0,0,%1 \n"
-				"subi %0,%0,1 \n"
-				"stwcx. %0,0,%1 \n"
-				"bne- 1b"
-				: "=&b" (tmp)
-				: "b" (&value)
-				: "cc");
-		}
-		inline bool inc_if_not_zero(void) {
-			int oldval;
-			__asm__ __volatile__(
-				"1: lwarx %0,0,%1\n"
-				"cmpwi %0, 0\n"
-				"beq- 2f\n"
-				"addi %0,%0,1\n"
-				"stwcx. %0,0,%1\n"
-				"bne- 1b\n"
-				"2:"
-				: "=&b" (oldval)
-				: "b" (&value)
-				: "cc"
-			);
-			return oldval;
+	namespace atomics {
+		
+		/* note: the __asm__ constraint "b" instructs gcc to use any register
+		except r0; this is required because r0 is not allowed in
+		some places. Since I am sometimes unsure if it is allowed
+		or not just play it safe and avoid r0 entirely -- ppc isn't
+		exactly register-starved, so this really should not matter :) */
+		
+		enum memory_order {
+			memory_order_relaxed, memory_order_acquire,
+			memory_order_release, memory_order_acq_rel,
+			memory_order_seq_cst
 		};
-		inline long cmpxchg(long oldvalue, long newvalue)
+		
+		static inline void __fence_before(memory_order order)
 		{
-			int retval;
-			__asm__ __volatile__(
-				"1: lwarx %0,0,%1\n"
-				"cmpw %0, %2\n"
-				"bne- 2f\n"
-				"stwcx. %3,0,%1\n"
-				"bne- 1b\n"
-				"2:"
-				: "=&b" (retval)
-				: "b" (&value), "b" (oldvalue), "b" (newvalue)
-			);
-			return retval;
+			switch(order) {
+				case memory_order_release:
+				case memory_order_acq_rel:
+				case memory_order_seq_cst:
+					__asm__ __volatile__ ("eieio" ::: "memory");
+				default:;
+			}
 		}
-		inline operator long(void) const {return value;}
-		inline bool operator==(long v) const {return value==v;}
-		inline bool operator==(int v) const {return value==v;}
-		inline void operator=(long n) {value=n;}
-	private:
-		volatile long value;
-	};
-	
-	inline void memory_barrier(void)
-	{
-		__asm__ __volatile__( "eieio" ::: "memory" );
-	}
-	
-	inline void data_dependence_memory_barrier(void)
-	{
+		
+		static inline void __fence_after(memory_order order)
+		{
+			switch(order) {
+				case memory_order_acquire:
+				case memory_order_acq_rel:
+				case memory_order_seq_cst:
+					__asm__ __volatile__ ("eieio" ::: "memory");
+				default:;
+			}
+		}
+		
+		struct atomic_int {
+		private:
+			volatile int i;
+		public:
+			atomic_int(void) {}
+			atomic_int(int __i) : i(__i) { }
+			
+			inline operator int() const {return load();}
+			inline int operator=(int __i) {store(__i); return __i;}
+			
+			inline void
+			store(int __i, memory_order order=memory_order_seq_cst) volatile
+			{
+				__fence_before(order);
+				i=__i;
+			}
+			
+			inline int
+			load(memory_order order=memory_order_seq_cst) const volatile
+			{
+				int __i=i;
+				__fence_after(order);
+				return __i;
+			}
+			
+			bool compare_exchange_strong(int &expected, int desired,
+				memory_order order=memory_order_seq_cst)
+			{
+				__fence_before(order);
+				int success;
+				__asm__ __volatile__(
+					"addi %1,0,0\n"
+					"1: lwarx %0,0,%2\n"
+					"cmpw %0, %3\n"
+					"bne- 2f\n"
+					"stwcx. %4,0,%2\n"
+					"bne- 1b\n"
+					"addi %1,0,1\n"
+					"2:"
+					: "=&b" (expected), "=&b" (success)
+					: "b" (&i), "b" (expected), "b" (desired)
+				);
+				__fence_after(order);
+				return success;
+			}
+			
+			inline int atomic_fetch_add(int c, memory_order order=memory_order_seq_cst)
+			{
+				int original;
+				__fence_before(order);
+				if (__builtin_constant_p(c)) {
+					/* constant +1 or -1 are so common increments that
+					it makes sense to optimize this case by avoiding
+					the load into a temporary register */
+					switch(c) {
+						case -1: original=__atomic_fetch_dec(); break;
+						case 1: original=__atomic_fetch_inc(); break;
+						default: original=__atomic_fetch_add(c);
+					}
+				} else original=__atomic_fetch_add(c);
+				__fence_after(order);
+				return original;
+			}
+			
+			inline int atomic_fetch_sub(int c, memory_order order=memory_order_seq_cst)
+			{
+				return atomic_fetch_add(-c, order);
+			}
+			
+			inline int operator++(void) {return atomic_fetch_add(1)+1;}
+			inline int operator++(int) {return atomic_fetch_add(1);}
+			inline int operator--(void) {return atomic_fetch_add(-1)-1;}
+			inline int operator--(int) {return atomic_fetch_add(-1);}
+		private:
+			inline int __atomic_fetch_add(int c)
+			{
+				int original, tmp;
+				__asm__ __volatile__(
+					"1: lwarx %0,0,%2\n"
+					"add %1,%0,%3\n"
+					"stwcx. %1,0,%2\n"
+					"bne- 1b\n"
+					: "=&b" (original), "=&b" (tmp)
+					: "b" (&i), "b" (c)
+					: "cc");
+				return original;
+			}
+			inline int __atomic_fetch_inc(void)
+			{
+				int original, tmp;
+				__asm__ __volatile__(
+					"1: lwarx %0,0,%2\n"
+					"addi %1,%0,1\n"
+					"stwcx. %1,0,%2\n"
+					"bne- 1b\n"
+					: "=&b" (original), "=&b" (tmp)
+					: "b" (&i)
+					: "cc");
+				return original;
+			}
+			inline int __atomic_fetch_dec(void)
+			{
+				int original, tmp;
+				__asm__ __volatile__(
+					"1: lwarx %0,0,%2\n"
+					"addi %1,%0,-1\n"
+					"stwcx. %1,0,%2\n"
+					"bne- 1b\n"
+					: "=&b" (original), "=&b" (tmp)
+					: "b" (&i)
+					: "cc");
+				return original;
+			}
+			explicit atomic_int(const atomic_int &a) {}
+			void operator=(const atomic_int &a) {}
+		};
+		
+		static inline void fence(memory_order order=memory_order_seq_cst)
+		{
+			if (order!=memory_order_relaxed)
+				__asm__ __volatile__("eieio" ::: "memory");
+		}
+		
+		/* enforce that data access to the element follows
+		reading the pointer */
+		template<typename T>
+		static inline T * dereference_dependent(T *t)
+		{
+			T *tmp=(T * volatile)t;
+			/* on ppc, it is sufficient to just enforce compiler ordering */
+			__asm__ __volatile__("" ::: "memory");
+			return tmp;
+		}
 	}
 	
 	/** \endcond */
-	
 }
 
 #endif
