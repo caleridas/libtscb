@@ -36,7 +36,7 @@ void test_pipe_eventflag(void)
 	e.clear();
 }
 
-main()
+int main()
 {
 	test_pipe_eventflag();
 }
