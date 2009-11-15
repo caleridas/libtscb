@@ -9,8 +9,6 @@
 #ifndef __TSCB_ATOMIC_ALPHA_H
 #define __TSCB_ATOMIC_ALPHA_H
 
-#error Currently broken
-
 namespace tscb {
 	
 	/** \cond NEVER */
@@ -29,8 +27,8 @@ namespace tscb {
 			"addl %0,1,%0 \n"
 			"stl_c %0,%1 \n"
 			"beq %0,1b\n"
-			: "=&b" (tmp), "=m" (value)
-			:
+			: "=&b" (tmp)
+			: "m" (value)
 			: "cc"
 		);
 		
@@ -41,162 +39,197 @@ namespace tscb {
 		Linux kernel, introduce a forward branch and back again
 		
 		I have, however, had a hard time measuring the difference between
-		the two versions in microbenchmarks.
+		the two versions in microbenchmarks -- I am leaving it in nevertheless
+		as it apparently does not hurt either.
 	*/
 	
-	class atomic {
-	public:
-		inline atomic(int initial=0) : value(initial) {}
-		inline void operator++(void) {
-			int tmp;
-			__asm__ __volatile__(
-				"1: ldl_l %0,%1 \n"
-				"addl %0,1,%0 \n"
-				"stl_c %0,%1 \n"
-				"beq %0,2f\n"
-				".subsection 2\n"
-				"2: br 1b\n"
-				".previous\n"
-				: "=&b" (tmp), "=m" (value)
-				:
-				: "cc"
-			);
-		}
-		inline void operator++(int) {
-			int tmp;
-			__asm__ __volatile__(
-				"1: ldl_l %0,%1 \n"
-				"addl %0,1,%0 \n"
-				"stl_c %0,%1 \n"
-				"beq %0,2f\n"
-				".subsection 2\n"
-				"2: br 1b\n"
-				".previous\n"
-				: "=&b" (tmp), "=m" (value)
-				:
-				: "cc"
-			);
-		}
-		inline bool operator--(void) {
-			int tmp, retval;
-			__asm__ __volatile__(
-				"1: ldl_l %0,%2 \n"
-				"subl %0,1,%0 \n"
-				"addl %0,0,%1 \n"
-				"stl_c %0,%2 \n"
-				"beq %0,2f\n"
-				".subsection 2\n"
-				"2: br 1b\n"
-				".previous\n"
-				: "=&b" (tmp), "=&r" (retval), "=m" (value)
-				:
-				: "cc"
-			);
-			return (bool)retval;
-		}
-		inline void operator--(int) {
-			int tmp;
-			__asm__ __volatile__(
-				"1: ldl_l %0,%1 \n"
-				"subl %0,1,%0 \n"
-				"stl_c %0,%1 \n"
-				"beq %0,2f\n"
-				".subsection 2\n"
-				"2: br 1b\n"
-				".previous\n"
-				: "=&b" (tmp), "=m" (value)
-				:
-				: "cc"
-			);
-		}
-		inline bool inc_if_not_zero(void) {
-			int oldval;
-			__asm__ __volatile__(
-				"1: ldl_l %0,%1 \n"
-				"beq %0, 2f \n"
-				"addl %0,1,%0 \n"
-				"stl_c %0,%1 \n"
-				"beq %0,3f\n"
-				"2:\n"
-				".subsection 2\n"
-				"3: br 1b\n"
-				".previous\n"
-				: "=&b" (oldval), "=m" (value)
-				:
-				: "cc"
-			);
-			return oldval;
+	namespace atomics {
+		
+		enum memory_order {
+			memory_order_relaxed, memory_order_acquire,
+			memory_order_release, memory_order_acq_rel,
+			memory_order_seq_cst
 		};
-		inline int cmpxchg(int oldvalue, int newvalue) {
-			int retval, compare;
-			__asm__ __volatile__(
-				"1: ldl_l %0,%1 \n"
-				"cmpeq %0,%3,%2 \n"
-				"beq 2\n"
-				"mov %5, %2\n"
-				"stl_c %2,%1 \n"
-				"beq %2,3f\n"
-				"2:\n"
-				".subsection 2\n"
-				"3: br 1b\n"
-				".previous\n"
-				: "=&b" (retval), "=m" (value), "=&b"(compare)
-				: "r"(oldvalue), "r"(newvalue)
-				: "cc"
-			);
-			return oldvalue;
+		
+		static inline void __fence_before(memory_order order)
+		{
+			switch(order) {
+				case memory_order_release:
+				case memory_order_acq_rel:
+				case memory_order_seq_cst:
+					__asm__ __volatile__ ("mb" ::: "memory");
+				default:;
+			}
 		}
 		
-		
-		inline long cmpxchg(long oldvalue, long newvalue) {
-			long retvalue;
-			pthread_mutex_lock(&mutex);
-			retvalue=value;
-			if (value==oldvalue) value=newvalue;
-			pthread_mutex_unlock(&mutex);
-			return retvalue;
+		static inline void __fence_after(memory_order order)
+		{
+			switch(order) {
+				case memory_order_acquire:
+				case memory_order_acq_rel:
+				case memory_order_seq_cst:
+					__asm__ __volatile__ ("mb" ::: "memory");
+				default:;
+			}
 		}
-		inline operator long(void) const {return value;}
-		inline bool operator==(long v) const {return value==v;}
-		inline bool operator==(int v) const {return value==v;}
-		inline void operator=(long n) {value=n;}
-	private:
-		volatile int value;
-	};
-
-	inline long cmpxchg(long *v, long oldvalue, long newvalue)
-	{
-		long retval, compare;
-		__asm__ __volatile__(
-			"1: ldq_l %0,%1 \n"
-			"cmpeq %0,%3,%2 \n"
-			"beq 2\n"
-			"mov %5, %2\n"
-			"stq_c %2,%1\n"
-			"beq %2,3f\n"
-			"2:\n"
-			".subsection 2\n"
-			"3: br 1b\n"
-			".previous\n"
-			: "=&b" (retval), "=m" (*v), "=&b" (compare)
-			: "r"(oldvalue), "r"(newvalue)
-			: "cc"
-		);
-		return oldvalue;
-	}
-	
-	inline void memory_barrier(void)
-	{
-		/* this is maybe a bit strong, but it is guaranteed to
-		work in all cases */
-		__asm__ __volatile__( "wmb" ::: "memory" );
-	}
-	
-	inline void data_dependence_memory_barrier(void)
-	{
-		/* this is maybe a bit strong, but it is guaranteed to
-		work in all cases */
-		__asm__ __volatile__( "wmb" ::: "memory" );
+		
+		struct atomic_int {
+		private:
+			volatile int i;
+		public:
+			atomic_int(void) {}
+			atomic_int(int __i) : i(__i) { }
+			
+			inline operator int() const {return load();}
+			inline int operator=(int __i) {store(__i); return __i;}
+			
+			inline void
+			store(int __i, memory_order order=memory_order_seq_cst) volatile
+			{
+				__fence_before(order);
+				i=__i;
+			}
+			
+			inline int
+			load(memory_order order=memory_order_seq_cst) const volatile
+			{
+				int __i=i;
+				__fence_after(order);
+				return __i;
+			}
+			
+			bool compare_exchange_strong(int &expected, int desired,
+				memory_order order=memory_order_seq_cst)
+			{
+				__fence_before(order);
+				int current, success;
+				__asm__ __volatile__(
+					"1: ldl_l %2, %4\n"
+					"cmpeq %2, %0, %3\n"
+					"beq %3, 2f\n"
+					"mov %1, %3\n"
+					"stl_c %3, %4\n"
+					"beq %3, 3f\n"
+					"2: mov %2, %0\n"
+					
+					".subsection 2\n"
+					"3: br 1b\n"
+					".previous\n"
+					
+					: "+&r" (expected), "+&r" (desired), "=&r"(current), "=&r"(success)
+					: "m" (i)
+					:
+				);
+				__fence_after(order);
+				return success;
+			}
+			
+			inline int fetch_add(int c, memory_order order=memory_order_seq_cst)
+			{
+				int original;
+				__fence_before(order);
+				if (__builtin_constant_p(c)) {
+					/* constant +1 or -1 are so common increments that
+					it makes sense to optimize this case by avoiding
+					the load into a temporary register */
+					switch(c) {
+						case -1: original=__fetch_dec(); break;
+						case 1: original=__fetch_inc(); break;
+						default: original=__fetch_add(c);
+					}
+				} else original=__fetch_add(c);
+				__fence_after(order);
+				return original;
+			}
+			
+			inline int fetch_sub(int c, memory_order order=memory_order_seq_cst)
+			{
+				return fetch_add(-c, order);
+			}
+			
+			inline int operator++(void) {return fetch_add(1)+1;}
+			inline int operator++(int) {return fetch_add(1);}
+			inline int operator--(void) {return fetch_add(-1)-1;}
+			inline int operator--(int) {return fetch_add(-1);}
+		private:
+			inline int __fetch_add(int c)
+			{
+				int original, modified;
+				__asm__ __volatile__(
+					"1: ldl_l %0, %2\n"
+					"addl %0, %3, %1\n"
+					"stl_c %1, %2\n"
+					"beq %1, 2f\n"
+					
+					".subsection 2\n"
+					"2: br 1b\n"
+					".previous\n"
+					
+					: "=&r" (original), "=&r" (modified)
+					: "m" (i), "r" (c)
+					:
+				);
+				return original;
+			}
+			inline int __fetch_inc(void)
+			{
+				int original, modified;
+				__asm__ __volatile__(
+					"1: ldl_l %0, %2\n"
+					"addl %0, 1, %1\n"
+					"stl_c %1, %2\n"
+					"beq %1, 2f\n"
+					
+					".subsection 2\n"
+					"2: br 1b\n"
+					".previous\n"
+					
+					: "=&r" (original), "=&r" (modified)
+					: "m" (i)
+					:
+				);
+				return original;
+			}
+			inline int __fetch_dec(void)
+			{
+				int original, modified;
+				__asm__ __volatile__(
+					"1: ldl_l %0, %2\n"
+					"subl %0, 1, %1\n"
+					"stl_c %1, %2\n"
+					"beq %1, 2f\n"
+					
+					".subsection 2\n"
+					"2: br 1b\n"
+					".previous\n"
+					
+					: "=&r" (original), "=&r" (modified)
+					: "m" (i)
+					:
+				);
+				return original;
+			}
+			explicit atomic_int(const atomic_int &a) {}
+			void operator=(const atomic_int &a) {}
+		};
+		
+		static inline void fence(memory_order order=memory_order_seq_cst)
+		{
+			if (order!=memory_order_relaxed)
+				__asm__ __volatile__("mb" ::: "memory");
+		}
+		
+		/* enforce that data access to the element follows
+		reading the pointer */
+		template<typename T>
+		static inline T * dereference_dependent(T *t)
+		{
+			T *tmp=(T * volatile)t;
+			/* on alpha, enforce strict memory ordering before referencing
+			dependent data */
+			__asm__ __volatile__("mb" ::: "memory");
+			return tmp;
+		}
 	}
 	
 	/** \endcond */
