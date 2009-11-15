@@ -29,7 +29,7 @@ public:
 	inline void pin(void) {refcount++;}
 	inline void release(void) {if (!--refcount) delete this;}
 	
-	tscb::atomic refcount;
+	tscb::atomics::atomic_int refcount;
 private:
 	void data(int event);
 	void destroy(void);
@@ -52,7 +52,7 @@ class acceptor {
 public:
 	acceptor(tscb::ioready_service *service, int _fd);
 	
-	tscb::atomic refcount;
+	tscb::atomics::atomic_int refcount;
 private:
 	void connection_request(int event);
 	
