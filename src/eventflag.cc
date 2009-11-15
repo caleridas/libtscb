@@ -64,7 +64,7 @@ namespace tscb {
 	void pipe_eventflag::start_waiting(void) throw()
 	{
 		/* slow path */
-		waiting.atomic_fetch_add(1, atomics::memory_order_relaxed);
+		waiting.fetch_add(1, atomics::memory_order_relaxed);
 	}
 	
 	void pipe_eventflag::wait(void) throw()
@@ -85,7 +85,7 @@ namespace tscb {
 	
 	void pipe_eventflag::stop_waiting(void) throw()
 	{
-		waiting.atomic_fetch_sub(1, atomics::memory_order_relaxed);
+		waiting.fetch_sub(1, atomics::memory_order_relaxed);
 	}
 	
 	void pipe_eventflag::clear(void) throw()

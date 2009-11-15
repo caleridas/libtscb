@@ -103,7 +103,7 @@ namespace tscb {
 				return success;
 			}
 			
-			inline int atomic_fetch_add(int c, memory_order order=memory_order_seq_cst)
+			inline int fetch_add(int c, memory_order order=memory_order_seq_cst)
 			{
 				int original;
 				__fence_before(order);
@@ -112,26 +112,26 @@ namespace tscb {
 					it makes sense to optimize this case by avoiding
 					the load into a temporary register */
 					switch(c) {
-						case -1: original=__atomic_fetch_dec(); break;
-						case 1: original=__atomic_fetch_inc(); break;
-						default: original=__atomic_fetch_add(c);
+						case -1: original=__fetch_dec(); break;
+						case 1: original=__fetch_inc(); break;
+						default: original=__fetch_add(c);
 					}
-				} else original=__atomic_fetch_add(c);
+				} else original=__fetch_add(c);
 				__fence_after(order);
 				return original;
 			}
 			
-			inline int atomic_fetch_sub(int c, memory_order order=memory_order_seq_cst)
+			inline int fetch_sub(int c, memory_order order=memory_order_seq_cst)
 			{
-				return atomic_fetch_add(-c, order);
+				return fetch_add(-c, order);
 			}
 			
-			inline int operator++(void) {return atomic_fetch_add(1)+1;}
-			inline int operator++(int) {return atomic_fetch_add(1);}
-			inline int operator--(void) {return atomic_fetch_add(-1)-1;}
-			inline int operator--(int) {return atomic_fetch_add(-1);}
+			inline int operator++(void) {return fetch_add(1)+1;}
+			inline int operator++(int) {return fetch_add(1);}
+			inline int operator--(void) {return fetch_add(-1)-1;}
+			inline int operator--(int) {return fetch_add(-1);}
 		private:
-			inline int __atomic_fetch_add(int c)
+			inline int __fetch_add(int c)
 			{
 				int original, tmp;
 				__asm__ __volatile__(
@@ -144,7 +144,7 @@ namespace tscb {
 					: "cc");
 				return original;
 			}
-			inline int __atomic_fetch_inc(void)
+			inline int __fetch_inc(void)
 			{
 				int original, tmp;
 				__asm__ __volatile__(
@@ -157,7 +157,7 @@ namespace tscb {
 					: "cc");
 				return original;
 			}
-			inline int __atomic_fetch_dec(void)
+			inline int __fetch_dec(void)
 			{
 				int original, tmp;
 				__asm__ __volatile__(

@@ -10,20 +10,45 @@
 #define __TSCB_SIGNAL_H
 
 /**
-	\page callback_descr Generic callbacks
+	\page callback_descr Signals
+	
+	\ref tscb::signal "signal" and related classes provide a
+	thread-safe and highly efficient mechanism to implement the
+	observer pattern: The "observer" wants to observe the state of
+	another object, and for this purpose the object to be observed
+	(the "provider") provides a number of "signals" that are
+	activated on specific events (such as state changes) and to
+	which the "observer" can listen by connecting a callback
+	function to signals of interest.
+	
+	Complex multi-threaded applications pose a challenge to an
+	implementation of this mechanism as callbacks may be
+	registered to, deregistered from or activated through signals
+	from many threads concurrently.
+	
+	<TT>tscb</TT> supports this through the following class
+	templates:
+	
+	- \ref tscb::signal_proxy "signal_proxy" provides the interface
+	used by observers for registering notifications
+	
+	- \ref tscb::signal "signal" derives from \ref tscb::signal_proxy
+	and additionally provides a mechanism for notifying all
+	callbacks registered with the signal
+	
+	- \ref tscb::connection "connection" objects represent
+	a callback connected to a signal; its main purpose is
+	to provide a handle through with this connection can later
+	be broken
 	
 	The \ref tscb::signal "signal" ... template class provides
 	a generic callback mechanism. It allows one object
 	(the "sender") to notify an arbitray number of other objects
 	(the "receivers") of events by calling specified functions.
 	
-	The template can be instantiated with at least one and up
-	to six template arguments; they allow to customize the signature of the
-	callback functions to match the intended use case.
+	\section callback_declaration Declaration of signals
 	
-	\section callback_declaration Declaration of callback chains
-	
-	Callback chains are declared as global or member variables; the
+	Signals are declared as (global or member) variables; the
 	template argument defines the signature of the callback
 	functions:
 	
@@ -39,11 +64,11 @@
 		}
 	\endcode
 	
-	\section callback_issue Issuing callbacks
+	\section callback_issue Emitting signals
 	
-	Callback chain objects (as declared in the previous example) provide
-	an overloaded () operator which will call all callback functions
-	registered with this callback chain:
+	\ref signal objects (as defined in the previous example) provide
+	an overloaded () operator which will inform all callback functions
+	registered with it:
 	
 	\code
 		void MyClass::setValue(int newval)
@@ -58,11 +83,13 @@
 	The overloaded () operator expects exactly the number and type
 	of arguments as were used when the callback chain was declared.
 	
-	\section callback_register Registration for callbacks
+	\section callback_register Registration
 	
-	Callback chains provide the \ref tscb::signal::connect "connect"
-	template member functions to allow receivers to add a callback
-	function to the chain. They can be used in the following fashion:
+	All \ref tscb::signal "signals" derive from a
+	\ref tscb::signal_proxy "signal_proxy" base clase that provide a
+	\ref tscb::signal_proxy::connect "connect"
+	member function to allow observers to add a new callback
+	function. They can be used in the following fashion:
 	
 	\code
 		class MyObserver {
@@ -111,8 +138,8 @@
 	
 	The
 	\ref tscb::signal::connect "connect" method
-	return a reference to a callback connection object that represents the
-	connection between the callback service provider and the receiver. The
+	return a connection object that represents the
+	connection between the provider and the obverver. The
 	return value can be stored by the caller:
 	
 	\code
@@ -120,16 +147,16 @@
 		conn=c->onValueChange.connect(boost::bind(&MyObserver::notify_change, this, _1, _2));
 	\endcode
 	
-	The link object can later be used to cancel the
+	The conection object can later be used to cancel the
 	callback:
 	
 	\code
 		conn->cancel();
 	\endcode
 	
-	The callback function will not be invoked subsequently; the data associated
-	with the function object will be released as soon as it is guaranteed that
-	the callback function cannot be called again (e.g. from other threads).
+	The associated callback function will not be invoked subsequently; the data
+	associated with the function object will be released as soon as it is guaranteed
+	that the callback function cannot be called again (e.g. from other threads).
 	This is useful e.g. if <TT>boost::shared_ptr</TT> is used to assist in
 	tracking the lifetime of objects:
 	
@@ -144,7 +171,7 @@
 	the callback can be activated -- thus the object will not be deallocated
 	until it is guaranteed that the callback cannot be delivered any longer.
 	
-	\section Performance
+	\section callback_performance Performance
 	
 	The synchronization mechanism used to protect the integrity of the
 	callback chains is \ref tscb::deferred_rwlock. Thus overhead
@@ -153,8 +180,8 @@
 	
 	The implementation assumes that callback processing (in contrast
 	to callback registration/cancellation) is the fast path
-	and has been optimized to this end. The performance characteristics
-	are thus:
+	and has been optimized to this end. The worst-case performance characteristics
+	are:
 	
 	<UL>
 		<LI>
@@ -170,17 +197,109 @@
 		</LI>
 	</UL>
 	
-	Some measurements were made to estimate the number of clock cycles
-	it takes to call an empty function which takes a single integer parameter:
+	Some measurements were taken to estimate the overhead of the implementation
+	(compared to several implementation alternatives):
 	
 	<TABLE>
-		<TR><TH>call type</TH><TH>Motorola PPC7455</TH><TH>Intel Pentium III SSE</TH><TH>AMD Athlon</TH></TR>
-		<TR><TD>direct method call (non-virtual)</TD><TD>8</TD><TD>8</TD><TD>7</TD></TR>
-		<TR><TD>indirect method call (non-virtual)</TD><TD>15</TD><TD>12</TD><TD>10</TD></TR>
-		<TR><TD>callback chain, 1 callback</TD><TD>131</TD><TD>151</TD><TD>99</TD></TR>
-		<TR><TD>callback chain, 2 callbacks</TD><TD>166</TD><TD>180</TD><TD>122</TD></TR>
-		<TR><TD>callback chain, 3 callbacks</TD><TD>192</TD><TD>207</TD><TD>142</TD></TR>
+		<TR>
+			<TH>Implementation</TH>
+			<TH>call<BR/>single callback</TH>
+			<TH>call<BR/>10 callbacks</TH>
+			<TH>connect+disconnect</TH>
+			<TH>comments</TH>
+		</TR>
+		
+		<TR>
+			<TD>open-coded<BR /> (<TT>std::list</TT> of function pointers)</TD>
+			<TD>8.16 us/op</TD>
+			<TD>74.49 us/op</TD>
+			<TD>96.18 us/op</TD>
+			<TD>not thread-safe</TD>
+		</TR>
+		<TR>
+			<TD>open-coded<BR /> (<TT>std::list</TT> of <TT>boost::function</TT> objects)</TD>
+			<TD>16.78 us/op</TD>
+			<TD>159.85 us/op</TD>
+			<TD>127.35 us/op</TD>
+			<TD>not thread-safe</TD>
+		</TR>
+		<TR>
+			<TD><TT>tscb::signal</TT></TD>
+			<TD>59.97 us/op</TD>
+			<TD>218.19 us/op</TD>
+			<TD>643.56 us/op</TD>
+			<TD>thread-safe</TD>
+		</TR>
+		<TR>
+			<TD><TT>sigc::signal</TT></TD>
+			<TD>139.93 us/op</TD>
+			<TD>199.68 us/op</TD>
+			<TD>608.88 us/op</TD>
+			<TD>not thread-safe</TD>
+		</TR>
+		<TR>
+			<TD><TT>boost::signal</TT></TD>
+			<TD>216.83 us/op</TD>
+			<TD>655.99 us/op</TD>
+			<TD>1681.99 us/op</TD>
+			<TD>not thread-safe</TD>
+		</TR>
 	</TABLE>
+	
+	(Intel Celeron @ 2GHz)
+	
+	\section callback_thread_safety Thread safety
+	
+	The implementation provides the following thread safety guarantees:
+	
+	<UL>
+		<LI>
+			Concurrent invocation of any combination of
+			\ref tscb::signal::connect "signal::connect",
+			\ref tscb::signal::operator() "signal::operator()"
+			and \ref tscb::connection::disconnect "connection::disconnect"
+			is safe
+			(referring to either the same or different
+			\ref tscb::signal "signal" instances).
+		</LI>
+		<LI>
+			Concurrent invocation of
+			\ref tscb::connection::disconnect "connection::disconnect"
+			and destroying a \ref tscb::signal "signal" instance
+			is safe
+			(referring to either the same or different
+			\ref tscb::signal "signal" instances).
+		</LI>
+		<LI>
+			Concurrent invocations of \ref tscb::signal::connect "signal::connect",
+			\ref tscb::signal::operator() "signal::operator()"
+			and \ref tscb::connection::disconnect "connection::disconnect"
+			from within a callback functions bound to the same
+			or different \ref tscb::signal "signal" instances is
+			safe and cannot deadlock.
+		</LI>
+		<LI>
+			After \ref tscb::connection::disconnect "connection::disconnect"
+			has returned,
+			the corresponding callback function will not be invoked
+			through the signal it was connected to from the same
+			thread that called
+			\ref tscb::connection::disconnect "connection::disconnect".
+		</LI>
+		<LI>
+			After \ref tscb::connection::disconnect "connection::disconnect"
+			has returned,
+			the corresponding callback function will not be invoked
+			through the signal it was connected from another thread B
+			if the other thread synchronizes with the thread A that called
+			\ref tscb::connection::disconnect "connection::disconnect"
+			in any way. "Synchronize" here means that thread
+			A accesses a memory location with "release" semantic
+			which subsequently is accessed by thread B with "acquire"
+			semantic.
+		</LI>
+	</UL>
+	
 */
 
 #include <stdexcept>
@@ -245,9 +364,9 @@ namespace tscb {
 		virtual bool connected(void) const throw()=0;
 		
 		/** \internal \brief Increase reference count */
-		inline void pin(void) throw() {refcount.atomic_fetch_add(1, atomics::memory_order_relaxed);}
+		inline void pin(void) throw() {refcount.fetch_add(1, atomics::memory_order_relaxed);}
 		/** \internal \brief Decrease reference count */
-		inline void release(void) throw() {if (refcount.atomic_fetch_sub(1, atomics::memory_order_relaxed)==1) delete this;}
+		inline void release(void) throw() {if (refcount.fetch_sub(1, atomics::memory_order_relaxed)==1) delete this;}
 		
 	private:
 #ifdef _LIBTSCB_CALLBACK_UNITTESTS
