@@ -10,7 +10,7 @@
 #define __TSCB_SIGNAL_H
 
 /**
-	\page callback_descr Signals
+	\page signal_descr Signals
 	
 	\ref tscb::signal "signal" and related classes provide a
 	thread-safe and highly efficient mechanism to implement the
@@ -64,7 +64,7 @@
 		}
 	\endcode
 	
-	\section callback_issue Emitting signals
+	\section signal_emit Emitting signals
 	
 	\ref signal objects (as defined in the previous example) provide
 	an overloaded () operator which will inform all callback functions
@@ -83,7 +83,7 @@
 	The overloaded () operator expects exactly the number and type
 	of arguments as were used when the callback chain was declared.
 	
-	\section callback_register Registration
+	\section signal_register Registration
 	
 	All \ref tscb::signal "signals" derive from a
 	\ref tscb::signal_proxy "signal_proxy" base clase that provide a
@@ -109,9 +109,9 @@
 	In the previous example, the <TT>notify_change</TT> method of the
 	corresponding <TT>MyObserver</TT> object would be called
 	whenever the callback chain is being activated
-	(see section \ref callback_issue above). Note the the
+	(see section \ref signal_emit above). Note the the
 	function object created via <TT>boost::bind</TT> will be
-	destroyed as soon as the callback is cancelled (see section \ref callback_cookies below).
+	destroyed as soon as the callback is cancelled (see section \ref signal_connections below).
 	
 	The same technique can be used to bind "free" functions:
 	
@@ -134,7 +134,7 @@
 	Like in the previous example, the function <TT>notify_change</TT>
 	will be called whenever the callback chain is being activated.
 	
-	\section callback_cookies Connection management
+	\section signal_connections Connection management
 	
 	The
 	\ref tscb::signal::connect "connect" method
@@ -171,7 +171,7 @@
 	the callback can be activated -- thus the object will not be deallocated
 	until it is guaranteed that the callback cannot be delivered any longer.
 	
-	\section callback_performance Performance
+	\section signal_performance Performance
 	
 	The synchronization mechanism used to protect the integrity of the
 	callback chains is \ref tscb::deferred_rwlock. Thus overhead
@@ -211,42 +211,88 @@
 		
 		<TR>
 			<TD>open-coded<BR /> (<TT>std::list</TT> of function pointers)</TD>
-			<TD>8.16 us/op</TD>
-			<TD>74.49 us/op</TD>
-			<TD>96.18 us/op</TD>
+			<TD>8.16 ns/op</TD>
+			<TD>74.49 ns/op</TD>
+			<TD>96.18 ns/op</TD>
 			<TD>not thread-safe</TD>
 		</TR>
 		<TR>
 			<TD>open-coded<BR /> (<TT>std::list</TT> of <TT>boost::function</TT> objects)</TD>
-			<TD>16.78 us/op</TD>
-			<TD>159.85 us/op</TD>
-			<TD>127.35 us/op</TD>
+			<TD>16.78 ns/op</TD>
+			<TD>159.85 ns/op</TD>
+			<TD>127.35 ns/op</TD>
 			<TD>not thread-safe</TD>
 		</TR>
 		<TR>
 			<TD><TT>tscb::signal</TT></TD>
-			<TD>59.97 us/op</TD>
-			<TD>218.19 us/op</TD>
-			<TD>643.56 us/op</TD>
+			<TD>59.97 ns/op</TD>
+			<TD>218.19 ns/op</TD>
+			<TD>643.56 ns/op</TD>
 			<TD>thread-safe</TD>
 		</TR>
 		<TR>
 			<TD><TT>sigc::signal</TT></TD>
-			<TD>139.93 us/op</TD>
-			<TD>199.68 us/op</TD>
-			<TD>608.88 us/op</TD>
+			<TD>139.93 ns/op</TD>
+			<TD>199.68 ns/op</TD>
+			<TD>608.88 ns/op</TD>
 			<TD>not thread-safe</TD>
 		</TR>
 		<TR>
 			<TD><TT>boost::signal</TT></TD>
-			<TD>216.83 us/op</TD>
-			<TD>655.99 us/op</TD>
-			<TD>1681.99 us/op</TD>
+			<TD>216.83 ns/op</TD>
+			<TD>655.99 ns/op</TD>
+			<TD>1681.99 ns/op</TD>
 			<TD>not thread-safe</TD>
 		</TR>
 	</TABLE>
+	(Intel Celeron, 2GHz)
 	
-	(Intel Celeron @ 2GHz)
+	<TABLE>
+		<TR>
+			<TH>Implementation</TH>
+			<TH>call<BR/>single callback</TH>
+			<TH>call<BR/>10 callbacks</TH>
+			<TH>connect+disconnect</TH>
+			<TH>comments</TH>
+		</TR>
+		
+		<TR>
+			<TD>open-coded<BR /> (<TT>std::list</TT> of function pointers)</TD>
+			<TD>33.34 ns/op</TD>
+			<TD>283.64 ns/op</TD>
+			<TD>916.48 ns/op</TD>
+			<TD>not thread-safe</TD>
+		</TR>
+		<TR>
+			<TD>open-coded<BR /> (<TT>std::list</TT> of <TT>boost::function</TT> objects)</TD>
+			<TD>64.59 ns/op</TD>
+			<TD>667.17 ns/op</TD>
+			<TD>1152.51 ns/op</TD>
+			<TD>not thread-safe</TD>
+		</TR>
+		<TR>
+			<TD><TT>tscb::signal</TT></TD>
+			<TD>314.88 ns/op</TD>
+			<TD>945.76 ns/op</TD>
+			<TD>4328.39 ns/op</TD>
+			<TD>thread-safe</TD>
+		</TR>
+		<TR>
+			<TD><TT>sigc::signal</TT></TD>
+			<TD>1157.43 ns/op</TD>
+			<TD>1625.07 ns/op</TD>
+			<TD>5770.25 ns/op</TD>
+			<TD>not thread-safe</TD>
+		</TR>
+		<TR>
+			<TD><TT>boost::signal</TT></TD>
+			<TD>1592.23 ns/op</TD>
+			<TD>3619.12 ns/op</TD>
+			<TD>22482 ns/op</TD>
+			<TD>not thread-safe</TD>
+		</TR>
+	</TABLE>
+	(DEC Alpha EV6, 500MHz)
 	
 	\section callback_thread_safety Thread safety
 	
@@ -405,7 +451,7 @@ namespace tscb {
 		notification is to be delivered. It is used for "generic" callbacks,
 		i.e. those registered with a \ref signal.
 		
-		See \ref callback_descr for usage.
+		See \ref signal_descr for usage.
 	*/
 	template<typename Signature>
 	class signal_callback : public abstract_callback {
@@ -459,7 +505,7 @@ namespace tscb {
 		This object allows interested receivers to register themselves
 		for notification.
 		
-		See \ref callback_descr for usage.
+		See \ref signal_descr for usage.
 	*/
 	template<typename Signature>
 	class signal_proxy {
@@ -487,7 +533,7 @@ namespace tscb {
 		for notification, and it allows a sender to deliver notification
 		to all registered receivers.
 		
-		See \ref callback_descr for usage.
+		See \ref signal_descr for usage.
 	*/
 	template<typename Signature>
 	class signal : public signal_proxy<Signature> {

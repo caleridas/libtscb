@@ -31,10 +31,42 @@ documentation page; I don't know where else to put it */
 	The patterns provided in this library assist in minimizing the additional
 	complexity while making no compromise in efficiency.
 	
-	The library relies on a platform-dependent "atomic" datatype; this
-	datatype guarantees that certain primitive operations can be performed
-	atomically, and the library provides assembler implementations of these
-	operations for various popuplar architectures.
+	The library relies on the C++0x atomic datatypes, an implementation of the
+	required functional subset is provided for gcc on various target machines
+	in order to make the library useful with older compilers and systems.
+	
+	\section services Notification services
+	
+	Callback registration and dispatching services for various types of
+	events
+	
+	<UL>
+		<LI>
+			\ref signal_descr
+		</LI>
+		<LI>
+			\ref ioready_descr
+		</LI>
+		<LI>
+			\ref timer_descr
+		</LI>
+		<LI>
+			\ref dispatcher_descr
+		</LI>
+	</UL>
+	
+	\section synchronization Synchronization
+	
+	Classes for deferred synchronization -- used internally by the library,
+	but also useful in other contexts.
+	
+	<UL>
+		<LI>
+			\ref deferred_descr - deferring updates to data structures to
+			allow both non-blocking readers and writers access to the same
+			data structure
+		</LI>
+	</UL>
 	
 	\section util_adt Utility datatypes and algorithms
 	
@@ -52,49 +84,6 @@ documentation page; I don't know where else to put it */
 		</LI>
 	</UL>
 	
-	\section primitives Primitives
-	
-	Primitives providing generic functionality, some of which have to be
-	implemented in a platform-specific way
-	
-	<UL>
-		<LI>
-			\ref atomic_descr - Integer variables that can be manipulated
-			atomically from multiple threads
-		</LI>
-	</UL>
-	
-	\section synchronization Synchronization
-	
-	Patterns for various forms of synchronisation
-	
-	<UL>
-		<LI>
-			\ref deferred_descr - deferring updates to data structures to
-			allow both non-blocking readers and writers access to the same
-			data structure
-		</LI>
-	</UL>
-	
-	\section services Callback services
-	
-	Callback registration and dispatching services for various types of
-	events
-	
-	<UL>
-		<LI>
-			\ref callback_descr
-		</LI>
-		<LI>
-			\ref ioready_descr
-		</LI>
-		<LI>
-			\ref timer_descr
-		</LI>
-		<LI>
-			\ref dispatcher_descr
-		</LI>
-	</UL>
 */
 
 /**
