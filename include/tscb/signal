@@ -437,18 +437,57 @@ namespace tscb {
 		Every other connection implemented in this library can be
 		downcast to this type.
 	*/
-	typedef boost::intrusive_ptr<abstract_callback> connection;
+	class connection {
+	public:
+		inline connection(abstract_callback *_callback=0, bool add_ref=true) throw() : callback(_callback)
+		{if (callback && add_ref) callback->pin();}
+		
+		inline ~connection(void) throw()
+		{if (callback) callback->release();}
+		
+		template<typename ConnectionType>
+		inline connection(const ConnectionType &conn) throw()
+		{callback=conn.callback; if (callback) callback->pin();}
+		
+		inline connection(const connection &conn) throw()
+		{callback=conn.callback; if (callback) callback->pin();}
+		
+		template<typename ConnectionType>
+		inline connection &operator=(const ConnectionType &conn) throw()
+		{callback=conn.callback; if (callback) callback->pin(); return *this;}
+		
+		inline connection &operator=(const connection &conn) throw()
+		{callback=conn.callback; if (callback) callback->pin(); return *this;}
+		
+		inline void disconnect(void) throw()
+		{if (callback) {callback->disconnect(); callback->release(); callback=0;}}
+		
+		inline bool connected(void) const throw()
+		{return callback && callback->connected();}
+		
+		#ifdef __GXX_EXPERIMENTAL_CXX0X__
+		template<typename ConnectionType>
+		inline connection(ConnectionType && conn) throw()
+		{callback=conn.callback; conn.callback=0;}
+		
+		template<typename ConnectionType>
+		inline connection &operator=(ConnectionType && conn) throw()
+		{callback=conn.callback; conn.callback=0; return *this;}
+		#endif
+		
+	private:
+		abstract_callback *callback;
+	};
 	
 	template<typename Signature> class signal_callback;
 	template<typename Signature> class signal_proxy;
 	template<typename Signature> class signal;
 	
 	/**
-		\brief Callback from signals link
+		\brief Callback from signals
 		
-		This object represents the link between a sender/caller, from
-		which notification is requested, to a reciever/callee, to which
-		notification is to be delivered. It is used for "generic" callbacks,
+		This object is the callback established by the receiver
+		of a signal. It is used for "generic" callbacks,
 		i.e. those registered with a \ref signal.
 		
 		See \ref signal_descr for usage.
@@ -522,7 +561,7 @@ namespace tscb {
 				Function to be called when signal is activated
 		*/
 		virtual
-		boost::intrusive_ptr<callback_type>
+		connection
 		connect(const boost::function<Signature> &function) throw(std::bad_alloc)=0;
 	};
 	
@@ -544,12 +583,12 @@ namespace tscb {
 		typedef signal_callback<Signature> callback_type;
 		
 		virtual
-		boost::intrusive_ptr<callback_type>
+		connection
 		connect(const boost::function<Signature> &function) throw(std::bad_alloc)
 		{
 			callback_type *l=new callback_type(function);
 			push_back(l);
-			return l;
+			return connection((abstract_callback *)l);
 		}
 		
 		/**

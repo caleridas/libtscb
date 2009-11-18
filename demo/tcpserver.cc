@@ -98,7 +98,7 @@ void echo::data(int event)
 		}
 		if (n<=0) {
 			printf("connection closed by client\n");
-			link->disconnect();
+			link.disconnect();
 			break;
 		}
 		write(1, buffer, n);

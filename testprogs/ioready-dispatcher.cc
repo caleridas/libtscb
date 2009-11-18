@@ -54,7 +54,7 @@ public:
 		char c;
 		read(fd, &c, 1);
 		called=true;
-		link->disconnect();
+		link.disconnect();
 		ASSERT(refcount==2);
 	}
 	
@@ -103,6 +103,8 @@ void test_dispatcher(ioready_dispatcher *d)
 		tscb::ioready_connection link=d->watch(boost::bind(function, &called, pipefd[0], _1),
 			pipefd[0], EVMASK_INPUT);
 		
+		ASSERT(link.callback->refcount==2);
+		
 		int count=d->dispatch(&t);
 		ASSERT(count==0);
 		
@@ -112,26 +114,27 @@ void test_dispatcher(ioready_dispatcher *d)
 		ASSERT(called==1);
 		
 		called=0;
-		link->modify(0);
+		link.modify(0);
 		write(pipefd[1], &count, 1);
 		count=d->dispatch(&t);
 		ASSERT(count==0);
 		ASSERT(called==0);
 		
 		called=0;
-		link->modify(EVMASK_INPUT);
+		link.modify(EVMASK_INPUT);
 		count=d->dispatch(&t);
 		ASSERT(count==1);
 		ASSERT(called==1);
 		
 		write(pipefd[1], &count, 1);
 		called=0;
-		link->disconnect();
+		boost::intrusive_ptr<ioready_callback> cb=link.callback;
+		link.disconnect();
 		count=d->dispatch(&t);
 		ASSERT(count==0);
 		ASSERT(called==0);
 		
-		ASSERT(link->refcount==1);
+		ASSERT(cb->refcount==1);
 		
 		close(pipefd[0]);
 		close(pipefd[1]);
@@ -144,7 +147,7 @@ void test_dispatcher(ioready_dispatcher *d)
 		
 		Target target;
 		
-		tscb::ioready_connection link=d->watch(boost::bind(&Target::function, &target, _1),
+		tscb::connection link=d->watch(boost::bind(&Target::function, &target, _1),
 			pipefd[0], EVMASK_INPUT);
 		
 		int count;
@@ -153,7 +156,7 @@ void test_dispatcher(ioready_dispatcher *d)
 		ASSERT(count==1);
 		ASSERT(target.called==1);
 		
-		link->disconnect();
+		link.disconnect();
 		count=d->dispatch(&t);
 		ASSERT(count==0);
 		
@@ -232,7 +235,7 @@ void test_dispatcher_threading(ioready_dispatcher *d)
 		evflag->set();
 		
 		pthread_join(thread, 0);
-		link->disconnect();
+		link.disconnect();
 		
 		close(pipefd[0]);
 		close(pipefd[1]);

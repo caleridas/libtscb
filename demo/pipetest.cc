@@ -145,7 +145,7 @@ void receiver::release(void)
 
 receiver::~receiver(void)
 {
-	link->disconnect();
+	link.disconnect();
 }
 
 void receiver::pass_token(int fd, int event)

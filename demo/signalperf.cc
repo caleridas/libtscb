@@ -96,14 +96,14 @@ public:
 		while(iterations--)
 			sig(k);
 		for(size_t n=0; n<ncallbacks; n++)
-			conn[n]->disconnect();
+			conn[n].disconnect();
 	}
 	
 	void connect_disconnect(size_t iterations)
 	{
 		while(iterations--) {
 			tscb::connection conn=sig.connect(&test_function);
-			conn->disconnect();
+			conn.disconnect();
 		}
 	}
 };

@@ -390,6 +390,51 @@ namespace tscb {
 		*/
 	};
 	
+	template<typename Timeval>
+	class abstract_timer_connection {
+	public:
+		typedef abstract_timer_callback<Timeval> callback_type;
+		
+		inline abstract_timer_connection(callback_type *_callback=0, bool add_ref=true) throw() : callback(_callback)
+		{if (callback && add_ref) callback->pin();}
+		
+		inline ~abstract_timer_connection(void) throw()
+		{if (callback) callback->release();}
+		
+		template<typename ConnectionType>
+		inline abstract_timer_connection(const ConnectionType &conn) throw()
+		{callback=conn.callback; if (callback) callback->pin();}
+		
+		inline abstract_timer_connection(const abstract_timer_connection &conn) throw()
+		{callback=conn.callback; if (callback) callback->pin();}
+		
+		template<typename ConnectionType>
+		inline abstract_timer_connection &operator=(const ConnectionType &conn) throw()
+		{callback=conn.callback; if (callback) callback->pin(); return *this;}
+		
+		inline abstract_timer_connection &operator=(const abstract_timer_connection &conn) throw()
+		{callback=conn.callback; if (callback) callback->pin(); return *this;}
+		
+		inline void disconnect(void) throw()
+		{if (callback) {callback->disconnect(); callback->release(); callback=0;}}
+		
+		inline bool connected(void) const throw()
+		{return callback && callback->connected();}
+		
+		#ifdef __GXX_EXPERIMENTAL_CXX0X__
+		template<typename ConnectionType>
+		inline abstract_timer_connection(ConnectionType && conn) throw()
+		{callback=conn.callback; conn.callback=0;}
+		
+		template<typename ConnectionType>
+		inline abstract_timer_connection<Timeval> &operator=(ConnectionType && conn) throw()
+		{callback=conn.callback; conn.callback=0; return *this;}
+		#endif
+		
+	private:
+		callback_type *callback;
+	};
+	
 	/** \cond NEVER -- ignored by doxygen */
 	template<typename Timeval>
 	void intrusive_ptr_add_ref(abstract_timer_callback<Timeval> *t) {t->pin();}
@@ -448,13 +493,13 @@ namespace tscb {
 			<CODE>now</CODE> and return <CODE>true</CODE>, in which case it
 			will be called again at the new point in time.
 		*/
-		boost::intrusive_ptr<abstract_timer_callback<Timeval> >
+		abstract_timer_connection<Timeval>
 		timer(const boost::function<bool (Timeval &)> &function, Timeval expires) throw(std::bad_alloc)
 		{
 			abstract_timer_callback<Timeval> *link;
 			link=new abstract_timer_callback<Timeval>(function, expires);
 			register_timer(link);
-			return link;
+			return abstract_timer_connection<Timeval>(link);
 		}
 		
 		/** \internal \brief Register timer with internal data structure */
@@ -769,7 +814,7 @@ namespace tscb {
 	typedef abstract_timer_callback<boost::posix_time::ptime> timer_callback;
 	
 	/** \brief Reference to timer callback link using posix_time::ptime to represent time values */
-	typedef boost::intrusive_ptr<timer_callback> timer_connection;
+	typedef abstract_timer_connection<boost::posix_time::ptime> timer_connection;
 	
 	/**
 		\brief Timer service using posix_time::ptime to represent time values

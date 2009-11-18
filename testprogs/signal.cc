@@ -8,11 +8,11 @@
 
 #include <boost/bind.hpp>
 
+#define private public
+
 #define _LIBTSCB_CALLBACK_UNITTESTS 1
 #include <tscb/signal>
 #include "tests.h"
-
-//using namespace tscb;
 
 int result=0;
 int called=0;
@@ -23,13 +23,13 @@ public:
 	void cbrecv1(int arg) {result=arg;}
 	void cbrecv2(int arg) {
 		result=arg;
-		link1->disconnect();
+		link1.disconnect();
 		ASSERT(refcount==2);
-		link1=0;
+		ASSERT(!link1.connected());
 		ASSERT(refcount==2);
 	}
 	void cbrecv3(int arg) {
-		called++; result=arg; link1->disconnect(); link2->disconnect();
+		called++; result=arg; link1.disconnect(); link2.disconnect();
 	}
 	
 	inline void pin(void) {refcount++;}
@@ -65,14 +65,13 @@ void callback_tests(void)
 		
 		r.link1=chain.connect(boost::bind(&Receiver::cbrecv1, boost::intrusive_ptr<Receiver>(&r), _1));
 		ASSERT(r.refcount==2);
-		ASSERT(r.link1->refcount==2);
+		ASSERT(r.link1.callback->refcount==2);
 		
 		chain(1);
 		ASSERT(result==1);
 		
-		r.link1->disconnect();
+		r.link1.disconnect();
 		ASSERT(r.refcount==1);
-		r.link1=0;
 		
 		chain(2);
 		ASSERT(result==1);
@@ -114,12 +113,12 @@ void callback_tests(void)
 		{
 			tscb::signal<void (int)> chain;
 			r.link1=chain.connect(boost::bind(&Receiver::cbrecv1, boost::intrusive_ptr<Receiver>(&r), _1));
-			ASSERT(r.link1->refcount==2);
+			ASSERT(r.link1.callback->refcount==2);
 			ASSERT(r.refcount==2);
 		}
-		ASSERT(r.link1->refcount==1);
+		ASSERT(r.link1.callback->refcount==1);
 		ASSERT(r.refcount==1);
-		r.link1->disconnect();
+		r.link1.disconnect();
 	}
 	{
 		called=result=0;
@@ -129,7 +128,7 @@ void callback_tests(void)
 		ASSERT(called==1);
 		ASSERT(result==0);
 		
-		l->disconnect();
+		l.disconnect();
 		chain(1);
 		ASSERT(called==1);
 	}
@@ -143,12 +142,12 @@ void callback_tests(void)
 		chain(1);
 		ASSERT(called==2);
 		
-		link1->disconnect();
+		link1.disconnect();
 		called=0;
 		chain(1);
 		ASSERT(called==1);
 		
-		link2->disconnect();
+		link2.disconnect();
 	}
 	/* check cancellation of second element in list */
 	{
@@ -160,12 +159,12 @@ void callback_tests(void)
 		chain(1);
 		ASSERT(called==2);
 		
-		link2->disconnect();
+		link2.disconnect();
 		called=0;
 		chain(1);
 		ASSERT(called==1);
 		
-		link1->disconnect();
+		link1.disconnect();
 	}
 }
 
