@@ -9,6 +9,7 @@
 #ifndef __TSCB_DISPATCH_H
 #define __TSCB_DISPATCH_H
 
+#include <list>
 #include <tscb/timer>
 #include <tscb/ioready>
 
@@ -118,12 +119,71 @@ namespace tscb {
 		(e.g. pipe); the function will return immediately if
 		any ioready callbacks have been processed
 		
-		- set an event flag associated that the io readiness event
+		- set an event flag that the io readiness event
 		dispatcher is associated with
 	*/
 	void dispatch(tscb::timerqueue_dispatcher *tq,
 		tscb::ioready_dispatcher *io) throw();
-
+	
+	class workqueue_service {
+	public:
+		virtual ~workqueue_service(void) throw();
+		
+		virtual
+		void post(const boost::function<void(void)> &function) throw(std::bad_alloc)=0;
+	};
+	
+	class posix_event_service : public workqueue_service, public timer_service, public ioready_service {
+	public:
+		virtual ~posix_event_service(void) throw();
+	};
+	
+	class posix_event_dispatcher : public posix_event_service {
+	public:
+		posix_event_dispatcher(void) throw(std::bad_alloc, std::runtime_error);
+		virtual ~posix_event_dispatcher(void) throw();
+		
+		void dispatch(void);
+		
+		/* workqueue_service */
+		virtual void
+		post(const boost::function<void(void)> &function) throw(std::bad_alloc);
+		
+		/* timer_service */
+		
+		/** \internal \brief Register timer with internal data structure */
+		virtual void register_timer(timer_callback *ptr) throw();
+		
+		/** \internal \brief Unregister timer with internal data structure */
+		virtual void unregister_timer(timer_callback *t) throw();
+		
+		/* ioready_service */
+		
+		/** \internal \brief Register callback link */
+		virtual void
+		register_ioready_callback(ioready_callback *l)
+			throw(std::bad_alloc);
+		/** \internal \brief Unregister callback link */
+		virtual void
+		unregister_ioready_callback(ioready_callback *e)
+			throw();
+		/** \internal \brief Update event set */
+		virtual void
+		modify_ioready_callback(ioready_callback *e, ioready_events event_mask)
+			throw();
+		
+		virtual eventflag *
+		get_eventflag(void) throw(std::bad_alloc);
+	protected:
+		ioready_dispatcher *io;
+		eventflag *flag;
+		timerqueue_dispatcher timer;
+		
+		typedef	std::list< boost::function<void(void)> > workitems;
+		
+		workitems workqueue;
+		mutex workqueue_lock;
+	};
 };
 
 #endif
