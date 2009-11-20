@@ -55,7 +55,7 @@ namespace tscb {
 			throw(std::bad_alloc);
 		virtual void unregister_ioready_callback(ioready_callback *e)
 			throw();
-		virtual void modify_ioready_callback(ioready_callback *e, int event_mask)
+		virtual void modify_ioready_callback(ioready_callback *e, ioready_events event_mask)
 			throw();
 	protected:
 		void drain_queue(void) throw();

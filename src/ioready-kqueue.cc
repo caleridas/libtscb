@@ -64,9 +64,9 @@ namespace tscb {
 		
 		for(size_t n=0; n<nevents; n++) {
 			int fd=events[n].ident;
-			int ev=0;
-			if (events[n].filter==EVFILT_READ) ev=EVMASK_INPUT;
-			else if (events[n].filter==EVFILT_WRITE) ev=EVMASK_OUTPUT;
+			ioready_events ev=ioready_events::none;
+			if (events[n].filter==EVFILT_READ) ev=ioready_input;
+			else if (events[n].filter==EVFILT_WRITE) ev=ioready_output;
 			
 			ioready_callback *link=atomics::dereference_dependent(
 				callback_tab.lookup_first_callback(fd)
@@ -182,21 +182,21 @@ namespace tscb {
 	
 	void ioready_dispatcher_kqueue::update_evmask(int fd) throw()
 	{
-		int oldevmask=(long)callback_tab.get_closure(fd);
+		ioready_events oldevmask=(ioready_events)(long)callback_tab.get_closure(fd);
 		ioready_callback *tmp=callback_tab.lookup_first_callback(fd);
-		int newevmask=0;
+		ioready_events newevmask=ioready_events::none;
 		while(tmp) {
 			newevmask|=tmp->event_mask;
 			tmp=tmp->active_next;
 		}
 		struct kevent modlist[2];
 		int nmods=0;
-		if ((oldevmask^newevmask)&EVMASK_OUTPUT) {
-			EV_SET(&modlist[nmods], fd, EVFILT_WRITE, (newevmask&EVMASK_OUTPUT)?EV_ADD:EV_DELETE, 0, 0, (void *)EVFILT_WRITE);
+		if ((oldevmask^newevmask)&ioready_output) {
+			EV_SET(&modlist[nmods], fd, EVFILT_WRITE, (newevmask&ioready_output)?EV_ADD:EV_DELETE, 0, 0, (void *)EVFILT_WRITE);
 			nmods++;
 		}
-		if ((oldevmask^newevmask)&EVMASK_INPUT) {
-			EV_SET(&modlist[nmods], fd, EVFILT_READ, (newevmask&EVMASK_INPUT)?EV_ADD:EV_DELETE, 0, 0, (void *)EVFILT_READ);
+		if ((oldevmask^newevmask)&ioready_input) {
+			EV_SET(&modlist[nmods], fd, EVFILT_READ, (newevmask&ioready_input)?EV_ADD:EV_DELETE, 0, 0, (void *)EVFILT_READ);
 			nmods++;
 		}
 		struct timespec timeout;
@@ -250,7 +250,7 @@ namespace tscb {
 		
 	}
 	
-	void ioready_dispatcher_kqueue::modify_ioready_callback(ioready_callback *link, int event_mask)
+	void ioready_dispatcher_kqueue::modify_ioready_callback(ioready_callback *link, ioready_events event_mask)
 		throw()
 	{
 		bool sync=guard.write_lock_async();

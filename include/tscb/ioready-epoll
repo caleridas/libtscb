@@ -51,7 +51,7 @@ namespace tscb {
 			throw(std::bad_alloc);
 		virtual void unregister_ioready_callback(ioready_callback *e)
 			throw();
-		virtual void modify_ioready_callback(ioready_callback *e, int event_mask)
+		virtual void modify_ioready_callback(ioready_callback *e, ioready_events event_mask)
 			throw();
 	protected:
 		void drain_queue(void) throw();
@@ -62,8 +62,8 @@ namespace tscb {
 		
 		void synchronize(void) throw();
 		
-		inline int translate_os_to_tscb(int ev) throw();
-		inline int translate_tscb_to_os(int ev) throw();
+		inline ioready_events translate_os_to_tscb(int ev) throw();
+		inline int translate_tscb_to_os(ioready_events ev) throw();
 		
 		ioready_callback_table callback_tab;
 		

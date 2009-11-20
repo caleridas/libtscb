@@ -23,7 +23,7 @@ namespace tscb {
 		FD_ZERO(&exceptfds);
 		try {
 			watch(boost::bind(&ioready_dispatcher_select::drain_queue, this),
-				wakeup_flag.readfd, EVMASK_INPUT);
+				wakeup_flag.readfd, ioready_input);
 		}
 		catch (std::bad_alloc) {
 			throw;
@@ -116,10 +116,10 @@ namespace tscb {
 			int e=FD_ISSET(n, &l_exceptfds);
 			if (r | w | e) {
 				int ev=0;
-				if (r) ev=EVMASK_INPUT;
-				if (w) ev|=EVMASK_OUTPUT;
+				if (r) ev=ioready_input;
+				if (w) ev|=ioready_output;
 				/* deliver exception events to everyone */
-				if (e) ev|=EVMASK_OUTPUT|EVMASK_INPUT|EVMASK_HANGUP;
+				if (e) ev|=ioready_error|ioready_input|ioready_output;
 				
 				ioready_callback *link=atomics::dereference_dependent(
 					callback_tab.lookup_first_callback(n)
@@ -210,7 +210,7 @@ namespace tscb {
 		wakeup_flag.set();
 	}
 	
-	void ioready_dispatcher_select::modify_ioready_callback(ioready_callback *link, int event_mask)
+	void ioready_dispatcher_select::modify_ioready_callback(ioready_callback *link, ioready_events event_mask)
 		throw()
 	{
 		bool sync=guard.write_lock_async();
@@ -228,16 +228,16 @@ namespace tscb {
 	void ioready_dispatcher_select::update_fdsets(int fd) throw()
 	{
 		ioready_callback *tmp=callback_tab.lookup_first_callback(fd);
-		int evmask=0;
+		ioready_events evmask=ioready_none;
 		while(tmp) {
 			evmask|=tmp->event_mask;
 			tmp=tmp->active_next;
 		}
-		if (evmask&EVMASK_INPUT) FD_SET(fd, &readfds);
+		if (evmask&ioready_input) FD_SET(fd, &readfds);
 		else FD_CLR(fd, &readfds);
-		if (evmask&EVMASK_OUTPUT) FD_SET(fd, &writefds);
+		if (evmask&ioready_output) FD_SET(fd, &writefds);
 		else FD_CLR(fd, &writefds);
-		if (evmask&EVMASK_HANGUP) FD_SET(fd, &exceptfds);
+		if (evmask) FD_SET(fd, &exceptfds);
 		else FD_CLR(fd, &exceptfds);
 	}
 	

@@ -132,9 +132,7 @@ receiver::receiver(tscb::ioready_service *io, int _from, int _to, perfcounter &_
 	: counter(_counter)
 {
 	link=io->watch(boost::bind(&receiver::pass_token, this, _from, _1),
-		_from, tscb::EVMASK_INPUT);
-	//link=io->watch<receiver, &receiver::pass_token, &receiver::release>
-	//	(_from, tscb::EVMASK_INPUT, this);
+		_from, tscb::ioready_input);
 	from=_from;
 	to=_to;
 }

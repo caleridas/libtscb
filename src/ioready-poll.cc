@@ -15,22 +15,22 @@
 
 namespace tscb {
 	
-	inline int ioready_dispatcher_poll::translate_os_to_tscb(int ev) throw()
+	inline ioready_events ioready_dispatcher_poll::translate_os_to_tscb(int ev) throw()
 	{
-		int e=0;
-		if (ev&POLLIN) e|=EVMASK_INPUT;
-		if (ev&POLLOUT) e|=EVMASK_OUTPUT;
+		ioready_events e=ioready_none;
+		if (ev&POLLIN) e|=ioready_input;
+		if (ev&POLLOUT) e|=ioready_output;
 		/* deliver hangup event to input and output handlers as well */
-		if (ev&POLLHUP) e|=EVMASK_HANGUP|EVMASK_INPUT|EVMASK_OUTPUT;
+		if (ev&POLLHUP) e|=(ioready_input|ioready_output|ioready_hangup);
+		if (ev&POLLERR) e|=(ioready_input|ioready_output|ioready_error);
 		return e;
 	}
 	
-	inline int ioready_dispatcher_poll::translate_tscb_to_os(int ev) throw()
+	inline int ioready_dispatcher_poll::translate_tscb_to_os(ioready_events ev) throw()
 	{
 		int e=0;
-		if (ev&EVMASK_INPUT) e|=POLLIN;
-		if (ev&EVMASK_OUTPUT) e|=POLLOUT;
-		if (ev&EVMASK_HANGUP) e|=POLLHUP;
+		if (ev&ioready_input) e|=POLLIN;
+		if (ev&ioready_output) e|=POLLOUT;
 		return e;
 	}
 	
@@ -60,7 +60,7 @@ namespace tscb {
 			
 			pipe_callback=watch(
 				boost::bind(&ioready_dispatcher_poll::drain_queue, this),
-				wakeup_flag.readfd, EVMASK_INPUT);
+				wakeup_flag.readfd, ioready_input);
 		}
 		catch (std::bad_alloc) {
 			delete master_ptab;
@@ -303,7 +303,7 @@ namespace tscb {
 		wakeup_flag.set();
 	}
 	
-	void ioready_dispatcher_poll::modify_ioready_callback(ioready_callback *link, int event_mask)
+	void ioready_dispatcher_poll::modify_ioready_callback(ioready_callback *link, ioready_events event_mask)
 		throw()
 	{
 		bool sync=guard.write_lock_async();

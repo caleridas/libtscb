@@ -78,7 +78,7 @@ echo::echo(tscb::ioready_service *_service, int _fd)
 	fcntl(fd, F_SETFL, flags);
 	
 	link=service->watch(boost::bind(&echo::data, boost::intrusive_ptr<echo>(this), _1),
-		fd, tscb::EVMASK_INPUT);
+		fd, tscb::ioready_input);
 }
 
 echo::~echo(void)
@@ -114,7 +114,7 @@ acceptor::acceptor(tscb::ioready_service *_service, int _fd)
 	fcntl(fd, F_SETFL, flags);
 	
 	link=service->watch(boost::bind(&acceptor::connection_request,
-		boost::intrusive_ptr<acceptor>(this), _1), fd, tscb::EVMASK_INPUT);
+		boost::intrusive_ptr<acceptor>(this), _1), fd, tscb::ioready_input);
 }
 
 void acceptor::connection_request(int event)

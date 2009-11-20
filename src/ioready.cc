@@ -24,7 +24,7 @@ namespace tscb {
 		return service!=0;
 	}
 	
-	void ioready_callback::modify(int evmask) throw()
+	void ioready_callback::modify(ioready_events evmask) throw()
 	{
 		cancellation_mutex.lock();
 		if (service) service->modify_ioready_callback(this, evmask);

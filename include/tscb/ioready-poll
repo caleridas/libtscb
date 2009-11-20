@@ -46,7 +46,7 @@ namespace tscb {
 			throw(std::bad_alloc);
 		virtual void unregister_ioready_callback(ioready_callback *e)
 			throw();
-		virtual void modify_ioready_callback(ioready_callback *e, int event_mask)
+		virtual void modify_ioready_callback(ioready_callback *e, ioready_events event_mask)
 			throw();
 	protected:
 		/** \cond NEVER */
@@ -69,8 +69,8 @@ namespace tscb {
 		void remove_polltab_entry(int fd) throw();
 		
 		void synchronize(void) throw();
-		inline int translate_os_to_tscb(int ev) throw();
-		inline int translate_tscb_to_os(int ev) throw();
+		inline ioready_events translate_os_to_tscb(int ev) throw();
+		inline int translate_tscb_to_os(ioready_events ev) throw();
 		
 		polltab *master_ptab;
 		ioready_callback_table callback_tab;

@@ -30,7 +30,7 @@
 	\code
 		class IOHandler {
 		public:
-			void onDataReady(int fd, int event_mask) throw()
+			void onDataReady(int fd, tscb::ioready_events event_mask) throw()
 			{
 				// process data
 			}
@@ -44,7 +44,7 @@
 			void register(tscb::ioready_service *service) throw(std::bad_alloc)
 			{
 				service->watch(boost::bind(&IOHandler::onDataReady, this, descriptor, _1),
-					descriptor, tscb::EVMASK_INPUT);
+					descriptor, tscb::ioready_input);
 			}
 			
 			int descriptor;
@@ -59,7 +59,7 @@
 	\code
 		class IOContext;
 		
-		void onDataReady(IOContext *ctx, int fd, int event_mask) throw()
+		void onDataReady(IOContext *ctx, int fd, tscb::ioready_events event_mask) throw()
 		{
 			// process data
 		}
@@ -73,7 +73,7 @@
 			throw(std::bad_alloc)
 		{
 			service->watch(boost::bind(&onDataReady, ctx, fd, _1),
-				fd, tscb::EVMASK_INPUT);
+				fd, tscb::ioready_input);
 		}
 	\endcode
 	
@@ -85,7 +85,7 @@
 	\code
 		class IOHandler {
 		public:
-			void onDataReady(int fd, int event_mask) throw()
+			void onDataReady(int fd, tscb::ioready_events event_mask) throw()
 			{
 				// process data
 			}
@@ -100,7 +100,7 @@
 			{
 				service->watch(boost::bind(&IOHandler::onDataReady,
 					boost::intrusive_ptr<IOHandler>(this), descriptor, _1),
-					descriptor, tscb::EVMASK_INPUT);
+					descriptor, tscb::ioready_input);
 			}
 			
 			int descriptor;
@@ -124,7 +124,7 @@
 	\code
 		tscb::ioready_callback link;
 		link=service->watch(boost::bind(&IOHandler::onDataReady, this, descriptor, _1),
-			descriptor, tscb::EVMASK_INPUT);
+			descriptor, tscb::ioready_input);
 	\endcode
 	
 	The link object can later be used for two purposes: 1. Cancel the
@@ -142,7 +142,7 @@
 	or 2. modify the event mask:
 	
 	\code
-		link->modify(tscb::EVMASK_INPUT | tscb::EVMASK_OUTPUT);
+		link->modify(tscb::ioready_input | tscb::ioready_output);
 	\endcode
 	
 	In this case, the callback will subsequently be invoked whenever the
@@ -263,29 +263,73 @@ namespace tscb {
 	class ioready_callback;
 	
 	/**
-		\brief Input event mask
-		
-		Set this bit if you are interested for "input data ready" events
-		on a descriptor; see
-		\ref tscb::ioready_service::watch "ioready_service::watch".
+		\brief I/O readiness event mask
 	*/
-	const int EVMASK_INPUT=1;
-	/**
-		\brief Output event mask
-		
-		Set this bit if you are interested for "output data ready" events
-		on a descriptor; see
-		\ref tscb::ioready_service::watch "ioready_service::watch".
-	*/
-	const int EVMASK_OUTPUT=2;
-	/**
-		\brief Hangup event mask
-		
-		Set this bit if you are interested for "connection closed" events
-		on a descriptor; see
-		\ref tscb::ioready_service::watch "ioready_service::watch".
-	*/
-	const int EVMASK_HANGUP=4;
+	typedef enum {
+		ioready_none=0,
+		/**
+			\brief Input event mask
+			
+			Bit indicating "descriptor ready for input"; see
+			\ref tscb::ioready_service::watch "ioready_service::watch".
+		*/
+		ioready_input=0x0001,
+		/**
+			\brief Output event mask
+			
+			Bit indicating "descriptor ready for output"; see
+			\ref tscb::ioready_service::watch "ioready_service::watch".
+		*/
+		ioready_output=0x0002,
+		/**
+			\brief Error event mask
+			
+			Bit indicating "error on descriptor"; see
+			\ref tscb::ioready_service::watch "ioready_service::watch".
+			Note that you do not have to explicitly request this
+			type of event -- when requesting \ref input or \ref output
+			events, this event may always be delivered on an error
+			condition.
+		*/
+		ioready_error=0x0100,
+		/**
+			\brief Hangup event mask
+			
+			Bit indicating "hangup by peer on descriptor"; see
+			\ref tscb::ioready_service::watch "ioready_service::watch".
+			Note that you do not have to explicitly request this
+			type of event -- when requesting \ref input or \ref output
+			events, this event may always be delivered on an error
+			condition.
+		*/
+		ioready_hangup=0x0200
+	} ioready_events;
+	
+	static inline ioready_events
+	operator|(ioready_events a, ioready_events b)
+	{return (ioready_events)((int)a|(int)b);}
+	
+	static inline ioready_events
+	operator&(ioready_events a, ioready_events b)
+	{return (ioready_events)((int)a&(int)b);}
+	
+	static inline ioready_events
+	operator^(ioready_events a, ioready_events b)
+	{return (ioready_events)((int)a^(int)b);}
+	
+	static inline ioready_events
+	operator~(ioready_events a)
+	{return (ioready_events)~(int)a;}
+	
+	static inline ioready_events &
+	operator|=(ioready_events &a, ioready_events b)
+	{a=a|b; return a;}
+	static inline ioready_events &
+	operator&=(ioready_events &a, ioready_events b)
+	{a=a&b; return a;}
+	static inline ioready_events &
+	operator^=(ioready_events &a, ioready_events b)
+	{a=a^b; return a;}
 	
 	/**
 		\brief callback link for I/O readiness events on file descriptors
@@ -302,7 +346,7 @@ namespace tscb {
 	public:
 		/** \internal \brief Instantiate ioready callback link */
 		inline ioready_callback(const boost::function<void (int)> &_target,
-			int _fd, int _event_mask) throw()
+			int _fd, tscb::ioready_events _event_mask) throw()
 			: target(_target), fd(_fd), event_mask(_event_mask)
 		{}
 		virtual ~ioready_callback(void) throw();
@@ -328,7 +372,7 @@ namespace tscb {
 			previous event mask may be generated for each thread that
 			is allowed to dispatch events for this callback.
 		*/
-		void modify(int new_event_mask) throw();
+		void modify(tscb::ioready_events new_event_mask) throw();
 		
 		virtual bool connected(void) const throw();
 		
@@ -337,7 +381,7 @@ namespace tscb {
 		/** \internal \brief File descriptor to watch */
 		int fd;
 		/** \internal \brief Events to watch file descriptor for */
-		int event_mask;
+		tscb::ioready_events event_mask;
 		
 		/** \internal \brief Next active element */
 		ioready_callback *active_next;
@@ -393,7 +437,7 @@ namespace tscb {
 		inline void disconnect(void) throw()
 		{if (callback) {callback->disconnect(); callback->release(); callback=0;}}
 		
-		inline void modify(int new_event_mask) throw() {callback->modify(new_event_mask);}
+		inline void modify(ioready_events new_event_mask) throw() {callback->modify(new_event_mask);}
 		
 		inline bool connected(void) const throw()
 		{return callback && callback->connected();}
@@ -448,12 +492,18 @@ namespace tscb {
 			
 			<UL>
 				<LI>
-					<TT>tscb::EVMASK_INPUT</TT>: descriptor is ready
+					<TT>tscb::ioready_input</TT>: descriptor is ready
 					for reading
 				</LI>
 				<LI>
-					<TT>tscb::EVMASK_OUTPUT</TT>: descriptor is ready
+					<TT>tscb::ioready_output</TT>: descriptor is ready
 					for writing
+				</LI>
+				<LI>
+					<TT>tscb::ioready_error</TT>: an (unspecified) error occurred on the descriptor
+				</LI>
+				<LI>
+					<TT>tscb::ioready_hangup</TT>: remote end has closed the connection
 				</LI>
 			</UL>
 			
@@ -463,7 +513,7 @@ namespace tscb {
 			or cancel the callback.
 		*/
 		ioready_connection
-		watch(const boost::function<void(int)> &function, int fd, int event_mask) throw(std::bad_alloc)
+		watch(const boost::function<void(int)> &function, int fd, tscb::ioready_events event_mask) throw(std::bad_alloc)
 		{
 			ioready_callback *link=new ioready_callback(function, fd, event_mask);
 			register_ioready_callback(link);
@@ -480,7 +530,7 @@ namespace tscb {
 		virtual void unregister_ioready_callback(ioready_callback *e)
 			throw()=0;
 		/** \internal \brief Update event set */
-		virtual void modify_ioready_callback(ioready_callback *e, int event_mask)
+		virtual void modify_ioready_callback(ioready_callback *e, tscb::ioready_events event_mask)
 			throw()=0;
 	};
 	

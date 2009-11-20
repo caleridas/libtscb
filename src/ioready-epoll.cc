@@ -15,22 +15,22 @@
 
 namespace tscb {
 	
-	inline int ioready_dispatcher_epoll::translate_os_to_tscb(int ev) throw()
+	inline ioready_events ioready_dispatcher_epoll::translate_os_to_tscb(int ev) throw()
 	{
-		int e=0;
-		if (ev&EPOLLIN) e|=EVMASK_INPUT;
-		if (ev&EPOLLOUT) e|=EVMASK_OUTPUT;
+		ioready_events e=ioready_none;
+		if (ev&EPOLLIN) e|=ioready_input;
+		if (ev&EPOLLOUT) e|=ioready_output;
 		/* deliver hangup event to input and output handlers as well */
-		if (ev&EPOLLHUP) e|=EVMASK_HANGUP|EVMASK_INPUT|EVMASK_OUTPUT;
+		if (ev&EPOLLHUP) e|=ioready_input|ioready_output|ioready_hangup;
+		if (ev&EPOLLERR) e|=ioready_input|ioready_output|ioready_error;
 		return e;
 	}
 	
-	inline int ioready_dispatcher_epoll::translate_tscb_to_os(int ev) throw()
+	inline int ioready_dispatcher_epoll::translate_tscb_to_os(ioready_events ev) throw()
 	{
 		int e=0;
-		if (ev&EVMASK_INPUT) e|=EPOLLIN;
-		if (ev&EVMASK_OUTPUT) e|=EPOLLOUT;
-		if (ev&EVMASK_HANGUP) e|=EPOLLHUP;
+		if (ev&ioready_input) e|=EPOLLIN;
+		if (ev&ioready_output) e|=EPOLLOUT;
 		return e;
 	}
 	
@@ -154,7 +154,7 @@ namespace tscb {
 		pipe_eventflag *tmp=0;
 		try {
 			tmp=new pipe_eventflag();
-			watch(boost::bind(&ioready_dispatcher_epoll::drain_queue, this), tmp->readfd, EVMASK_INPUT);
+			watch(boost::bind(&ioready_dispatcher_epoll::drain_queue, this), tmp->readfd, ioready_input);
 		}
 		catch (std::bad_alloc) {
 			delete tmp;
@@ -213,15 +213,15 @@ namespace tscb {
 			epoll_ctl(epoll_fd, EPOLL_CTL_ADD, link->fd, &event);
 		} else {
 			ioready_callback *tmp=callback_tab.lookup_first_callback(link->fd);
-			int newevmask=0;
+			ioready_events newevmask=ioready_none;
 			while(tmp) {
 				newevmask|=tmp->event_mask;
 				tmp=tmp->active_next;
 			}
-			newevmask=translate_tscb_to_os(newevmask);
+			int osmask=translate_tscb_to_os(newevmask);
 			
 			epoll_event event;
-			event.events=newevmask;
+			event.events=osmask;
 			event.data.fd=link->fd;
 			epoll_ctl(epoll_fd, EPOLL_CTL_MOD, link->fd, &event);
 		}
@@ -240,7 +240,7 @@ namespace tscb {
 		if (link->service) {
 			int fd=link->fd;
 			
-			int oldevmask=link->event_mask;
+			ioready_events oldevmask=link->event_mask;
 			callback_tab.remove(link);
 			
 			if (callback_tab.chain_empty(fd)) {
@@ -250,15 +250,15 @@ namespace tscb {
 				epoll_ctl(epoll_fd, EPOLL_CTL_DEL, link->fd, &event);
 			} else {
 				ioready_callback *tmp=callback_tab.lookup_first_callback(link->fd);
-				int newevmask=0;
+				ioready_events newevmask=ioready_none;
 				while(tmp) {
 					newevmask|=tmp->event_mask;
 					tmp=tmp->active_next;
 				}
-				newevmask=translate_tscb_to_os(newevmask);
+				int osmask=translate_tscb_to_os(newevmask);
 				
 				epoll_event event;
-				event.events=newevmask;
+				event.events=osmask;
 				event.data.fd=link->fd;
 				epoll_ctl(epoll_fd, EPOLL_CTL_MOD, link->fd, &event);
 			}
@@ -272,7 +272,7 @@ namespace tscb {
 		
 	}
 	
-	void ioready_dispatcher_epoll::modify_ioready_callback(ioready_callback *link, int event_mask)
+	void ioready_dispatcher_epoll::modify_ioready_callback(ioready_callback *link, ioready_events event_mask)
 		throw()
 	{
 		bool sync=guard.write_lock_async();
@@ -280,15 +280,15 @@ namespace tscb {
 		link->event_mask=event_mask;
 		
 		ioready_callback *tmp=callback_tab.lookup_first_callback(link->fd);
-		int newevmask=0;
+		ioready_events newevmask=ioready_none;
 		while(tmp) {
 			newevmask|=tmp->event_mask;
 			tmp=tmp->active_next;
 		}
-		newevmask=translate_tscb_to_os(newevmask);
+		int osmask=translate_tscb_to_os(newevmask);
 		
 		epoll_event event;
-		event.events=newevmask;
+		event.events=osmask;
 		event.data.fd=link->fd;
 		epoll_ctl(epoll_fd, EPOLL_CTL_MOD, link->fd, &event);
 		

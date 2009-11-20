@@ -45,7 +45,7 @@ public:
 	Target2(ioready_service *srv, int fd)
 		: called(false), refcount(1)
 	{
-		link=srv->watch(boost::bind(&Target2::input, boost::intrusive_ptr<Target2>(this), fd, _1), fd, EVMASK_INPUT);
+		link=srv->watch(boost::bind(&Target2::input, boost::intrusive_ptr<Target2>(this), fd, _1), fd, ioready_input);
 		ASSERT(refcount==2);
 	}
 	
@@ -101,7 +101,7 @@ void test_dispatcher(ioready_dispatcher *d)
 		int called=0;
 		
 		tscb::ioready_connection link=d->watch(boost::bind(function, &called, pipefd[0], _1),
-			pipefd[0], EVMASK_INPUT);
+			pipefd[0], ioready_input);
 		
 		ASSERT(link.callback->refcount==2);
 		
@@ -114,14 +114,14 @@ void test_dispatcher(ioready_dispatcher *d)
 		ASSERT(called==1);
 		
 		called=0;
-		link.modify(0);
+		link.modify(ioready_none);
 		write(pipefd[1], &count, 1);
 		count=d->dispatch(&t);
 		ASSERT(count==0);
 		ASSERT(called==0);
 		
 		called=0;
-		link.modify(EVMASK_INPUT);
+		link.modify(ioready_input);
 		count=d->dispatch(&t);
 		ASSERT(count==1);
 		ASSERT(called==1);
@@ -148,7 +148,7 @@ void test_dispatcher(ioready_dispatcher *d)
 		Target target;
 		
 		tscb::connection link=d->watch(boost::bind(&Target::function, &target, _1),
-			pipefd[0], EVMASK_INPUT);
+			pipefd[0], ioready_input);
 		
 		int count;
 		write(pipefd[1], &count, 1);
@@ -222,7 +222,7 @@ void test_dispatcher_threading(ioready_dispatcher *d)
 		int called=0;
 		
 		tscb::ioready_connection link=d->watch(boost::bind(function, &called, pipefd[0], _1),
-			pipefd[0], EVMASK_INPUT);
+			pipefd[0], ioready_input);
 		
 		write(pipefd[1], &called, 1);
 		
