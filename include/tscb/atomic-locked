@@ -1,0 +1,76 @@
+/* -*- C++ -*-
+ * (c) 2009 Helge Bahmann <hcb@chaoticmind.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License version 2.1.
+ * Refer to the file "COPYING" for details.
+ */
+
+#ifndef __TSCB_ATOMIC_LOCKED_H
+#define __TSCB_ATOMIC_LOCKED_H
+
+#define TSCB_FALLBACK_ATOMIC
+
+namespace tscb {
+	
+	/** \cond NEVER */
+	
+	namespace atomics {
+		
+		enum memory_order {
+			memory_order_relaxed, memory_order_acquire,
+			memory_order_release, memory_order_acq_rel,
+			memory_order_seq_cst
+		};
+		
+		struct atomic_int {
+		private:
+			volatile int i;
+		public:
+			atomic_int(void) throw() {}
+			atomic_int(int __i) throw() : i(__i) { }
+			
+			inline operator int(void) const throw() {return load();}
+			inline atomic_int operator=(int __i) throw() {store(__i); return *this;}
+			
+			void store(int __i, memory_order order=memory_order_seq_cst) volatile  throw();
+			
+			int load(memory_order order=memory_order_seq_cst) const volatile throw();
+			
+			bool compare_exchange_strong(int &expected, int desired,
+				memory_order order=memory_order_seq_cst) volatile throw();
+			
+			int fetch_add(int c, memory_order order=memory_order_seq_cst) volatile throw();
+			
+			inline int fetch_sub(int c, memory_order order=memory_order_seq_cst) volatile throw()
+			{
+				return fetch_add(-c, order);
+			}
+			
+			inline int operator++(void) volatile throw() {return fetch_add(1)+1;}
+			inline int operator++(int) volatile throw() {return fetch_add(1);}
+			inline int operator--(void) volatile throw() {return fetch_add(-1)-1;}
+			inline int operator--(int) volatile throw() {return fetch_add(-1);}
+		private:
+			explicit atomic_int(const atomic_int &a) {}
+			void operator=(const atomic_int &a) {}
+		};
+		
+		void fence(memory_order order=memory_order_seq_cst);
+		
+		/* enforce that data access to the element follows
+		reading the pointer */
+		template<typename T>
+		static inline T * dereference_dependent(T *t)
+		{
+			T *tmp=(T * volatile)t;
+			fence();
+			return tmp;
+		}
+		
+	}
+	
+	/** \endcond */
+}
+
+#endif

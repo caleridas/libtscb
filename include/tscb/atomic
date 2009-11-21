@@ -14,361 +14,37 @@
 	
 */
 
-/**
-	\page atomic_descr Atomic counters
-	
-	Atomic counters are required mainly to implement reference counters; while
-	they can be implemented using locks and ordinary integer datatypes, most
-	platforms offer faster ways. The atomic header file provides a datatype
-	that can be used in mostly the same ways as integers.
-	However the special "++" and "--" operators are guaranteed to operate
-	atomically; as a special functionality the prefix "--" operator acts
-	as atomic "decrement and test", returning "false" if the counter
-	is zero after decrementing, and "true" otherwise (the return value
-	has been chosen to be consistent with the truth value of the value
-	returned by the "--" operator applied to an ordinary integer).
-	
-	The third operation supported by atomics is of special interest for
-	garbage collection schemes: "inc_if_not_zero" will atomically check the
-	value and increment it iff it is not zero; afterwards it returns "true"
-	if the value was successfully incremented, and "false" otherwise.
-	
-	Some use patterns of the \ref tscb::atomic "atomic" class are:
-	
-	\code
-		atomic i(1); // Intialize with 1
-		i++; // Atomically increment by one
-		
-		if (!--i) { do_something(); } // Atomically decrement by one
-		 // and do_something when the counter has reached zero
-		
-		if (i.inc_if_not_zero()) {wasnt_zero(); } // Atomically try to
-		 // increment counter by one if it was not zero; act if it was
-		 // incremented successfully
-	\endcode
-	
-	See the \ref tscb::atomic "atomic" class reference for a full description
-	of the member functions.
-	
-	The header file provides optimized implementations through inline assembler
-	for i386, amd64, PPC and DEC Alpha architectures. For all other
-	architectures the counter is implemented using a mutex and an ordinary
-	<CODE>long</CODE> integer variable; this means that the implementation for
-	all other architectures is <I>dog-slow</I>.
-	
-	I can provide optimized implementations for all architectures that at least
-	support some kind of "read-and-reserve"-"writeback-and-verify" operations,
-	such as: PPC64, MIPS, MIPS64, IA64, SPARC64, and probably almost any
-	other sane architecture. I will provide these when I find leisure to test
-	these operations on the respective platforms.
-	
-	There is nothing I can do about broken architectures such as: SPARC, PARISC;
-	the instruction sets of these architectures are insufficient to
-	implement atomic counters efficiently (more precisely: they only provide
-	"test-and-set", so I have to use spinlocks to protect a silly counter,
-	go figure...). These architectures are simply not very well-suited
-	for multi-threaded applications.
-	
-	Usually the counter is a <CODE><B>long</B></CODE> value, i.e. either 32 bits
-	or 64 bits, depending on the architecture. Don't rely on this. Assume that
-	its range is large enough for counting references to memory objects,
-	but nothing more.
-	
-*/
-
 #include <tscb/config>
 
-#if defined(__GNUC__) && defined(__i386__) && !defined(USE_PTHREAD_ATOMICS)
+#if defined(__GNUC__) && defined(__i386__) && !defined(USE_FALLBACK_ATOMICS)
 
 #include <tscb/atomic-i386>
 
-#elif defined(__GNUC__) && defined(__amd64__) && !defined(USE_PTHREAD_ATOMICS)
+#elif defined(__GNUC__) && defined(__amd64__) && !defined(USE_FALLBACK_ATOMICS)
 
 #include <tscb/atomic-amd64>
 
-#elif defined(__GNUC__) && (defined(__POWERPC__) || defined(__PPC__)) && !defined(USE_PTHREAD_ATOMICS)
+#elif defined(__GNUC__) && (defined(__POWERPC__) || defined(__PPC__)) && !defined(USE_FALLBACK_ATOMICS)
 
 #include <tscb/atomic-ppc>
 
-#elif defined(__GNUC__) && (defined(__sparc__)) && !defined(USE_PTHREAD_ATOMICS)
+#elif defined(__GNUC__) && (defined(__sparc__)) && !defined(USE_FALLBACK_ATOMICS)
 
 #include <tscb/atomic-sparc>
 
-#elif defined(__GNUC__) && defined(__alpha__) && !defined(USE_PTHREAD_ATOMICS)
+#elif defined(__GNUC__) && defined(__alpha__) && !defined(USE_FALLBACK_ATOMICS)
 
 #include <tscb/atomic-alpha>
 
-#elif defined(__GNUC__) && defined(__ia64__) && !defined(USE_PTHREAD_ATOMICS)
+#elif defined(__GNUC__) && defined(__ia64__) && !defined(USE_FALLBACK_ATOMICS)
 
 #include <tscb/atomic-ia64>
 
 #else
-	
+
 /* FALLBACK implementation for atomic counters using pthread_mutex 
    -- only used as a last resort as it is dog-slow unfortunately */
-	
-#include <pthread.h>
-
-#warning "Atomic counters using mutex as fallback -- performance will suck"
-
-namespace tscb {
-	
-	/**
-		\class atomic
-		
-		\brief Atomic counter
-		
-		This class provides an atomic counter variable; it
-		supports a limited set of arithmetic operations that are guaranteed to
-		be performed atomically, so all of the supplied operations can 
-		safely be used by multiple concurrent threads. The arithmetic operations
-		are syntactically written as C increment/decrement operators, but they
-		are semantically different in that they do not return the counter value;
-		this would slow down the operations (and significantly on some architectures),
-		and the most important user of atomics, reference counters,
-		simply does not need this.
-	*/
-	class atomic {
-	public:
-		/**
-			 \brief Initialize by value
-			 
-			 Initialize the atomic counter to a given value. Note that it is
-			 guaranteed that the initialization is performed with exactly
-			 the value given, i.e. even if the compiler can deduce that the
-			 variable is incremented unconditionally after creating it, the
-			 initialization and increment cannot be optimized away.
-		*/
-		inline atomic(long initial=0) : value(initial) {pthread_mutex_init(&mutex, NULL);}
-		
-		/**
-			\brief Read value
-
-			Return the current value of the counter; usually there is no point in reading
-			the value of an atomic variable and acting on its value except for debugging
-			purposes -- because, by definition, the value of the variable might change
-			under the feet of the caller. If the caller knows the value cannot change,
-			<CODE>atomic</CODE> is useless to begin with.
-		*/
-		inline operator long(void) const {return value;}
-		/**
-			\brief Read value
-
-			Return the current value of the counter; usually there is no point in reading
-			the value of an atomic variable and acting on its value except for debugging
-			purposes -- because, by definition, the value of the variable might change
-			under the feet of the caller. If the caller knows the value cannot change,
-			<CODE>atomic</CODE> is useless to begin with.
-		*/
-		inline operator int(void) const {return value;}
-		/**
-			\brief Read value
-
-			Return the current value of the counter; usually there is no point in reading
-			the value of an atomic variable and acting on its value except for debugging
-			purposes -- because, by definition, the value of the variable might change
-			under the feet of the caller. If the caller knows the value cannot change,
-			<CODE>atomic</CODE> is useless to begin with.
-		*/
-		inline operator bool(void) const {return (bool)value;}
-		
-		/**
-			\brief Compare against a value
-			
-			Compare the current value of the counter; usually there is no point in reading
-			the value of an atomic variable and acting on its value except for debugging
-			purposes -- because, by definition, the value of the variable might change
-			under the feet of the caller. If the caller knows the value cannot change,
-			then there is usually no point in using <CODE>atomic</CODE>.
-			
-		*/
-		inline bool operator==(long v) const {return value==v;}
-		/**
-			\brief Compare against a value
-			
-			Compare the current value of the counter; usually there is no point in reading
-			the value of an atomic variable and acting on its value except for debugging
-			purposes -- because, by definition, the value of the variable might change
-			under the feet of the caller. If the caller knows the value cannot change,
-			then there is usually no point in using <CODE>atomic</CODE>.
-			
-		*/
-		inline bool operator==(int v) const {return value==v;}
-		/**
-			\brief Compare against a value
-			
-			Compare the current value of the counter; usually there is no point in reading
-			the value of an atomic variable and acting on its value except for debugging
-			purposes -- because, by definition, the value of the variable might change
-			under the feet of the caller. If the caller knows the value cannot change,
-			then there is usually no point in using <CODE>atomic</CODE>.
-			
-		*/
-		inline bool operator!=(long v) const {return value!=v;}
-		/**
-			\brief Compare against a value
-			
-			Compare the current value of the counter; usually there is no point in reading
-			the value of an atomic variable and acting on its value except for debugging
-			purposes -- because, by definition, the value of the variable might change
-			under the feet of the caller. If the caller knows the value cannot change,
-			then there is usually no point in using <CODE>atomic</CODE>.
-			
-		*/
-		inline bool operator!=(int v) const {return value!=v;}
-		
-		/**
-			\brief Set the counter
-			
-			Set the counter to a given value; note that it is guaranteed that
-			the operation is not optimized away and will not be reordered
-			with other instructions.
-		*/
-		inline void operator=(long n) {value=n;}
-		
-		/**
-			\brief pre-increment
-			
-			Atomically increment the counter value by 1. Note that the previous value
-			is <I>not</I> returned, in constrast to the common C increment operator.
-		*/
-		inline void operator++(void) {
-			pthread_mutex_lock(&mutex);
-			value++;
-			pthread_mutex_unlock(&mutex);
-		}
-		/**
-			\brief post-increment
-			
-			Atomically increase the counter value by 1. Note that the previous value
-			is <I>not</I> returned, in constrast to the common C increment operator.
-		*/
-		inline void operator++(int) {
-			pthread_mutex_lock(&mutex);
-			value++;
-			pthread_mutex_unlock(&mutex);
-		}
-		/**
-			\brief pre-decrement; atomic decrement-and-test
-			
-			Atomically perform the following two operations: a) Decrease the counter
-			value by 1. b) Test the resulting value against 0. The return value indicates
-			whether the counter has a non-zero value after decrementing, it does
-			<I>not</I> return the decremented value itself. The operator is intended
-			to be used in the following C++ construct:
-			
-			<CODE>
-			atomic ctr;<BR>
-			<B>if</B> (!--ctr) { <I>do_something_when_counter_drops_to_zero();</I> };
-			</CODE>
-		*/
-		inline bool operator--(void) {
-			bool notzero;
-			pthread_mutex_lock(&mutex);
-			value--;
-			notzero=(bool)value;
-			pthread_mutex_unlock(&mutex);
-			return notzero;
-		}
-		/**
-			\brief post-decrement
-			
-			Atomically decrease the counter value by 1. Note that the previous value
-			is <I>not</I> returned, in constrast to the common C increment operator.
-		*/
-		inline void operator--(int) {
-			pthread_mutex_lock(&mutex);
-			value--;
-			pthread_mutex_unlock(&mutex);
-		}
-		/**
-			\brief conditional increment if not zero
-
-			Atomically perform the following operations: a) Test if the counter is zero.
-			b) If the counter is not zero, increment by 1. The return value indicates
-			if the counter was successfully incremented (which is equivalent to
-			say that the counter was not found to be zero to begin with).
-		*/
-		inline bool inc_if_not_zero(void) {
-			bool notzero;
-			pthread_mutex_lock(&mutex);
-			notzero=(value!=0);
-			if (notzero) value++;
-			pthread_mutex_unlock(&mutex);
-			return notzero;
-		}
-		/**
-			\brief perform atomic "compare and swap"
-			
-			\param oldvalue Expected value to test against
-			\param newvalue New value to be set
-			
-			Atomically test if variable equals <TT>oldvalue</TT>,
-			and if it does, set it to <TT>newvalue</TT>. Returns
-			the value of the variable before this operation so the
-			caller can check whether the replacement operation was
-			performed.
-		*/
-		inline long cmpxchg(long oldvalue, long newvalue) {
-			long retvalue;
-			pthread_mutex_lock(&mutex);
-			retvalue=value;
-			if (value==oldvalue) value=newvalue;
-			pthread_mutex_unlock(&mutex);
-			return retvalue;
-		}
-	private:
-		pthread_mutex_t mutex;
-		long value;
-	};
-	
-	/**
-		\brief Enforce ordering of memory accesses
-		
-		Acts as a "barrier" for the CPU with respect to memory loads/stores
-		and thus forces partial io ordering. The CPU is not permitted to
-		reorder memory accesses before this instruction with memory accesses
-		after this instruction. Additionally, the compiler may not
-		reorder memory accesses across this boundary.
-		
-		The pthread_mutex_* family of functions are assumed to implicitly act as
-		a barrier; however when rolling your own locking scheme, e.g. using
-		the \ref tscb::atomic datatype, it is very likely that a barrier
-		is required somewhere. This requires careful thought, so you should
-		know what you are doing.
-	*/
-	inline void memory_barrier(void)
-	{
-	}
-	
-	/**
-		\brief Enforce ordering of data-dependent memory accesses
-		
-		Acts as a "barrier" for the CPU with respect to memory loads/stores
-		and thus forces partial io ordering. The CPU is not permitted to
-		reorder *data-dependent* memory accesses before this instruction with
-		memory accesses after this instruction. Data-dependeny is
-		best explained by example:
-		
-		\code
-			int *a=get_address_of_integer();
-			int b=*a;
-		\endcode
-		
-		The load of variable b is data-dependent on obtaining the correct
-		address in variable a; however a CPU might speculatively load
-		the variable b from a (speculated) address before the correct
-		value of a was obtained.
-		
-		In some algorithms strict ordering between the two is required and
-		can be guaranteed by this primitive. On most architectures this
-		operation is a nop, with the notable exception being DEC Alpha.
-	*/
-	inline void data_dependence_memory_barrier(void)
-	{
-	}
-
-}
+#include <tscb/atomic-locked>
 
 #endif
 	
