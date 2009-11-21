@@ -68,7 +68,7 @@ AC_ARG_WITH(fdsetsize,[  --with-fdsetsize=arg    Override FD_SETSIZE (for the nu
 SELECT_FD_SETSIZE=$withval
 ])
 
-AC_ARG_WITH(fallback-atomics,[  --with-fallback-atomics Use hashed for atomics; performance will suck.],[
+AC_ARG_WITH(fallback-atomics,[  --with-fallback-atomics Use hashed locks for atomics; performance will suck.],[
 AC_DEFINE(USE_FALLBACK_ATOMICS,1,[])
 ],[])
 
