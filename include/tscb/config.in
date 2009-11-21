@@ -19,4 +19,4 @@
 #undef HAVE_KQUEUE
 
 /* Define if pthread-based atomics should be used (instead of */
-#undef USE_PTHREAD_ATOMICS
+#undef USE_FALLBACK_ATOMICS
