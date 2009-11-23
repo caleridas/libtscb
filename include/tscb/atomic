@@ -16,6 +16,20 @@
 
 #include <tscb/config>
 
+namespace tscb {
+	
+	namespace atomics {
+		
+		enum memory_order {
+			memory_order_relaxed, memory_order_acquire,
+			memory_order_release, memory_order_acq_rel,
+			memory_order_seq_cst
+		};
+		
+	}
+	
+}
+
 #if defined(__GNUC__) && defined(__i386__) && !defined(USE_FALLBACK_ATOMICS)
 
 #include <tscb/atomic-i386>

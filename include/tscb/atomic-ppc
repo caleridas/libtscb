@@ -29,12 +29,6 @@ namespace tscb {
 		or not just play it safe and avoid r0 entirely -- ppc isn't
 		exactly register-starved, so this really should not matter :) */
 		
-		enum memory_order {
-			memory_order_relaxed, memory_order_acquire,
-			memory_order_release, memory_order_acq_rel,
-			memory_order_seq_cst
-		};
-		
 		static inline void __fence_before(memory_order order)
 		{
 			switch(order) {
