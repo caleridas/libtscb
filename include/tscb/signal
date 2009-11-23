@@ -10,7 +10,7 @@
 #define __TSCB_SIGNAL_H
 
 /**
-	\page signal_descr Signals
+	\page signal_descr Signals and slots
 	
 	\ref tscb::signal "signal" and related classes provide a
 	thread-safe and highly efficient mechanism to implement the
@@ -48,18 +48,19 @@
 	
 	\section callback_declaration Declaration of signals
 	
-	Signals are declared as (global or member) variables; the
-	template argument defines the signature of the callback
-	functions:
+	Signals are declared as (global or member) variables and
+	should generally be declared in the following way:
 	
 	\code
 		class MyClass {
 		public:
+			tscb::signal_proxy<void (int,int)> &
+			onValueChange(void) throw() {return valueChange;}
 			// will report old and new value to callbacks
-			tscb::signal<void (int, int)> onValueChange;
 			
 			void setValue(int newval);
 		private:
+			tscb::signal<void (int, int)> valueChange;
 			int value;
 		}
 	\endcode
@@ -76,7 +77,7 @@
 			int oldval=value;
 			value=newval;
 			// notify all registered callbacks
-			onValueChange(oldval, newval);
+			valueChange(oldval, newval);
 		}
 	\endcode
 	
@@ -96,7 +97,7 @@
 		public:
 			MyObserver(MyClass *c)
 			{
-				c->onValueChange.connect(boost::bind(&MyObserver::notify_change, this, _1, _2));
+				c->onValueChange().connect(boost::bind(&MyObserver::notify_change, this, _1, _2));
 			}
 		protected:
 			void notify_change(int oldval, int newval)
@@ -113,7 +114,7 @@
 	function object created via <TT>boost::bind</TT> will be
 	destroyed as soon as the callback is cancelled (see section \ref signal_connections below).
 	
-	The same technique can be used to bind "free" functions:
+	"Free" functions can be bound in the same way:
 	
 	\code
 		char *msg="Incredible!";
@@ -138,7 +139,7 @@
 	
 	The
 	\ref tscb::signal::connect "connect" method
-	return a connection object that represents the
+	returns a connection object that represents the
 	connection between the provider and the obverver. The
 	return value can be stored by the caller:
 	
@@ -151,13 +152,16 @@
 	callback:
 	
 	\code
-		conn->cancel();
+		conn.cancel();
 	\endcode
 	
-	The associated callback function will not be invoked subsequently; the data
+	The associated callback function will not be invoked subsequently,
+	see section \ref design_concurrency_reentrancy for the precise guarantee.
+	The data
 	associated with the function object will be released as soon as it is guaranteed
 	that the callback function cannot be called again (e.g. from other threads).
-	This is useful e.g. if <TT>boost::shared_ptr</TT> is used to assist in
+	This is useful e.g. if <TT>boost::shared_ptr</TT> or
+	<TT>boost::intrusive_ptr</TT> is used to assist in
 	tracking the lifetime of objects:
 	
 	\code
@@ -170,181 +174,6 @@
 	In this case, a <TT>boost::shared_ptr</TT> instance is kept for as long as
 	the callback can be activated -- thus the object will not be deallocated
 	until it is guaranteed that the callback cannot be delivered any longer.
-	
-	\section signal_performance Performance
-	
-	The synchronization mechanism used to protect the integrity of the
-	callback chains is \ref tscb::deferred_rwlock. Thus overhead
-	incurred by the synchronization mechanism has to be paid for signals
-	as well.
-	
-	The implementation assumes that callback processing (in contrast
-	to callback registration/cancellation) is the fast path
-	and has been optimized to this end. The worst-case performance characteristics
-	are:
-	
-	<UL>
-		<LI>
-			process callbacks: O(number_of_registered_callbacks)
-		</LI>
-		<LI>
-			cancel callback: O(1) (if there is no contention, i.e.
-			the chain is not being traversed while cancelling callbacks)
-		</LI>
-		<LI>
-			cancel callback: O(numer_of_cancels^2) (if there is contention,
-			i.e. the chain is being traversed while cancelling callbacks)
-		</LI>
-	</UL>
-	
-	Some measurements were taken to estimate the overhead of the implementation
-	(compared to several implementation alternatives):
-	
-	<TABLE>
-		<TR>
-			<TH>Implementation</TH>
-			<TH>call<BR/>single callback</TH>
-			<TH>call<BR/>10 callbacks</TH>
-			<TH>connect+disconnect</TH>
-			<TH>comments</TH>
-		</TR>
-		
-		<TR>
-			<TD>open-coded<BR /> (<TT>std::list</TT> of function pointers)</TD>
-			<TD>8.16 ns/op</TD>
-			<TD>74.49 ns/op</TD>
-			<TD>96.18 ns/op</TD>
-			<TD>not thread-safe</TD>
-		</TR>
-		<TR>
-			<TD>open-coded<BR /> (<TT>std::list</TT> of <TT>boost::function</TT> objects)</TD>
-			<TD>16.78 ns/op</TD>
-			<TD>159.85 ns/op</TD>
-			<TD>127.35 ns/op</TD>
-			<TD>not thread-safe</TD>
-		</TR>
-		<TR>
-			<TD><TT>tscb::signal</TT></TD>
-			<TD>59.97 ns/op</TD>
-			<TD>218.19 ns/op</TD>
-			<TD>643.56 ns/op</TD>
-			<TD>thread-safe</TD>
-		</TR>
-		<TR>
-			<TD><TT>sigc::signal</TT></TD>
-			<TD>139.93 ns/op</TD>
-			<TD>199.68 ns/op</TD>
-			<TD>608.88 ns/op</TD>
-			<TD>not thread-safe</TD>
-		</TR>
-		<TR>
-			<TD><TT>boost::signal</TT></TD>
-			<TD>216.83 ns/op</TD>
-			<TD>655.99 ns/op</TD>
-			<TD>1681.99 ns/op</TD>
-			<TD>not thread-safe</TD>
-		</TR>
-	</TABLE>
-	(Intel Celeron, 2GHz)
-	
-	<TABLE>
-		<TR>
-			<TH>Implementation</TH>
-			<TH>call<BR/>single callback</TH>
-			<TH>call<BR/>10 callbacks</TH>
-			<TH>connect+disconnect</TH>
-			<TH>comments</TH>
-		</TR>
-		
-		<TR>
-			<TD>open-coded<BR /> (<TT>std::list</TT> of function pointers)</TD>
-			<TD>33.34 ns/op</TD>
-			<TD>283.64 ns/op</TD>
-			<TD>916.48 ns/op</TD>
-			<TD>not thread-safe</TD>
-		</TR>
-		<TR>
-			<TD>open-coded<BR /> (<TT>std::list</TT> of <TT>boost::function</TT> objects)</TD>
-			<TD>64.59 ns/op</TD>
-			<TD>667.17 ns/op</TD>
-			<TD>1152.51 ns/op</TD>
-			<TD>not thread-safe</TD>
-		</TR>
-		<TR>
-			<TD><TT>tscb::signal</TT></TD>
-			<TD>314.88 ns/op</TD>
-			<TD>945.76 ns/op</TD>
-			<TD>4328.39 ns/op</TD>
-			<TD>thread-safe</TD>
-		</TR>
-		<TR>
-			<TD><TT>sigc::signal</TT></TD>
-			<TD>1157.43 ns/op</TD>
-			<TD>1625.07 ns/op</TD>
-			<TD>5770.25 ns/op</TD>
-			<TD>not thread-safe</TD>
-		</TR>
-		<TR>
-			<TD><TT>boost::signal</TT></TD>
-			<TD>1592.23 ns/op</TD>
-			<TD>3619.12 ns/op</TD>
-			<TD>22482 ns/op</TD>
-			<TD>not thread-safe</TD>
-		</TR>
-	</TABLE>
-	(DEC Alpha EV6, 500MHz)
-	
-	\section callback_thread_safety Thread safety
-	
-	The implementation provides the following thread safety guarantees:
-	
-	<UL>
-		<LI>
-			Concurrent invocation of any combination of
-			\ref tscb::signal::connect "signal::connect",
-			\ref tscb::signal::operator() "signal::operator()"
-			and \ref tscb::connection::disconnect "connection::disconnect"
-			is safe
-			(referring to either the same or different
-			\ref tscb::signal "signal" instances).
-		</LI>
-		<LI>
-			Concurrent invocation of
-			\ref tscb::connection::disconnect "connection::disconnect"
-			and destroying a \ref tscb::signal "signal" instance
-			is safe
-			(referring to either the same or different
-			\ref tscb::signal "signal" instances).
-		</LI>
-		<LI>
-			Concurrent invocations of \ref tscb::signal::connect "signal::connect",
-			\ref tscb::signal::operator() "signal::operator()"
-			and \ref tscb::connection::disconnect "connection::disconnect"
-			from within a callback functions bound to the same
-			or different \ref tscb::signal "signal" instances is
-			safe and cannot deadlock.
-		</LI>
-		<LI>
-			After \ref tscb::connection::disconnect "connection::disconnect"
-			has returned,
-			the corresponding callback function will not be invoked
-			through the signal it was connected to from the same
-			thread that called
-			\ref tscb::connection::disconnect "connection::disconnect".
-		</LI>
-		<LI>
-			After \ref tscb::connection::disconnect "connection::disconnect"
-			has returned,
-			the corresponding callback function will not be invoked
-			through the signal it was connected from another thread B
-			if the other thread synchronizes with the thread A that called
-			\ref tscb::connection::disconnect "connection::disconnect"
-			in any way. "Synchronize" here means that thread
-			A accesses a memory location with "release" semantic
-			which subsequently is accessed by thread B with "acquire"
-			semantic.
-		</LI>
-	</UL>
 	
 */
 

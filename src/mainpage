@@ -12,82 +12,397 @@ documentation page; I don't know where else to put it */
 /**
 	\mainpage libtscb - Thread-safe callback services
 	
-	This library provides a framework for notifications in multi-threaded
-	programs. Notifications are delivered using callbacks, but managing
-	registration/deregistration of callbacks in threaded applications
-	requires synchronization to ensure they can be handled in a thread-safe
-	manner. This synchronization comes at a cost, and it is the aim of
-	this library to provide patterns that minimize the synchronization
-	overhead - in fact, in many cases it achieves the theoretical
-	optimum.
+	This library provides classes for notifications via callbacks in
+	multi-threaded programs. In particular, it provides the following
+	services:
 	
-	The library achieves both excellent concurrency and low synchronization
-	overhead by using synchronization primitives that allows to perform certain
-	actions "asynchronously". This means that many operations are not
-	really completed at the time the corresponding function call returns,
-	but are instead queued up for execution at a better (later) point in
-	time. The benefit of asynchronicity is certainly better parallelism and
-	less contention, but the downside is usually an increase in code complexity.
-	The patterns provided in this library assist in minimizing the additional
-	complexity while making no compromise in efficiency.
+	<UL>
+		<LI>
+			\ref signal_descr "Signals and slots":
+			\ref tscb::signal_proxy "signal_proxy" provides an interface
+			through which interested receivers can connect/disconnect
+			callback functions at runtime. \ref tscb::signal "signal" provides an
+			implementation of this interface and provides senders
+			a mechanism to notify interested receivers, passing specified
+			arguments to each callback function.
+		</LI>
+		<LI>
+			\ref ioready_descr "I/O readiness":
+			\ref tscb::ioready_service "ioready_service" provides an interface
+			through which interested receivers can register/deregister
+			for notification on I/O readiness events (i.e. file
+			descriptor ready for reading/writing; cf. 
+			<TT>poll</TT>/<TT>select</TT>).
+			\ref tscb::ioready_dispatcher "ioready_dispatcher"
+			provides an implementation of this
+			interface that allows waiting (with timeout) for and fetching the
+			required information from the operating system and
+			notifying registered receivers.
+		</LI>
+		<LI>
+			\ref timer_descr "Timers":
+			\ref tscb::timer_service "timer_service" provides an interface
+			through which interested receivers can register/deregister
+			for notification at specific points in time.
+			\ref tscb::timerqueue_dispatcher "timerqueue_dispatcher" provides an implementation of this
+			interface, keeping track of all pending timers, deadline when
+			next timer is due, and "premature interruption" if the deadline must be invalidated (e.g. due to a newly-added timer).
+		</LI>
+		<LI>
+			\ref dispatcher_descr "Compound event dispatching" (or
+			"reactor-style" operation):
+			\ref tscb::posix_reactor_service "posix_reactor_service"
+			combines the \ref tscb::ioready_service "ioready_service",
+			\ref tscb::timer_service "timer_service" and
+			\ref tscb::workqueue_service "workqueue_service" interfaces.
+			\ref tscb::posix_reactor "posix_reactor"
+			provides an implementation of this
+			interface and performs all required operations of
+			delivering all requested notifications.
+		</LI>
+	</UL>
+	
+	The implementations in this library provide strong thread-safety
+	guarantees, are reentrant, deadlock-free and provide strong consistency
+	guarantees. See section \ref design_concurrency_reentrancy below
+	for an exact definition of the guarantees.
+	
+	\section design Design goals and principles
+	
+	\subsection design_interfaces Interfaces
+	
+	The library strictly separates the interfaces for registering
+	callbacks from the implementations that provide notifications.
+	The rationale for this design decision is to two-fold: First,
+	it allows implementors to export an interface allowing only
+	registration. Consider the following classes:
+	
+	\code
+	class Observable1 {
+	public:
+		tscb::signal<void(int, int)> on_value_change;
+		
+		void change_value(int new_value)
+		{
+			int old_value=value;
+			value=new_value;
+			on_value_change(old_value, new_value);
+		}
+	protected:
+		int value;
+		
+	};
+	
+	class Observable2 {
+	public:
+		tscb::signal_proxy<void(int, int)> &on_value_change(void) throw()
+		{
+			return value_change;
+		}
+		
+		void change_value(int new_value)
+		{
+			int old_value=value;
+			value=new_value;
+			value_change(old_value, new_value);
+		}
+	protected:
+		int value;
+		tscb::signal<void(int, int)> value_change;
+	};
+	\endcode
+	
+	Both classes allow an observer to register callbacks
+	(via <TT>Observable1::on_value_change::connect(...)</TT> or
+	<TT>Observable2::on_value_change()::connect(...)</TT>, respectively),
+	but <TT>Observable1</TT> also exports the capability to notify
+	registered callbacks to external classes (which is probably unintended).
+	
+	The second reason is to decouple "consumers" of notifications
+	from the exact mechanism used for providing them. Classes only
+	interested in receiving notification should depend on
+	\ref tscb::posix_reactor_service "posix_reactor_service"
+	instead of \ref tscb::posix_reactor "posix_reactor": The former
+	allows the implementation to be supplanted by a "bridge class"
+	that delegates to services provided by other frameworks
+	such as Qt or Gtk. (FIXME: Qt/Glib support split out
+	into dependent libraries, not sure if worth maintaining in separate
+	repository).
+	
+	\subsection design_concurrency_reentrancy Concurrency and reentrancy
+	
+	Let A,B,C,... denote receivers (i.e. functions that can be registered as
+	callbacks) and X,Y,Z event sources (e.g.
+	\ref tscb::signal "signal"s, \ref tscb::posix_reactor "posix_reactor"s
+	with registration and notification capability. The library
+	generally supports the following operations:
+	
+	<UL>
+		<LI><B>Registration</B> of a new callback A,B,... at a notification service X,Y</LI>
+		<LI><B>Modification</B> of callbacks A,B... pending at X,Y (e.g. changing the set
+	of events the receiver is interested in)</LI>
+		<LI><B>Deregistration</B> of callback A,B,... previously registered to X,Y</LI>
+		<LI><B>Notification</B> through X,Y to all registered callbacks</LI>
+		<LI><B>Deconstruction</B> of the event provider X,Y (which therefore ceases
+	to deliver notifications)</LI>
+	</UL>
+	
+	All implementations provide the following <I>concurrency</I> guarantees:
+	
+	<UL>
+		<LI>
+			Any concurrent
+			<B>Registration</B> A<SUB>1</SUB>, A<SUB>2</SUB>,... to X<SUB>1</SUB>, X<SUB>2</SUB>
+			<B>Deregistration</B> B<SUB>1</SUB>, B<SUB>2</SUB> from X<SUB>1</SUB>, X<SUB>2</SUB>,
+			<B>Modification</B> B<SUB>1</SUB>, B<SUB>2</SUB> at X<SUB>1</SUB>, X<SUB>2</SUB>,
+			<B>Notification</B> through X<SUB>1</SUB>, X<SUB>2</SUB>,
+			<B>Deconstruction</B> of Y<SUB>1</SUB>, Y<SUB>2</SUB>
+			is safe.
+		</LI>
+		<LI>
+			Any concurrent
+			<B>Deregistration</B> B<SUB>1</SUB>, B<SUB>2</SUB> from X<SUB>1</SUB>, X<SUB>2</SUB>,
+			<B>Modification</B> B<SUB>1</SUB>, B<SUB>2</SUB> at X<SUB>1</SUB>, X<SUB>2</SUB>,
+			<B>Notification</B> through X<SUB>1</SUB>, X<SUB>2</SUB>,
+			<B>Deconstruction</B> of X<SUB>1</SUB>, X<SUB>2</SUB>
+			is safe.
+		</LI>
+	</UL>
+	
+	All implementations provide the following <I>reentrancy</I> guarantee:
+	From within a callback A registered to service X, the following operations
+	may be performed:
+	
+	<UL>
+		<LI><B>Registration</B> B to X,Y</LI>
+		<LI><B>Deregistration</B> A,C from X,Y</LI>
+		<LI><B>Modification</B> A,C at X,Y</LI>
+		<LI><B>Notification</B> through X,Y</LI>
+		<LI><B>Deconstruction</B> of Z</LI>
+	</UL>
+	
+	Finally, the implementation provides the folliwing <I>consistency</I>
+	guarantee: If a callback is deregistered it will not be invoked
+	"subsequently" from the same or other threads. For the same thread,
+	"subsequently" refers to the normal flow of execution after
+	the \ref tscb::connection::disconnect "disconnect" operation
+	returns. For other threads this means that if
+	
+	<UL>
+		<LI>\ref tscb::connection::disconnect "disconnect" returns in thread A</LI>
+		<LI>thread A accesses a memory location with "release" semantics</LI>
+		<LI>thread B accesses the same memory location with "acquire" semantics</LI>
+	<UL>
+	
+	then the corresponding callback will not be invoked from thread B. (Note
+	that this guarantee provides essentially "causal consistency" and is thus
+	what implementors will generally expect).
+	
+	\section implementation Implementation notes
+	
+	\subsection implementation_synchronization Synchronization
+	
+	The aim of this library is to maximize
+	concurrency while minimizing the overhead introduced through the
+	required synchronization mechanisms, ideally to the point where
+	the overhead becomes pretty much negligible so that even
+	single-threaded applications (where the synchronization is
+	unnecessary) can afford to pay the price.
+	
+	These goals are achieved by employing synchronization mechanisms
+	that generally allow readers to access shared data structures
+	without any locking, with carefully designed access protocols
+	using appropriate atomic operations to ensure consistency. "Critical"
+	operations that might affect concurrent readers are split up into
+	"safe" modifications that may be performed at any time (e.g.
+	modifying a forward-traversable linked list) and "unsafe" modifications
+	that must be deferred to quiescent periods where no reader
+	is active (e.g. freeing memory of objects accessed without locking).
+	In almost all fast-path cases the overhead over a highly optimized
+	single-threaded implementation is just two atomic operations
+	and is thus very close to the theoretical optimum. 
+	
+	The basic access idiom to shared data structures for readers is:
+	
+	<OL>
+	<LI>Increment the "active" marker (an atomic counter)</LI>
+	<LI>Access required parts of the data structure (almost) freely (*)</LI>
+	<LI>Decrement the "active" marker</LI>
+	<LI>If "active" marker dropped to, check for
+	and execute pending deferred "unsafe" operations</LI>
+	</OL>
+	
+	Writers must adhere to the following protocol:
+	
+	<OL>
+	<LI>Lock out other writers, increment "active" marker</LI>
+	<LI>Perform "safe" modifications, queue up "unsafe" operations</LI>
+	<LI>Allow other writers, decrement "active" marker</LI>
+	<LI>If "active" marker dropped to zero, check for and execute pending
+	deferred "unsafe" operations</LI>
+	</OL>
+	
+	Note during the step marked (*) above, it is permissible to
+	initiate nested read or write acesses using the same synchronization
+	idiom without access or conflicts or potential for deadlock.
 	
 	The library relies on the C++0x atomic datatypes, an implementation of the
 	required functional subset is provided for gcc on various target machines
 	in order to make the library useful with older compilers and systems.
 	
-	\section services Notification services
+	\section performance Performance
 	
-	Callback registration and dispatching services for various types of
-	events
+	Comparison with other libraries; given values are normalized to
+	number clock cycles of the CPU used per operation (smaller is better)
 	
-	<UL>
-		<LI>
-			\ref signal_descr
-		</LI>
-		<LI>
-			\ref ioready_descr
-		</LI>
-		<LI>
-			\ref timer_descr
-		</LI>
-		<LI>
-			\ref dispatcher_descr
-		</LI>
-	</UL>
+	\subsection performance_signal Signal/slot mechanism
 	
-	\section synchronization Synchronization
+	Debian Linux 5.0, gcc-4.3.2, Intel Celeron @2GHz
+	<TABLE>
+		<TR>
+			<TH>Implementation</TH>
+			<TH>call<BR/>single callback</TH>
+			<TH>call<BR/>10 callbacks</TH>
+			<TH>connect+disconnect</TH>
+			<TH>comments</TH>
+		</TR>
+		
+		<TR>
+			<TD>open-coded<BR> (<TT>std::list</TT> of function pointers)</TD>
+			<TD>16</TD>
+			<TD>150</TD>
+			<TD>92</TD>
+			<TD>not thread-safe</TD>
+		</TR>
+		<TR>
+			<TD>open-coded<BR> (<TT>std::list</TT> of <TT>boost::function</TT> objects)</TD>
+			<TD>33</TD>
+			<TD>320</TD>
+			<TD>254</TD>
+			<TD>not thread-safe</TD>
+		</TR>
+		<TR>
+			<TD><TT>tscb::signal</TT></TD>
+			<TD>120</TD>
+			<TD>436</TD>
+			<TD>1286</TD>
+			<TD>thread-safe</TD>
+		</TR>
+		<TR>
+			<TD><TT>sigc::signal</TT></TD>
+			<TD>280</TD>
+			<TD>400</TD>
+			<TD>1216</TD>
+			<TD>not thread-safe</TD>
+		</TR>
+		<TR>
+			<TD><TT>boost::signal</TT></TD>
+			<TD>432</TD>
+			<TD>1310</TD>
+			<TD>3362</TD>
+			<TD>not thread-safe</TD>
+		</TR>
+		<TR>
+			<TD><TT>boost::signals2</TT></TD>
+			<TD>593</TD>
+			<TD>2803</TD>
+			<TD>2146</TD>
+			<TD>thread-safe</TD>
+		</TR>
+	</TABLE>
 	
-	Classes for deferred synchronization -- used internally by the library,
-	but also useful in other contexts.
+	Debian Linux 5.0, gcc-4.3.2, DEC Alpha EV6 @500MHz
+	<TABLE>
+		<TR>
+			<TH>Implementation</TH>
+			<TH>call<BR/>single callback</TH>
+			<TH>call<BR/>10 callbacks</TH>
+			<TH>connect+disconnect</TH>
+			<TH>comments</TH>
+		</TR>
+		
+		<TR>
+			<TD>open-coded<BR> (<TT>std::list</TT> of function pointers)</TD>
+			<TD>16</TD>
+			<TD>141</TD>
+			<TD>458</TD>
+			<TD>not thread-safe</TD>
+		</TR>
+		<TR>
+			<TD>open-coded<BR> (<TT>std::list</TT> of <TT>boost::function</TT> objects)</TD>
+			<TD>32</TD>
+			<TD>333</TD>
+			<TD>576</TD>
+			<TD>not thread-safe</TD>
+		</TR>
+		<TR>
+			<TD><TT>tscb::signal</TT></TD>
+			<TD>157</TD>
+			<TD>472</TD>
+			<TD>2164</TD>
+			<TD>thread-safe</TD>
+		</TR>
+		<TR>
+			<TD><TT>sigc::signal</TT></TD>
+			<TD>576</TD>
+			<TD>812</TD>
+			<TD>2885</TD>
+			<TD>not thread-safe</TD>
+		</TR>
+		<TR>
+			<TD><TT>boost::signal</TT></TD>
+			<TD>796</TD>
+			<TD>1810</TD>
+			<TD>11241</TD>
+			<TD>not thread-safe</TD>
+		</TR>
+	</TABLE>
+
+	\subsection performance_reactor I/O dispatching
 	
-	<UL>
-		<LI>
-			\ref deferred_descr - deferring updates to data structures to
-			allow both non-blocking readers and writers access to the same
-			data structure
-		</LI>
-	</UL>
+	<TT>n</TT> pipe pairs, <TT>n</TT> handler functions that reads a token out of one
+	pipe and writes it into the next one. Numbers indicate clock cycles
+	per <I>single</I> dispatch operation (one forwarding of the token to the
+	next pipe).
 	
-	\section util_adt Utility datatypes and algorithms
+	Debian Linux 5.0, gcc-4.3.2, Intel Celeron @2GHz
+	<TABLE>
+		<TR>
+			<TH>Implementation</TH>
+			<TH>32 pipe pairs</TH>
+			<TH>64 pipe pairs</TH>
+			<TH>128 pipe pairs</TH>
+		</TR>
+		<TR>
+			<TD>open-coded<BR>(<TT>epoll_wait+read+write</TT>)</TD>
+			<TD>2425</TD>
+			<TD>2439</TD>
+			<TD>2477</TD>
+		</TR>
+		<TR>
+			<TD><TT>ACE</TT></TD>
+			<TD>FIXME: retest with epoll</TD>
+			<TD>FIXME: retest with epoll</TD>
+			<TD>FIXME: retest with epoll</TD>
+		</TR>
+		<TR>
+			<TD><TT>boost::asio</TT></TD>
+			<TD>11406</TD>
+			<TD>11426</TD>
+			<TD>11536</TD>
+		</TR>
+		<TR>
+			<TD>\ref tscb::posix_reactor "tscb::posix_reactor"</TT></TD>
+			<TD>3292</TD>
+			<TD>3308</TD>
+			<TD>3344</TD>
+		</TR>
+	</TABLE>
 	
-	These data structures are used internally inside the library, but
-	since they may be of generic use, they are exported
 	
-	<UL>
-		<LI>
-			\ref list_descr - simple linked lists with explicit memory
-			management for list headers
-		</LI>
-		<LI>
-			\ref fibheap_descr - the data structure of choice
-			for priority queues
-		</LI>
-	</UL>
+	For this test, a number of pipe pairs are created and 
 	
 */
 
-/**
-	\brief Thread-safe callbacks
-*/
 namespace tscb {
 }

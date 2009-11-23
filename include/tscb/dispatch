@@ -125,24 +125,54 @@ namespace tscb {
 	void dispatch(tscb::timerqueue_dispatcher *tq,
 		tscb::ioready_dispatcher *io) throw();
 	
+	/**
+		\brief Queue of work items to be performed
+		
+		This class provides the interface for submitting
+		functions calls to be performed at some later point in time.
+	*/
+	
 	class workqueue_service {
 	public:
 		virtual ~workqueue_service(void) throw();
 		
+		/**
+			\brief Queue a single function call
+			
+			\param function Function to be executed
+			
+			Queues the given function call for later execution.
+		*/
 		virtual
 		void post(const boost::function<void(void)> &function) throw(std::bad_alloc)=0;
 	};
 	
-	class posix_event_service : public workqueue_service, public timer_service, public ioready_service {
+	/**
+		\brief Posix reactor service
+		
+		Combines the interfaces \ref workqueue_service,
+		\ref timer_service and \ref ioready_service
+	*/
+	class posix_reactor_service : public workqueue_service, public timer_service, public ioready_service {
 	public:
-		virtual ~posix_event_service(void) throw();
+		virtual ~posix_reactor_service(void) throw();
 	};
 	
-	class posix_event_dispatcher : public posix_event_service {
-	public:
-		posix_event_dispatcher(void) throw(std::bad_alloc, std::runtime_error);
-		virtual ~posix_event_dispatcher(void) throw();
+	/**
+		\brief Posix reactor service provider
 		
+		This class implements the \ref posix_reactor_service interface
+		and is capable of running stand-alone to provide the requested
+		notifications.
+	*/
+	class posix_reactor : public posix_reactor_service {
+	public:
+		posix_reactor(void) throw(std::bad_alloc, std::runtime_error);
+		virtual ~posix_reactor(void) throw();
+		
+		/**
+			\brief Run the dispatcher
+		*/
 		void dispatch(void);
 		
 		/* workqueue_service */

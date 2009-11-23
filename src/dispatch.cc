@@ -43,11 +43,11 @@ namespace tscb {
 	{
 	}
 	
-	posix_event_service::~posix_event_service(void) throw()
+	posix_reactor_service::~posix_reactor_service(void) throw()
 	{
 	}
 	
-	posix_event_dispatcher::posix_event_dispatcher(void)
+	posix_reactor::posix_reactor(void)
 		throw(std::bad_alloc, std::runtime_error)
 		: io(create_ioready_dispatcher()),
 		flag(io->get_eventflag()),
@@ -55,13 +55,13 @@ namespace tscb {
 	{
 	}
 	
-	posix_event_dispatcher::~posix_event_dispatcher(void) throw()
+	posix_reactor::~posix_reactor(void) throw()
 	{
 		delete io;
 	}
 	
 	void
-	posix_event_dispatcher::post(const boost::function<void(void)> &function) throw(std::bad_alloc)
+	posix_reactor::post(const boost::function<void(void)> &function) throw(std::bad_alloc)
 	{
 		workqueue_lock.lock();
 		workqueue.push_back(function);
@@ -69,41 +69,41 @@ namespace tscb {
 		flag->set();
 	}
 		
-	void posix_event_dispatcher::register_timer(timer_callback *ptr) throw()
+	void posix_reactor::register_timer(timer_callback *ptr) throw()
 	{
 		timer.register_timer(ptr);
 	}
 	
-	void posix_event_dispatcher::unregister_timer(timer_callback *t) throw()
+	void posix_reactor::unregister_timer(timer_callback *t) throw()
 	{
 		timer.unregister_timer(t);
 	}
 	
 	void
-	posix_event_dispatcher::register_ioready_callback(ioready_callback *l) throw(std::bad_alloc)
+	posix_reactor::register_ioready_callback(ioready_callback *l) throw(std::bad_alloc)
 	{
 		io->register_ioready_callback(l);
 	}
 	
 	void
-	posix_event_dispatcher::unregister_ioready_callback(ioready_callback *e) throw()
+	posix_reactor::unregister_ioready_callback(ioready_callback *e) throw()
 	{
 		io->unregister_ioready_callback(e);
 	}
 	
 	void
-	posix_event_dispatcher::modify_ioready_callback(ioready_callback *e, ioready_events event_mask) throw()
+	posix_reactor::modify_ioready_callback(ioready_callback *e, ioready_events event_mask) throw()
 	{
 		io->modify_ioready_callback(e, event_mask);
 	}
 	
 	eventflag *
-	posix_event_dispatcher::get_eventflag(void) throw(std::bad_alloc)
+	posix_reactor::get_eventflag(void) throw(std::bad_alloc)
 	{
 		return flag;
 	}
 	void
-	posix_event_dispatcher::dispatch(void)
+	posix_reactor::dispatch(void)
 	{
 		if (__builtin_expect(!workqueue.empty(), 0)) {
 			workitems items;

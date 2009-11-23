@@ -10,13 +10,12 @@
 #define __TSCB_IOREADY_H
 
 /**
-	\page ioready_descr I/O readiness callbacks
+	\page ioready_descr I/O readiness
 	
 	The class \ref tscb::ioready_service "ioready_service" defines the
 	interface which receivers of I/O readiness callbacks can use to register
 	themselves. Several concrete implementations of this interface exist and
 	may be used on different platforms.
-	
 	
 	\section ioready_registration Registration for events
 	
@@ -69,7 +68,7 @@
 			delete IOContext;
 		}
 		
-		void register(IOContext *ctx, int fd, tscb::ioready_service *service)
+		void registration(IOContext *ctx, int fd, tscb::ioready_service *service)
 			throw(std::bad_alloc)
 		{
 			service->watch(boost::bind(&onDataReady, ctx, fd, _1),
