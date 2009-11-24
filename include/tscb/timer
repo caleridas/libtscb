@@ -817,11 +817,20 @@ namespace tscb {
 	typedef abstract_timer_connection<boost::posix_time::ptime> timer_connection;
 	
 	/**
+		\class tscb::timer_service
 		\brief Timer service using posix_time::ptime to represent time values
+		
+		Template specialization of \ref tscb::generic_timer_service "generic_timer_service" using boost::posix_time::ptime
+		as time representation
 	*/
 	typedef generic_timer_service<boost::posix_time::ptime> timer_service;
+	
 	/**
+		\class tscb::timerqueue_dispatcher
 		\brief Timer dispatcher using posix_time::ptime to represent time values
+		
+		Template specialization of \ref tscb::generic_timerqueue_dispatcher "generic_timerqueue_dispatcher" using boost::posix_time::ptime
+		as time representation
 	*/
 	typedef generic_timerqueue_dispatcher<boost::posix_time::ptime> timerqueue_dispatcher;
 	

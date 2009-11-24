@@ -253,11 +253,11 @@ documentation page; I don't know where else to put it */
 	\section performance Performance
 	
 	Comparison with other libraries; given values are normalized to
-	number clock cycles of the CPU used per operation (smaller is better)
+	number of CPU clock cycles per operation (smaller is better)
 	
 	\subsection performance_signal Signal/slot mechanism
 	
-	Debian Linux 5.0, gcc-4.3.2, Intel Celeron @2GHz
+	Debian Linux 5.0, gcc-4.3.2, Intel Celeron \@2GHz
 	<TABLE>
 		<TR>
 			<TH>Implementation</TH>
@@ -311,7 +311,7 @@ documentation page; I don't know where else to put it */
 		</TR>
 	</TABLE>
 	
-	Debian Linux 5.0, gcc-4.3.2, DEC Alpha EV6 @500MHz
+	Debian Linux 5.0, gcc-4.3.2, DEC Alpha EV6 \@500MHz
 	<TABLE>
 		<TR>
 			<TH>Implementation</TH>
@@ -360,12 +360,12 @@ documentation page; I don't know where else to put it */
 
 	\subsection performance_reactor I/O dispatching
 	
-	<TT>n</TT> pipe pairs, <TT>n</TT> handler functions that reads a token out of one
-	pipe and writes it into the next one. Numbers indicate clock cycles
+	<TT>n</TT> pipe pairs, <TT>n</TT> handler functions that read a token out of one
+	pipe and write it into the next one. Numbers indicate clock cycles
 	per <I>single</I> dispatch operation (one forwarding of the token to the
 	next pipe).
 	
-	Debian Linux 5.0, gcc-4.3.2, Intel Celeron @2GHz
+	Debian Linux 5.0, gcc-4.3.2, Intel Celeron \@2GHz
 	<TABLE>
 		<TR>
 			<TH>Implementation</TH>
@@ -398,9 +398,6 @@ documentation page; I don't know where else to put it */
 			<TD>3344</TD>
 		</TR>
 	</TABLE>
-	
-	
-	For this test, a number of pipe pairs are created and 
 	
 */
 

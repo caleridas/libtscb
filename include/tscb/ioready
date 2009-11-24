@@ -113,41 +113,69 @@
 	as the function object is callable. The function object will be destroyed
 	"soon after" cancelling the callback (see next section).
 	
-	\section ioready_callback_cookies Callback link handles for ioready callbacks
+	\section ioready_callback_cookies Callback connection handles for ioready callbacks
 	
 	The \ref tscb::ioready_service::watch "ioready_service::watch" functions
-	return a reference to a callback link object that represents the
-	connection between the callback service provider and the receiver. The
+	return a connection handle that represents the
+	link between the callback service provider and the receiver. The
 	return value can be stored by the caller:
 	
 	\code
-		tscb::ioready_callback link;
-		link=service->watch(boost::bind(&IOHandler::onDataReady, this, descriptor, _1),
+		tscb::ioready_connection conn;
+		conn=service->watch(boost::bind(&IOHandler::onDataReady, this, descriptor, _1),
 			descriptor, tscb::ioready_input);
 	\endcode
 	
-	The link object can later be used for two purposes: 1. Cancel the
-	callback:
+	The connection object can later be used for two purposes:
+	1. Modify the event mask:
 	
 	\code
-		link->cancel();
+		conn.modify(tscb::ioready_input | tscb::ioready_output);
 	\endcode
 	
-	The function will no longer be invoked afterwards; the function
-	object along with bound parameters will be destroyed subsequently
-	(but not necessarily immediately, e.g. if there are pending calls
-	from other threads).
+	This call changes the state the file descriptor is checked for. The
+	event mask may legally be \ref tscb::ioready_none which temporarily
+	disables notification for both input and output, but note that
+	error notifications <I>may</I> still be generated.
 	
-	or 2. modify the event mask:
+	2. Break the connection:
 	
 	\code
-		link->modify(tscb::ioready_input | tscb::ioready_output);
+		conn.disconnect();
 	\endcode
 	
-	In this case, the callback will subsequently be invoked whenever the
-	descriptor is in a state as indicated by the new event mask. The
-	event mask may legally be zero, effectively temporarily disabling
-	the callback.
+	The function will no longer be invoked afterwards (see 
+	section \ref design_concurrency_reentrancy for a precise definition
+	of the guarantee). The function object along with bound parameters will be
+	destroyed (possibly immediately, possibly later). It is the caller's
+	responsibility to ensure that the file descriptor remains valid (is
+	not closed) until the function object is destroyed. The safest way
+	to achieve this is to encapsulate the descriptor inside an object and
+	bind a reference to it to the function object:
+	
+	\code
+		class fd_tracker {
+		public:
+			fd_tracker(int _fd) : fd(_fd) {}
+			~fd_tracker(void) {close(fd);}
+			int fd;
+		};
+		
+		void io_handler(boost::shared_ptr<fd_tracker> fd, tscb::ioready_events events);
+		
+		main()
+		{
+		
+			int fd=socket(...);
+			boost::shared_ptr<fd_tracker> fdt(new fd_tracker(fd));
+			...
+			ioready->watch(boost::bind(&io_handler, fdt, _1));
+		}
+	\endcode
+	
+	[Side node: \ref tscb::ioready_connection "ioready_connection" objects may be
+	downcast to \ref tscb::connection "connection" objects, losing the ability to
+	modify the event mask]
 	
 	\section ioready_dispatcher_descr ioready dispatchers
 	
@@ -190,7 +218,7 @@
 	\code
 		tscb::ioready_dispatcher *dispatcher;
 		...
-		long long timeout=1000;
+		boost::posix_time::time_duration timeout(1000);
 		
 		while(true) dispatcher->dispatch(&timeout, 16);
 	\endcode
@@ -214,22 +242,29 @@
 		tscb::eventflag flag=dispatcher->get_eventflag();
 	\endcode
 	
-	Raising the event flag will interrupt a timeout waiting for events
-	to dispatch:
+	After returning from \ref tscb::ioready_dispatcher::dispatch
+	"ioready_dispatcher::dispatch", the flag will be in <I>cleared</I>
+	state. When the flag is in <I>set</I> state, the next call
+	to \ref tscb::ioready_dispatcher::dispatch "ioready_dispatcher::dispatch"
+	will not block waiting for a timeout, but return immediately.
+	
+	Raising the event flag will also interrupt any waiting operation
+	inside \ref tscb::ioready_dispatcher::dispatch "ioready_dispatcher::dispatch"
+	and cause the call to return as soon as possible:
 	
 	\code
-		tscb::eventflag flag;
+		tscb::eventflag *flag;
 		...
 		flag->set();
 	\endcode
 	
-	A thread currently in \ref tscb::ioready_dispatcher::dispatch
-	"ioready_dispatcher::dispatch" would stop waiting
-	for events and return prematurely. This is most useful in conjunction
-	with timer queues (see the example at the end
-	of section \ref timerqueue_dispatcher_descr).
+	Applications can use this capability as a mechanism to force a 
+	premature exit from the dispatcher loop. This is useful when
+	the thread busy with dispatching I/O readiness events must also
+	check other event sources (e.g. timers, see section \ref
+	timerqueue_dispatcher_descr).
 	
-	Please note:
+	Note:
 	
 	<UL>
 		<LI>
@@ -237,6 +272,10 @@
 			one particular <I>thread</I> entering
 			\ref tscb::ioready_dispatcher::dispatch
 			"ioready_dispatcher::dispatch";
+		</LI>
+		<LI>
+			the lifetime of the eventflag matches the lifetime of
+			the dispatcher
 		</LI>
 		<LI>
 			depending on the implementation, raising the flag may
@@ -263,6 +302,15 @@ namespace tscb {
 	
 	/**
 		\brief I/O readiness event mask
+		
+		Bitmask encoding possible events on a file descriptor.
+		When requesting notification through \ref tscb::ioready_service::watch
+		"ioready_service::watch", the caller should build a mask
+		consisting of the bitwise | (or) of all events it is
+		interested in.
+		
+		The called function will receive a mask with bits set for all
+		events that occurred intermittently.
 	*/
 	typedef enum {
 		ioready_none=0,

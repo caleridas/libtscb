@@ -150,8 +150,8 @@ namespace tscb {
 	/**
 		\brief Posix reactor service
 		
-		Combines the interfaces \ref workqueue_service,
-		\ref timer_service and \ref ioready_service
+		Combines the interfaces \ref tscb::workqueue_service "workqueue_service",
+		\ref tscb::timer_service "timer_service" and \ref tscb::ioready_service "ioready_service"
 	*/
 	class posix_reactor_service : public workqueue_service, public timer_service, public ioready_service {
 	public:
