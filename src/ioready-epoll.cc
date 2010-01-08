@@ -209,6 +209,7 @@ namespace tscb {
 		if (empty_chain) {
 			epoll_event event;
 			event.events=translate_tscb_to_os(link->event_mask);
+			event.data.u64=0;
 			event.data.fd=link->fd;
 			epoll_ctl(epoll_fd, EPOLL_CTL_ADD, link->fd, &event);
 		} else {
@@ -222,6 +223,7 @@ namespace tscb {
 			
 			epoll_event event;
 			event.events=osmask;
+			event.data.u64=0;
 			event.data.fd=link->fd;
 			epoll_ctl(epoll_fd, EPOLL_CTL_MOD, link->fd, &event);
 		}
@@ -246,6 +248,7 @@ namespace tscb {
 			if (callback_tab.chain_empty(fd)) {
 				epoll_event event;
 				event.events=translate_tscb_to_os(oldevmask);
+				event.data.u64=0;
 				event.data.fd=link->fd;
 				epoll_ctl(epoll_fd, EPOLL_CTL_DEL, link->fd, &event);
 			} else {
@@ -259,6 +262,7 @@ namespace tscb {
 				
 				epoll_event event;
 				event.events=osmask;
+				event.data.u64=0;
 				event.data.fd=link->fd;
 				epoll_ctl(epoll_fd, EPOLL_CTL_MOD, link->fd, &event);
 			}
@@ -289,6 +293,7 @@ namespace tscb {
 		
 		epoll_event event;
 		event.events=osmask;
+		event.data.u64=0;
 		event.data.fd=link->fd;
 		epoll_ctl(epoll_fd, EPOLL_CTL_MOD, link->fd, &event);
 		
