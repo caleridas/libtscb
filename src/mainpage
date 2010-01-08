@@ -381,21 +381,21 @@ documentation page; I don't know where else to put it */
 		</TR>
 		<TR>
 			<TD><TT>ACE</TT></TD>
-			<TD>FIXME: retest with epoll</TD>
-			<TD>FIXME: retest with epoll</TD>
-			<TD>FIXME: retest with epoll</TD>
-		</TR>
-		<TR>
-			<TD><TT>boost::asio</TT></TD>
-			<TD>11406</TD>
-			<TD>11426</TD>
-			<TD>11536</TD>
+			<TD>3469</TD>
+			<TD>3460</TD>
+			<TD>3494</TD>
 		</TR>
 		<TR>
 			<TD>\ref tscb::posix_reactor "tscb::posix_reactor"</TT></TD>
 			<TD>3292</TD>
 			<TD>3308</TD>
 			<TD>3344</TD>
+		</TR>
+		<TR>
+			<TD><TT>boost::asio</TT></TD>
+			<TD>11406</TD>
+			<TD>11426</TD>
+			<TD>11536</TD>
 		</TR>
 	</TABLE>
 	
