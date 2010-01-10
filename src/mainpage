@@ -401,5 +401,185 @@ documentation page; I don't know where else to put it */
 	
 */
 
+/**
+\page quick_reference Quick reference
+
+\section qref_interface Registration interfaces and event providers
+
+<TABLE>
+	<TR><TH>Registration interface</TH><TH>Event provider(s)</TH></TR>
+	<TR><TD>@c tscb::signal_proxy </TD><TD>@c tscb::signal </TD></TR>
+	<TR><TD>@c tscb::timer_service </TD><TD>@c tscb::timerqueue_dispatcher <BR> @c tscb::posix_reactor </TD></TR>
+	<TR><TD>@c tscb::ioready_service </TD><TD>@c tscb::ioready_dispatcher <BR> @c tscb::posix_reactor </TD></TR>
+	<TR><TD>@c tscb::workqueue_service </TD><TD>@c tscb::ioready_dispatcher <BR> @c tscb::posix_reactor </TD></TR>
+	<TR><TD>@c tscb::posix_reactor_service
+	<BR> (combines @c tscb::timer_service, <BR>
+	@c tscb::ioready_service and <BR> @c tscb::workqueue_service)
+	
+	 </TD><TD>@c tscb::posix_reactor </TD></TR>
+</TABLE>
+
+The respective <I>registration interfaces</I> only provide the mechanisms that
+allow interested receivers to register themselves for notification, but not
+for emitting the notifications.
+
+\section qref_signals Signals
+
+Definition of notification provider
+\code
+tscb::signal<void(Type1, Type2, ...)> notifier;
+\endcode
+
+Registration of function to be called (note: only requires inherited @c tscb::signal_proxy interface)
+\code
+void function(Type1, Type2, ...);
+tscb::connection connection=notifier.connect(&function1);
+notifier.connect(boost::bind(...));
+\endcode
+
+Removing registered function
+\code
+connection.disconnect();
+\endcode
+
+Emitting notifications to registered functions
+\code
+notifier(param1, param2, ...);
+\endcode
+
+\section qref_reactor Reactors
+
+Definition of reactor
+\code
+tscb::posix_reactor reactor;
+\endcode
+
+Event dispatcher loop
+\code
+bool quit = false;
+while(!quit) reactor.dispatch();
+\endcode
+
+Force dispatcher thread out of loop
+\code
+quit = true;
+reactor.get_event_flag().set();
+\endcode
+
+Provided interfaces
+\code
+tscb::posix_reactor_service & reactor_service = reactor;
+tscb::timer_service & timers = reactor_service;
+tscb::ioready_service & ioready = reactor_service;
+tscb::workqueue_service & workqueue = reactor_service;
+\endcode
+
+\section qref_timers Timers
+
+Structure of timer function
+\code
+bool my_timer_handler(boost::posix_time::ptime &when)
+{
+	if (...) {
+		// call me again in 1000 milliseconds
+		when += boost::posix_time::milliseconds(1000);
+		return true;
+	} else {
+		// don't call me again
+		return false;
+	}
+}
+\endcode
+
+Registering timer
+\code
+boost::posix_time::ptime expires=boost::posix_time::microsec_clock::universal_time()+boost::posix_time::milliseconds(1000);
+tscb::timer_connection connection=timers.timer(&my_timer_handler, expires);
+\endcode
+
+Deregistering timer
+\code
+connection.disconnect();
+\endcode
+
+\section qref_ioready I/O readiness
+
+Structure of I/O readiness handler function
+\code
+void my_io_handler(tscb::ioready_events events)
+{
+	if (event & tscb::ioready_error) {
+		// handle error on descriptor
+	}
+	if (event & tscb::ioready_input) {
+		// read data from descriptor
+	}
+	if (event & tscb::ioready_output) {
+		// write data to descriptor
+	}
+}
+\endcode
+
+Registering I/O handler
+\code
+int fd; // file descriptor to be watched
+ioready_connection connection = ioready.watch(my_io_handler, fd, tscb::ioready_input);
+\endcode
+
+Changing events to be notified for
+\code
+connection.modify(tscb::ioready_input | tscb::ioready_output);
+connection.modify(tscb::ioready_none); // temporarily disables all notification
+\endcode
+
+Deregistering I/O handler
+\code
+connection.disconnect();
+\endcode
+
+\section recipes Cooking recipes
+
+\subsection recipes_signals Signals
+
+Defining a notification provider
+
+\code
+class Window {
+public:
+	tscb::signal_proxy<void(int, int)> &on_resize() const {return resize_notifier;}
+	tscb::signal_proxy<void(void)> &on_destroy() const {return destroy_notifier;}
+	
+	~Window() {destroy_notifier();}
+	void resize(int new_width, new_height)
+	{
+		width=new_width;
+		height=new_height;
+		resize_notifier(new_width, new_height);
+	}
+private:
+	mutable tscb::signal<void(int, int)> resize_notifier;
+	mutable tscb::signal<void(void)> destroy_notifier;
+	int width, height;
+};
+\endcode
+
+Requesting notification
+
+\code
+class WindowObserver {
+public:
+	WindowObserver(Window &w)
+	{
+		w.on_resize().connect(boost::bind(&WindowObserver::handle_resize, this, _1, _2));
+		w.on_destroy().connect(boost::bind(&WindowObserver::handle_destroy, this));
+	}
+private:
+	void handle_resize(int new_width, int new_height);
+	void handle_destroy();
+};
+\endcode
+
+*/
+
 namespace tscb {
 }
