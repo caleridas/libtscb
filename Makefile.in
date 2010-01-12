@@ -38,6 +38,7 @@ DISPATCHER_KQUEUE = @DISPATCHER_KQUEUE@
 SELECT_FD_SETSIZE = @SELECT_FD_SETSIZE@
 AIO_LINUX = @AIO_LINUX@
 ENABLE_SHARED = @ENABLE_SHARED@
+VERSION = @VERSION@
 
 # commands for generating various types of targets
 
@@ -89,21 +90,17 @@ ifneq ($(SELECT_FD_SETSIZE), )
   CPPFLAGS+=-DFD_SETSIZE=$(SELECT_FD_SETSIZE)
 endif
 
-# include asynchronous io implementations depending on configuration
-
-ifeq ($(AIO_LINUX), yes)
-  LIBTSCB_SOURCES+=src/aio_linux.cc
-endif
-
 # default target
 
 LIBRARIES=libtscb.a
 
 ifeq ($(ENABLE_SHARED), yes)
-  LIBRARIES+=libtscb.so
+libtscb_VERSION=$(VERSION)
+libtscb_SOVERSION=$(basename $(VERSION))
+SHARED_LIBRARIES+=libtscb.so
 endif
 
-all: $(LIBRARIES)
+all: $(LIBRARIES) $(SHARED_LIBRARIES)
 
 libtscb.a: $(patsubst %.cc, %.la, $(LIBTSCB_SOURCES))
 libtscb.so: $(patsubst %.cc, %.lo, $(LIBTSCB_SOURCES))
@@ -116,7 +113,7 @@ include testprogs/Makefile.sub
 # pseudo-rules for cleaning the build tree
 
 clean:
-	find . -name "*.[ao]" -o -name "*.l[ao]" -o -name "*.so" | xargs rm -f
+	find . -name "*.[ao]" -o -name "*.l[ao]" -o -name "*.so" -o -name "*.so.*" | xargs rm -f
 	rm -f $(EXECUTABLES)
 
 docclean:
@@ -129,17 +126,28 @@ maintainerclean: distclean
 	rm -f configure
 
 # installation rules
-install: $(LIBRARIES)
-	for file in $(filter %.so,$(LIBRARIES)) ; do\
-		$(INSTALL) -s -m 755 -v $$file $(libdir)/ ; \
-	done
+install: install-headers install-pkgconfig install-static install-shared
+
+install-headers:
+	mkdir -p $(includedir)/tscb
+	$(INSTALL) -m 644 -v include/tscb/* $(includedir)/tscb
+
+install-pkgconfig:
+	mkdir -p $(libdir)/pkgconfig/
+	$(INSTALL) -m 644 -v libtscb.pc $(libdir)/pkgconfig/
+
+install-static: $(LIBRARIES)
 	for file in $(filter %.a,$(LIBRARIES)) ; do\
 		$(INSTALL) -m 644 -v $$file $(libdir)/ ; \
 	done
-	mkdir -p $(includedir)/tscb
-	$(INSTALL) -m 644 -v include/tscb/* $(includedir)/tscb
-	mkdir -p $(libdir)/pkgconfig/
-	$(INSTALL) -m 644 -v libtscb.pc $(libdir)/pkgconfig/
+
+install-shared: $(patsubst %.so,install-shared-%,$(SHARED_LIBRARIES))
+install-shared-%: BASENAME=$(patsubst install-shared-%,%,$@)
+install-shared-%:
+	$(INSTALL) -m 644 -v $(BASENAME).so.$($(BASENAME)_VERSION) $(libdir)/
+	$(RM) -rf $(libdir)/$(BASENAME).so $(libdir)/$(BASENAME).so.$($(BASENAME)_SOVERSION)
+	ln -sf $(BASENAME).so.$($(BASENAME)_VERSION) $(libdir)/$(BASENAME).so
+	ln -sf $(BASENAME).so.$($(BASENAME)_VERSION) $(libdir)/$(BASENAME).so.$($(BASENAME)_SOVERSION)
 
 # rules for generating various file types
 
@@ -166,9 +174,13 @@ $(EXECUTABLES):
 	ranlib $@
 
 # dynamic libraries
+%.so: BASENAME=$(patsubst %.so,%,$@)
 %.so:
-	$(DYNAMIC_MODULE_LINK) -o $@ $^
-	strip $@
+	rm -rf $@ $@.$($(BASENAME)_VERSION) $@.$($(BASENAME)_SOVERSION)
+	$(DYNAMIC_MODULE_LINK) -o $@.$($(BASENAME)_VERSION) $^ -Wl,-soname -Wl,$@.$($(BASENAME)_SOVERSION)
+	strip $@.$($(BASENAME)_VERSION)
+	ln -sf $@.$($(BASENAME)_VERSION) $@.$($(BASENAME)_SOVERSION)
+	ln -sf $@.$($(BASENAME)_VERSION) $@
 
 doc: .PHONY
 	mkdir -p doc
