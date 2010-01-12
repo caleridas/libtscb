@@ -96,7 +96,7 @@ LIBRARIES=libtscb.a
 
 ifeq ($(ENABLE_SHARED), yes)
 libtscb_VERSION=$(VERSION)
-libtscb_SOVERSION=$(basename $(VERSION))
+libtscb_SOVERSION=$(basename $(basename $(VERSION)))
 SHARED_LIBRARIES+=libtscb.so
 endif
 
@@ -144,7 +144,7 @@ install-static: $(LIBRARIES)
 install-shared: $(patsubst %.so,install-shared-%,$(SHARED_LIBRARIES))
 install-shared-%: BASENAME=$(patsubst install-shared-%,%,$@)
 install-shared-%:
-	$(INSTALL) -m 644 -v $(BASENAME).so.$($(BASENAME)_VERSION) $(libdir)/
+	$(INSTALL) -m 755 -v $(BASENAME).so.$($(BASENAME)_VERSION) $(libdir)/
 	$(RM) -rf $(libdir)/$(BASENAME).so $(libdir)/$(BASENAME).so.$($(BASENAME)_SOVERSION)
 	ln -sf $(BASENAME).so.$($(BASENAME)_VERSION) $(libdir)/$(BASENAME).so
 	ln -sf $(BASENAME).so.$($(BASENAME)_VERSION) $(libdir)/$(BASENAME).so.$($(BASENAME)_SOVERSION)
