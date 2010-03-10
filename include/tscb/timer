@@ -381,6 +381,7 @@ namespace tscb {
 		
 	private:
 		callback_type *callback;
+		friend class connection;
 	};
 	
 	/** \cond NEVER -- ignored by doxygen */

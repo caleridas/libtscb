@@ -501,6 +501,7 @@ namespace tscb {
 		
 	private:
 		ioready_callback *callback;
+		friend class connection;
 	};
 	
 	/**
