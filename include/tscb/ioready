@@ -476,10 +476,10 @@ namespace tscb {
 		
 		template<typename ConnectionType>
 		inline ioready_connection &operator=(const ConnectionType &conn) throw()
-		{callback=conn.callback; if (callback) callback->pin(); return *this;}
+		{if (callback) callback->release(); callback=conn.callback; if (callback) callback->pin(); return *this;}
 		
 		inline ioready_connection &operator=(const ioready_connection &conn) throw()
-		{callback=conn.callback; if (callback) callback->pin(); return *this;}
+		{if (callback) callback->release(); callback=conn.callback; if (callback) callback->pin(); return *this;}
 		
 		inline void disconnect(void) throw()
 		{if (callback) {callback->disconnect(); callback->release(); callback=0;}}

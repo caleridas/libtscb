@@ -283,10 +283,10 @@ namespace tscb {
 		
 		template<typename ConnectionType>
 		inline connection &operator=(const ConnectionType &conn) throw()
-		{callback=conn.callback; if (callback) callback->pin(); return *this;}
+		{if (callback) callback->release(); callback=conn.callback; if (callback) callback->pin(); return *this;}
 		
 		inline connection &operator=(const connection &conn) throw()
-		{callback=conn.callback; if (callback) callback->pin(); return *this;}
+		{if (callback) callback->release(); callback=conn.callback; if (callback) callback->pin(); return *this;}
 		
 		inline void disconnect(void) throw()
 		{if (callback) {callback->disconnect(); callback->release(); callback=0;}}
