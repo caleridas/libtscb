@@ -356,6 +356,10 @@ namespace tscb {
 		inline abstract_timer_connection(const abstract_timer_connection &conn) throw()
 		{callback=conn.callback; if (callback) callback->pin();}
 		
+		template<typename CallbackType>
+		inline abstract_timer_connection &operator=(CallbackType * cb) throw()
+		{if (callback) callback->release(); callback=cb; if (callback) callback->pin(); return *this;}
+		
 		template<typename ConnectionType>
 		inline abstract_timer_connection &operator=(const ConnectionType &conn) throw()
 		{if (callback) callback->release(); callback=conn.callback; if (callback) callback->pin(); return *this;}
