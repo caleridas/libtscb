@@ -17,6 +17,7 @@
 
 #include <tscb/ioready>
 #include <tscb/deferred>
+#include <tscb/file-descriptor-table>
 
 namespace tscb {
 	

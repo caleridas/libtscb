@@ -202,16 +202,70 @@ namespace tscb {
 		modify_ioready_callback(ioready_callback *e, ioready_events event_mask)
 			throw();
 		
-		virtual eventflag *
-		get_eventflag(void) throw(std::bad_alloc);
+		virtual eventflag &
+		get_eventflag(void) /*throw(std::bad_alloc)*/;
 	protected:
-		ioready_dispatcher *io;
-		eventflag *flag;
-		timerqueue_dispatcher timer;
+		ioready_dispatcher * io;
+		eventflag & flag;
+		timerqueue_dispatcher timer_dispatcher;
 		
-		typedef	std::list< boost::function<void(void)> > workitems;
+		class workitem {
+		public:
+			workitem(const boost::function<void(void)> & _function) : function(_function) {}
+			boost::function<void(void)> function;
+			workitem * prev;
+			workitem * next;
+		};
 		
-		workitems workqueue;
+		class workitem_list {
+		public:
+			atomic<workitem *> first;
+			workitem * last;
+			
+			inline workitem_list(void) : first(0), last(0) {}
+			inline ~workitem_list(void)
+			{
+				workitem * item;
+				while( (item = pop()) != 0) delete item;
+			}
+			
+			inline void push_back(workitem * item) throw()
+			{
+				item->prev = last;
+				item->next = 0;
+				if (last) last->next = item;
+				else (first.store(item, memory_order_relaxed));
+				last = item;
+			}
+			
+			inline workitem * pop(void) throw()
+			{
+				workitem * item = first.load(memory_order_relaxed);
+				if (!item) return 0;
+				if (item->next) item->next->prev = 0;
+				else last = 0;
+				first.store(item->next, memory_order_relaxed);
+				return item;
+			}
+			
+			inline bool empty(void) throw()
+			{
+				return first.load(memory_order_relaxed) == 0;
+			}
+			
+			inline void swap(workitem_list & other) throw()
+			{
+				workitem * tmp = first.load(memory_order_relaxed);
+				first.store(other.first.load(memory_order_relaxed), memory_order_relaxed);
+				other.first.store(tmp, memory_order_relaxed);
+				
+				tmp = last;
+				last = other.last;
+				other.last = tmp;
+			}
+		};
+		
+		workitem_list workqueue;
 		mutex workqueue_lock;
 	};
 };

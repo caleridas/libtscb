@@ -36,25 +36,25 @@ namespace tscb {
 	void pipe_eventflag::set(void) throw()
 	{
 		/* fast path (to avoid atomic op) if flag is already set */
-		if (flagged.load(atomics::memory_order_relaxed)!=0) return;
+		if (flagged.load(memory_order_relaxed)!=0) return;
 		
 		/* atomic exchange to ensure only one setter can "see" the
 		0->1 transition; otherwise we could have spurious wakeups */
 		int expected=0;
-		if (!flagged.compare_exchange_strong(expected, 1, atomics::memory_order_release)) return;
+		if (!flagged.compare_exchange_strong(expected, 1, memory_order_release)) return;
 		
 		/* we are now certain that we have switched the flag from 0 to 1;
 		if no one has been waiting before we switched the flag,
 		there is no one to wakeup */
 		
-		if (__builtin_expect(waiting.load(atomics::memory_order_relaxed)==0, true)) return;
+		if (__builtin_expect(waiting.load(memory_order_relaxed)==0, true)) return;
 		
 		/* at least one thread has been marked "waiting"; we have to
 		post a wakeup; the last thread that was waiting will clear
 		the control pipe */
 		
 		expected=1;
-		if (!flagged.compare_exchange_strong(expected, 2, atomics::memory_order_relaxed))
+		if (!flagged.compare_exchange_strong(expected, 2, memory_order_relaxed))
 			return;
 		
 		char c=0;
@@ -64,18 +64,18 @@ namespace tscb {
 	void pipe_eventflag::start_waiting(void) throw()
 	{
 		/* slow path */
-		waiting.fetch_add(1, atomics::memory_order_relaxed);
+		waiting.fetch_add(1, memory_order_relaxed);
 	}
 	
 	void pipe_eventflag::wait(void) throw()
 	{
 		/* fast path to avoid atomic op if flag is already set */
-		if (flagged.load(atomics::memory_order_acquire)!=0) return;
+		if (flagged.load(memory_order_acquire)!=0) return;
 		
 		/* slow path */
 		start_waiting();
 		
-		if (flagged.load(atomics::memory_order_acquire)==0) {
+		if (flagged.load(memory_order_acquire)==0) {
 			/* poll file descriptor */
 		}
 		
@@ -85,21 +85,21 @@ namespace tscb {
 	
 	void pipe_eventflag::stop_waiting(void) throw()
 	{
-		waiting.fetch_sub(1, atomics::memory_order_relaxed);
+		waiting.fetch_sub(1, memory_order_relaxed);
 	}
 	
 	void pipe_eventflag::clear(void) throw()
 	{
 		int oldval;
 		{
-			oldval=flagged.load(atomics::memory_order_relaxed);
+			oldval=flagged.load(memory_order_relaxed);
 			/* fast path (to avoid atomic op) if flag is already cleared */
 			if (oldval==0) return;
 			/* after clearing a flag, the application will test a
 			condition in a data structure; make sure test of the
 			condition and clearing of the flag are not reordered by
 			changing the flag with "acquire" semantics */
-		} while(!flagged.compare_exchange_strong(oldval, 0, atomics::memory_order_acquire));
+		} while(!flagged.compare_exchange_strong(oldval, 0, memory_order_acquire));
 		if (__builtin_expect(oldval==1, true)) return;
 		
 		/* a wakeup has been sent the last time the flag was raised;

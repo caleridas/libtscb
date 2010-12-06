@@ -7,5 +7,5 @@ Name: libtscb
 Description: thread-safe callback library for C++
 Version: @VERSION@
 URL: http://www.chaoticmind.net/~hcb/libtscb
-Libs: -L${libdir} -ltscb @PTHREAD_CFLAGS@
+Libs: -L${libdir} -ltscb @PTHREAD_CFLAGS@ @LIBS@
 Cflags: -I${includedir} @PTHREAD_CFLAGS@

@@ -30,7 +30,7 @@ namespace tscb {
 		conversely, a 0->1 transition can only happen with the
 		mutex held; therefore, the acquire/release implicit in
 		the mutex is sufficient to enforce memory ordering here */
-		if (readers.load(atomics::memory_order_relaxed)!=0) {
+		if (readers.load(memory_order_relaxed)!=0) {
 			writers.unlock();
 			return false;
 		}
@@ -70,7 +70,7 @@ namespace tscb {
 		conversely, a 0->1 transition can only happen with the
 		mutex held; therefore, the acquire/release implicit in
 		the mutex is sufficient to enforce memory ordering here */
-		if (readers.load(atomics::memory_order_relaxed)!=0) {
+		if (readers.load(memory_order_relaxed)!=0) {
 			writers.unlock();
 			return false;
 		}

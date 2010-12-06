@@ -295,12 +295,12 @@
 	<UL>
 		<LI>
 			<CODE>read_lock</CODE>: one successful atomic test-and-increment
-			operation (\ref tscb::atomics::inc_if_not_zero)
+			operation
 		</LI>
 		<LI>
 			<CODE>read_unlock</CODE>: one atomic
 			decrement-and-test operation where the counter does not return to
-			zero (\ref tscb::atomic prefix -- operator)
+			zero
 		</LI>
 	</UL>
 	
@@ -415,7 +415,7 @@ namespace tscb {
 			writers.lock();
 			if (!queued) {
 				queued=true;
-				return readers.fetch_sub(1, atomics::memory_order_acquire)==1;
+				return readers.fetch_sub(1, memory_order_acquire)==1;
 			}
 			return false;
 		}
@@ -442,7 +442,7 @@ namespace tscb {
 		inline void sync_finished(void)
 		{
 			queued=false;
-			readers.fetch_add(1, atomics::memory_order_release);
+			readers.fetch_add(1, memory_order_release);
 			write_unlock_async();
 		}
 		
@@ -456,19 +456,19 @@ namespace tscb {
 			int expected;
 			bool success;
 			do {
-				expected=readers.load(atomics::memory_order_relaxed);
+				expected=readers.load(memory_order_relaxed);
 				if (__builtin_expect(expected==0, 0)) return false;;
-				success=readers.compare_exchange_strong(expected, expected+1, atomics::memory_order_acquire);
+				success=readers.compare_exchange_strong(expected, expected+1, memory_order_acquire);
 			} while(__builtin_expect(!success, 0));
 			return true;
 		}
 		
 		inline bool read_release(void) throw()
 		{
-			return __builtin_expect(readers.fetch_sub(1, atomics::memory_order_release)!=1, 1);
+			return __builtin_expect(readers.fetch_sub(1, memory_order_release)!=1, 1);
 		}
 		
-		atomics::atomic_int readers;
+		atomic_int readers;
 		mutex writers;
 		bool queued;
 	};
@@ -566,7 +566,7 @@ namespace tscb {
 			writers.lock();
 			bool sync=false;
 			
-			if ((!queued) && (!waiting)) sync=readers.fetch_sub(1, atomics::memory_order_acquire)==1;
+			if ((!queued) && (!waiting)) sync=readers.fetch_sub(1, memory_order_acquire)==1;
 			queued=true;
 
 			return sync;
@@ -596,7 +596,7 @@ namespace tscb {
 			writers.lock();
 			while(1) {
 				if ((!queued) && (!waiting)) {
-					if (readers.fetch_sub(1, atomics::memory_order_acquire)==1) return;
+					if (readers.fetch_sub(1, memory_order_acquire)==1) return;
 				}
 				waiting=true;
 				waiting_writers.wait(writers);
@@ -614,7 +614,7 @@ namespace tscb {
 		{
 			queued=false;
 			waiting=false;
-			readers.fetch_sub(1, atomics::memory_order_release);
+			readers.fetch_sub(1, memory_order_release);
 			writers.unlock();
 		}
 		
@@ -630,7 +630,7 @@ namespace tscb {
 		{
 			queued=false;
 			waiting=false;
-			readers.fetch_add(1, atomics::memory_order_release);
+			readers.fetch_add(1, memory_order_release);
 			write_unlock_async();
 		}
 
@@ -644,19 +644,19 @@ namespace tscb {
 			int expected;
 			bool success;
 			do {
-				expected=readers.load(atomics::memory_order_relaxed);
+				expected=readers.load(memory_order_relaxed);
 				if (__builtin_expect(expected==0, 0)) return false;;
-				success=readers.compare_exchange_strong(expected, expected+1, atomics::memory_order_acquire);
+				success=readers.compare_exchange_strong(expected, expected+1, memory_order_acquire);
 			} while(__builtin_expect(!success, 0));
 			return true;
 		}
 		
 		inline bool read_release(void) throw()
 		{
-			return __builtin_expect(readers.fetch_sub(1, atomics::memory_order_release)!=1, 1);
+			return __builtin_expect(readers.fetch_sub(1, memory_order_release)!=1, 1);
 		}
 		
-		atomics::atomic_int readers;
+		atomic_int readers;
 		mutex writers;
 		conditional waiting_writers;
 		bool queued, waiting;

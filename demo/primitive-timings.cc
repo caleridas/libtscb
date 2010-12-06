@@ -10,7 +10,7 @@
 boost::posix_time::ptime start, end;
 
 volatile long var;
-tscb::atomics::atomic_int atomic_var;
+tscb::atomic_int atomic_var;
 tscb::mutex mutex;
 tscb::deferred_rwlock deferred_rwlock;
 
@@ -21,25 +21,25 @@ void increment(int times)
 
 void atomic_increment(int times)
 {
-	while(times--) atomic_var.fetch_add(1, tscb::atomics::memory_order_relaxed);
+	while(times--) atomic_var.fetch_add(1, tscb::memory_order_relaxed);
 }
 
 void atomic_condincr(int times)
 {
-	atomic_var=1;
+	atomic_var.store(1, tscb::memory_order_relaxed);
 	while(times--) {
 		int expected;
 		do {
-			expected=atomic_var.load(tscb::atomics::memory_order_relaxed);
+			expected=atomic_var.load(tscb::memory_order_relaxed);
 			if (expected==0) break;
-		} while(!atomic_var.compare_exchange_strong(expected, expected+1, tscb::atomics::memory_order_relaxed));
+		} while(!atomic_var.compare_exchange_strong(expected, expected+1, tscb::memory_order_relaxed));
 	}
 }
 
 void atomic_decandtest(int times)
 {
-	atomic_var=-1;
-	while(times--) if (atomic_var.fetch_sub(1, tscb::atomics::memory_order_relaxed)==1) break;
+	atomic_var.store(-1, tscb::memory_order_relaxed);
+	while(times--) if (atomic_var.fetch_sub(1, tscb::memory_order_relaxed)==1) break;
 }
 
 void pthread_mutex_lockunlock(int times)

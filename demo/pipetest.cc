@@ -184,9 +184,8 @@ tscb::ioready_dispatcher *prepare_ring(int start, int nelements,
 
 class dispatcher_thread : public tscb::thread {
 public:
-	dispatcher_thread(tscb::ioready_dispatcher *d) : dispatcher(d), cancelled(false)
+	dispatcher_thread(tscb::ioready_dispatcher *d) : dispatcher(d), cancelled(false), flag(d->get_eventflag())
 	{
-		flag=d->get_eventflag();
 	}
 	
 	virtual void *thread_func(void) throw() {
@@ -198,12 +197,12 @@ public:
 	void cancel(void)
 	{
 		cancelled=true;
-		flag->set();
+		flag.set();
 	}
 	
 	tscb::ioready_dispatcher *dispatcher;
 	volatile bool cancelled;
-	tscb::eventflag *flag;
+	tscb::eventflag & flag;
 };
 
 void run_independent(int nthreads, int nelements)

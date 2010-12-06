@@ -15,6 +15,7 @@
 
 #include <tscb/ioready>
 #include <tscb/deferred>
+#include <tscb/file-descriptor-table>
 
 namespace tscb {
 	
@@ -40,13 +41,12 @@ namespace tscb {
 	*/
 	class ioready_dispatcher_select : public ioready_dispatcher {
 	public:
-		ioready_dispatcher_select(void)
-			throw(std::bad_alloc, std::runtime_error);
+		ioready_dispatcher_select(void) /*throw(std::bad_alloc, std::runtime_error)*/;
 		virtual ~ioready_dispatcher_select(void) throw();
 		
-		virtual int dispatch(const boost::posix_time::time_duration *timeout, int max) throw();
+		virtual int dispatch(const boost::posix_time::time_duration * timeout, int max) throw();
 		
-		virtual eventflag *get_eventflag(void) throw();
+		virtual eventflag & get_eventflag(void) throw();
 		
 		virtual void register_ioready_callback(ioready_callback *l)
 			throw(std::bad_alloc);
@@ -55,13 +55,14 @@ namespace tscb {
 		virtual void modify_ioready_callback(ioready_callback *e, ioready_events event_mask)
 			throw();
 	protected:
+		pthread_mutex_t fdset_mtx;
 		fd_set readfds, writefds, exceptfds;
 		int maxfd;
 		
 		void synchronize(void) throw();
-		void update_fdsets(int fd) throw();
+		void update_fdsets(int fd, ioready_events mask) throw();
 		
-		ioready_callback_table callback_tab;
+		file_descriptor_table fdtab;
 		
 		deferrable_rwlock guard;
 		

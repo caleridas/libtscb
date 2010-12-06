@@ -1,0 +1,140 @@
+/* -*- C++ -*-
+ * (c) 2010 Helge Bahmann <hcb@chaoticmind.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License version 2.1.
+ * Refer to the file_event "COPYING" for details.
+ */
+
+#ifndef __TSCB_FILE_DESCRIPTOR_TABLE_H
+#define __TSCB_FILE_DESCRIPTOR_TABLE_H
+
+#include <tscb/ioready>
+
+namespace tscb {
+	
+	/** \cond NEVER -- internal class, ignored by doxygen */
+	
+	/**
+		\brief Chain of callbacks associated with a file descriptor
+	*/
+	class file_descriptor_chain {
+	public:
+		atomic<ioready_callback *> active;
+		ioready_callback * first, * last;
+		inline const file_descriptor_chain & operator=(const file_descriptor_chain & other)
+		{
+			active.store(other.active, memory_order_relaxed);
+			first = other.first;
+			last = other.last;
+			return *this;
+		}
+	};
+	
+	/**
+		\brief Table mapping file descriptors to callback chains
+	*/
+	class file_descriptor_table {
+	public:
+		inline file_descriptor_table(size_t initial = 32)  /*throw(std::bad_alloc)*/
+			: table(new volatile_table(initial)), inactive(0)
+		{
+		}
+		
+		inline ~file_descriptor_table(void) throw()
+		{
+			volatile_table * tab = table.load(memory_order_consume);
+			while(tab) {
+				volatile_table * tmp = tab->old;
+				delete tab;
+				tab = tmp;
+			}
+		}
+		
+		/* must be called under write lock */
+		void insert(ioready_callback * cb, ioready_events & old_mask, ioready_events & new_mask) /*throw(std::bad_alloc)*/;
+		
+		/* must be called under write lock */
+		void remove(ioready_callback * cb, ioready_events & old_mask, ioready_events & new_mask) throw();
+		
+		/* must be called under write lock */
+		inline ioready_events compute_mask(int fd)
+		{
+			volatile_table * tab = table.load(memory_order_relaxed);
+			file_descriptor_chain & entry = tab->entries[fd];
+			
+			ioready_events mask = ioready_none;
+			ioready_callback * tmp = entry.active.load(memory_order_relaxed);
+			while(tmp) {
+				mask |= tmp->event_mask;
+				tmp = tmp->active_next.load(memory_order_relaxed);
+			}
+			
+			return mask;
+		}
+		
+		/* must be called under read lock */
+		void cancel_all(void) throw();
+		
+		/* must be called under read lock */
+		inline void notify(int fd, ioready_events events)
+		{
+			volatile_table * tab = table.load(memory_order_consume);
+			if ((size_t)fd >= tab->capacity) return;
+			ioready_callback * cb = tab->entries[fd].active.load(memory_order_consume);
+			
+			while(cb) {
+				if (events & cb->event_mask) cb->target(events & cb->event_mask);
+				cb = cb->active_next.load(memory_order_consume);
+			}
+		}
+		
+		/* must be called after read_unlock/write_lock indicates that synchronization
+		is required */
+		ioready_callback * synchronize(void) throw();
+		
+	protected:
+		class volatile_table {
+		public:
+			inline volatile_table(size_t initial)
+				: capacity(initial), entries(new file_descriptor_chain[capacity]), old(0)
+			{
+				for(size_t n=0; n<capacity; n++) {
+					entries[n].active.store(0, memory_order_relaxed);
+					entries[n].first = entries[n].last = 0;
+				}
+			}
+			
+			inline ~volatile_table(void) throw()
+			{
+				delete []entries;
+			}
+			
+			size_t capacity;
+			file_descriptor_chain * entries;
+			
+			volatile_table * old;
+		};
+		
+		/* must be called under write lock */
+		inline volatile_table * get_extend_table(int maxfd) /* throw(std::bad_alloc) */
+		{
+			volatile_table * tab = table.load(memory_order_relaxed);
+			
+			if (__builtin_expect(tab->capacity <= (size_t)maxfd, 0))
+				return get_extend_table_slow(tab, maxfd);
+			
+			return tab;
+		}
+		
+		volatile_table * get_extend_table_slow(volatile_table * tab, int maxfd) /*throw(std::bad_alloc)*/;
+		
+		atomic<volatile_table *> table;
+		ioready_callback *inactive;
+	};
+	
+	/** \endcond NEVER internal class */
+	
+}
+
+#endif

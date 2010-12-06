@@ -392,7 +392,7 @@ namespace tscb {
 	class ioready_callback : public abstract_callback {
 	public:
 		/** \internal \brief Instantiate ioready callback link */
-		inline ioready_callback(const boost::function<void (int)> &_target,
+		inline ioready_callback(const boost::function<void (tscb::ioready_events)> & _target,
 			int _fd, tscb::ioready_events _event_mask) throw()
 			: target(_target), fd(_fd), event_mask(_event_mask)
 		{}
@@ -424,33 +424,33 @@ namespace tscb {
 		virtual bool connected(void) const throw();
 		
 		/** \internal \brief Function object to call */
-		boost::function<void(int)> target;
+		boost::function<void(tscb::ioready_events)> target;
 		/** \internal \brief File descriptor to watch */
 		int fd;
 		/** \internal \brief Events to watch file descriptor for */
 		tscb::ioready_events event_mask;
 		
 		/** \internal \brief Next active element */
-		ioready_callback *active_next;
+		atomic<ioready_callback *> active_next;
 		/** \internal \brief Previous element (active or to be removed) */
-		ioready_callback *prev;
+		ioready_callback * prev;
 		/** \internal \brief Next element (active or to be removed) */
-		ioready_callback *next;
+		ioready_callback * next;
 		/** \internal \brief Next element scheduled for deferred cancellation */
-		ioready_callback *inactive_next;
+		ioready_callback * inactive_next;
 		/** \internal \brief ioready_service this element is linked to */
-		ioready_service *service;
+		atomic<ioready_service *> service;
 		/** \internal \brief Protect against concurrent cancellation */
 		mutex cancellation_mutex;
 	};
 	
 	/** \cond NEVER -- ignored by doxygen */
-	static inline void intrusive_ptr_add_ref(ioready_callback *t) throw()
+	static inline void intrusive_ptr_add_ref(ioready_callback * t) throw()
 	{
 		t->pin();
 	}
 	
-	static inline void intrusive_ptr_release(ioready_callback *t) throw()
+	static inline void intrusive_ptr_release(ioready_callback * t) throw()
 	{
 		t->release();
 	}
@@ -461,30 +461,30 @@ namespace tscb {
 	*/
 	class ioready_connection {
 	public:
-		inline ioready_connection(ioready_callback *_callback=0, bool add_ref=true) throw() : callback(_callback)
+		inline ioready_connection(ioready_callback * _callback = 0, bool add_ref = true) throw() : callback(_callback)
 		{if (callback && add_ref) callback->pin();}
 		
 		inline ~ioready_connection(void) throw()
 		{if (callback) callback->release();}
 		
 		template<typename ConnectionType>
-		inline ioready_connection(const ConnectionType &conn) throw()
+		inline ioready_connection(const ConnectionType & conn) throw()
 		{callback=conn.callback; if (callback) callback->pin();}
 		
-		inline ioready_connection(const ioready_connection &conn) throw()
+		inline ioready_connection(const ioready_connection & conn) throw()
 		{callback=conn.callback; if (callback) callback->pin();}
 		
 		template<typename ConnectionType>
-		inline ioready_connection &operator=(const ConnectionType &conn) throw()
+		inline ioready_connection & operator=(const ConnectionType & conn) throw()
 		{if (callback) callback->release(); callback=conn.callback; if (callback) callback->pin(); return *this;}
 		
-		inline ioready_connection &operator=(const ioready_connection &conn) throw()
+		inline ioready_connection & operator=(const ioready_connection & conn) throw()
 		{if (callback) callback->release(); callback=conn.callback; if (callback) callback->pin(); return *this;}
 		
 		inline void disconnect(void) throw()
-		{if (callback) {callback->disconnect(); callback->release(); callback=0;}}
+		{if (callback) {callback->disconnect(); callback->release(); callback = 0;}}
 		
-		inline void modify(ioready_events new_event_mask) throw() {callback->modify(new_event_mask);}
+		inline void modify(ioready_events new_event_mask) {callback->modify(new_event_mask);}
 		
 		inline bool connected(void) const throw()
 		{return callback && callback->connected();}
@@ -492,11 +492,11 @@ namespace tscb {
 		#ifdef __GXX_EXPERIMENTAL_CXX0X__
 		template<typename ConnectionType>
 		inline ioready_connection(ConnectionType && conn) throw()
-		{callback=conn.callback; conn.callback=0;}
+		{callback=conn.callback; conn.callback = 0;}
 		
 		template<typename ConnectionType>
 		inline ioready_connection &operator=(ConnectionType && conn) throw()
-		{callback=conn.callback; conn.callback=0; return *this;}
+		{callback=conn.callback; conn.callback = 0; return *this;}
 		#endif
 		
 	private:
@@ -561,9 +561,9 @@ namespace tscb {
 			or cancel the callback.
 		*/
 		ioready_connection
-		watch(const boost::function<void(int)> &function, int fd, tscb::ioready_events event_mask) throw(std::bad_alloc)
+		watch(const boost::function<void(tscb::ioready_events)> & function, int fd, tscb::ioready_events event_mask) /*throw(std::bad_alloc)*/
 		{
-			ioready_callback *link=new ioready_callback(function, fd, event_mask);
+			ioready_callback *link = new ioready_callback(function, fd, event_mask);
 			register_ioready_callback(link);
 			return ioready_connection(link);
 		}
@@ -572,66 +572,12 @@ namespace tscb {
 		callback mechanism */
 		friend class ioready_callback;
 		/** \internal \brief Register callback link */
-		virtual void register_ioready_callback(ioready_callback *l)
-			throw(std::bad_alloc)=0;
+		virtual void register_ioready_callback(ioready_callback * cb) = 0;
 		/** \internal \brief Unregister callback link */
-		virtual void unregister_ioready_callback(ioready_callback *e)
-			throw()=0;
+		virtual void unregister_ioready_callback(ioready_callback * cb) = 0;
 		/** \internal \brief Update event set */
-		virtual void modify_ioready_callback(ioready_callback *e, tscb::ioready_events event_mask)
-			throw()=0;
+		virtual void modify_ioready_callback(ioready_callback * cb, tscb::ioready_events event_mask) = 0;
 	};
-	
-	/** \cond NEVER -- internal class, ignored by doxygen */
-	class ioready_callback_table {
-	public:
-		ioready_callback_table(size_t initial=32) throw(std::bad_alloc);
-		~ioready_callback_table(void) throw();
-		
-		ioready_callback *lookup_first_callback(int fd);
-		void insert(ioready_callback *link) throw(std::bad_alloc);
-		
-		inline bool chain_empty(size_t fd) const throw()
-		{
-			if (fd>=table->size) return true;
-			else return table->chains[fd].active==0;
-		}
-		
-		void *get_closure(int fd) throw();
-		void set_closure(int fd, void *closure) throw(std::bad_alloc);
-		void remove(ioready_callback *link) throw();
-		ioready_callback *synchronize(void) throw();
-		
-		void cancel_all(void) throw();
-		
-	protected:
-		
-		class ioready_callback_chain {
-		public:
-			ioready_callback *active;
-			ioready_callback *first, *last;
-			void *closure;
-		};
-		
-		class chain_table {
-		public:
-			chain_table(size_t initial) throw(std::bad_alloc);
-			~chain_table(void) throw();
-			size_t size, max;
-			ioready_callback_chain *chains;
-			
-			chain_table *old;
-		};
-		
-		ioready_callback *inactive;
-		
-		chain_table *table;
-		void grow(size_t new_size) throw(std::bad_alloc);
-		void ensure_size(size_t min_size) throw(std::bad_alloc);
-	};
-	
-	/** \endcond NEVER internal class */
-	/* implementation */
 	
 	/**
 		\brief Dispatcher for IO readiness events
@@ -691,8 +637,8 @@ namespace tscb {
 			may not be terribly useful, as some dispatchers will attempt
 			to dispatch the same event in multiple threads.
 		*/
-		virtual int dispatch(const boost::posix_time::time_duration *timeout,
-			int max=2147483647L)
+		virtual int dispatch(const boost::posix_time::time_duration * timeout,
+			int max = 2147483647L)
 			throw()=0;
 		
 		/**
@@ -716,8 +662,8 @@ namespace tscb {
 			to \ref get_eventflag will always return the same event
 			flag (instead of creating a new one)
 		*/
-		virtual eventflag *get_eventflag(void)
-			throw(std::bad_alloc, std::runtime_error)=0;
+		virtual eventflag & get_eventflag(void)
+			/* throw(std::bad_alloc, std::runtime_error)*/=0;
 		
 		/**
 			\brief Instantiate ioready_dispatcher
@@ -729,7 +675,7 @@ namespace tscb {
 		*/
 		static
 		ioready_dispatcher *
-		create(void) throw(std::bad_alloc, std::runtime_error);
+		create(void) /* throw(std::bad_alloc, std::runtime_error) */;
 		
 	};
 	
@@ -749,7 +695,7 @@ namespace tscb {
 		</UL>
 	*/
 	ioready_dispatcher *
-	create_ioready_dispatcher(void) throw(std::bad_alloc, std::runtime_error);
+	create_ioready_dispatcher(void) /*throw(std::bad_alloc, std::runtime_error)*/;
 	
 }
 

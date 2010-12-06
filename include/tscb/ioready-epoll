@@ -15,6 +15,7 @@
 
 #include <tscb/ioready>
 #include <tscb/deferred>
+#include <tscb/file-descriptor-table>
 
 namespace tscb {
 	
@@ -39,16 +40,15 @@ namespace tscb {
 	*/
 	class ioready_dispatcher_epoll : public ioready_dispatcher {
 	public:
-		ioready_dispatcher_epoll(void) throw(std::runtime_error);
+		ioready_dispatcher_epoll(void) /*throw(std::runtime_error)*/;
 		virtual ~ioready_dispatcher_epoll(void) throw();
 		
 		virtual int dispatch(const boost::posix_time::time_duration *timeout, int max) throw();
 		
-		virtual eventflag *get_eventflag(void)
-			throw(std::runtime_error, std::bad_alloc);
+		virtual eventflag & get_eventflag(void) /*throw(std::runtime_error, std::bad_alloc)*/;
 		
 		virtual void register_ioready_callback(ioready_callback *l)
-			throw(std::bad_alloc);
+			/*throw(std::bad_alloc)*/;
 		virtual void unregister_ioready_callback(ioready_callback *e)
 			throw();
 		virtual void modify_ioready_callback(ioready_callback *e, ioready_events event_mask)
@@ -65,9 +65,9 @@ namespace tscb {
 		inline ioready_events translate_os_to_tscb(int ev) throw();
 		inline int translate_tscb_to_os(ioready_events ev) throw();
 		
-		ioready_callback_table callback_tab;
+		file_descriptor_table fdtab;
 		
-		pipe_eventflag *wakeup_flag;
+		atomic<pipe_eventflag *> wakeup_flag;
 		mutex singleton_mutex;
 		
 		deferrable_rwlock guard;

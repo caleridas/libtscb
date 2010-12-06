@@ -23,18 +23,18 @@ namespace tscb {
 			return;
 		}
 		
-		boost::posix_time::ptime now=boost::posix_time::microsec_clock::universal_time();
-		boost::posix_time::ptime t=now;
+		boost::posix_time::ptime now = monotonic_time();
+		boost::posix_time::ptime t = now;
 		bool pending;
 		do {
-			t=now;
-			pending=tq->run_queue(t);
+			t = now;
+			pending = tq->run_queue(t);
 			if (!pending) break;
-			now=boost::posix_time::microsec_clock::universal_time();
-		} while(now>=t);
+			now = monotonic_time();
+		} while(now >= t);
 		
 		if (pending) {
-			boost::posix_time::time_duration timeout=t-now;
+			boost::posix_time::time_duration timeout = t-now;
 			io->dispatch(&timeout);
 		} else io->dispatch(0);
 	}
@@ -51,7 +51,7 @@ namespace tscb {
 		throw(std::bad_alloc, std::runtime_error)
 		: io(create_ioready_dispatcher()),
 		flag(io->get_eventflag()),
-		timer(flag)
+		timer_dispatcher(flag)
 	{
 	}
 	
@@ -61,60 +61,69 @@ namespace tscb {
 	}
 	
 	void
-	posix_reactor::post(const boost::function<void(void)> &function) throw(std::bad_alloc)
+	posix_reactor::post(const boost::function<void(void)> & function) throw(std::bad_alloc)
 	{
+		workitem * item = new workitem(function);
 		workqueue_lock.lock();
-		workqueue.push_back(function);
+		workqueue.push_back(item);
 		workqueue_lock.unlock();
-		flag->set();
+		flag.set();
 	}
 		
-	void posix_reactor::register_timer(timer_callback *ptr) throw()
+	void posix_reactor::register_timer(timer_callback * cb) throw()
 	{
-		timer.register_timer(ptr);
+		timer_dispatcher.register_timer(cb);
 	}
 	
-	void posix_reactor::unregister_timer(timer_callback *t) throw()
+	void posix_reactor::unregister_timer(timer_callback * cb) throw()
 	{
-		timer.unregister_timer(t);
-	}
-	
-	void
-	posix_reactor::register_ioready_callback(ioready_callback *l) throw(std::bad_alloc)
-	{
-		io->register_ioready_callback(l);
+		timer_dispatcher.unregister_timer(cb);
 	}
 	
 	void
-	posix_reactor::unregister_ioready_callback(ioready_callback *e) throw()
+	posix_reactor::register_ioready_callback(ioready_callback * cb) throw(std::bad_alloc)
 	{
-		io->unregister_ioready_callback(e);
+		io->register_ioready_callback(cb);
 	}
 	
 	void
-	posix_reactor::modify_ioready_callback(ioready_callback *e, ioready_events event_mask) throw()
+	posix_reactor::unregister_ioready_callback(ioready_callback * cb) throw()
 	{
-		io->modify_ioready_callback(e, event_mask);
+		io->unregister_ioready_callback(cb);
 	}
 	
-	eventflag *
-	posix_reactor::get_eventflag(void) throw(std::bad_alloc)
+	void
+	posix_reactor::modify_ioready_callback(ioready_callback * cb, ioready_events event_mask) throw()
+	{
+		io->modify_ioready_callback(cb, event_mask);
+	}
+	
+	eventflag &
+	posix_reactor::get_eventflag(void) /*throw(std::bad_alloc)*/
 	{
 		return flag;
 	}
+	
 	void
 	posix_reactor::dispatch(void)
 	{
 		if (__builtin_expect(!workqueue.empty(), 0)) {
-			workitems items;
+			workitem * item;
 			workqueue_lock.lock();
-			items.swap(workqueue);
-			workqueue_lock.unlock();
-			
-			for(workitems::const_iterator i=items.begin(); i!=items.end(); ++i)
-				(*i)();
+			while( (item = workqueue.pop()) != 0) {
+				workqueue_lock.unlock();
+				try {
+					item->function();
+				}
+				catch (...) {
+					delete item;
+					throw;
+				}
+				delete item;
+				workqueue_lock.lock();
+			}
 		}
-		tscb::dispatch(&timer, io);
+		tscb::dispatch(&timer_dispatcher, io);
 	}
 	
 };

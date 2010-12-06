@@ -66,7 +66,7 @@ endif
 CXXFLAGS+=-Iinclude
 
 LIBTSCB_SOURCES=src/signal.cc src/thread.cc src/eventflag.cc src/timer.cc\
-	src/ioready.cc src/deferred.cc src/dispatch.cc
+	src/ioready.cc src/file-descriptor-table.cc src/deferred.cc src/dispatch.cc
 
 # include dispatcher implementations depending on configuration
 
@@ -177,7 +177,7 @@ $(EXECUTABLES):
 %.so: BASENAME=$(patsubst %.so,%,$@)
 %.so:
 	rm -rf $@ $@.$($(BASENAME)_VERSION) $@.$($(BASENAME)_SOVERSION)
-	$(DYNAMIC_MODULE_LINK) -o $@.$($(BASENAME)_VERSION) $^ -Wl,-soname -Wl,$@.$($(BASENAME)_SOVERSION)
+	$(DYNAMIC_MODULE_LINK) -o $@.$($(BASENAME)_VERSION) $^ -Wl,-soname -Wl,$@.$($(BASENAME)_SOVERSION) $(LIBS)
 	strip $@.$($(BASENAME)_VERSION)
 	ln -sf $@.$($(BASENAME)_VERSION) $@.$($(BASENAME)_SOVERSION)
 	ln -sf $@.$($(BASENAME)_VERSION) $@

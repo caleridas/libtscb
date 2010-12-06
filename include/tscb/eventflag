@@ -97,9 +97,9 @@ namespace tscb {
 			- 1: flagged, but no wakeup via control pipe 
 			- 2: flagged, wakeup sent via control pipe
 		*/
-		atomics::atomic_int flagged;
+		atomic_int flagged;
 		/** \internal \brief Number of threads waiting */
-		atomics::atomic_int waiting;
+		atomic_int waiting;
 	};
 	
 	/** \cond NEVER -- ignored by doxygen */

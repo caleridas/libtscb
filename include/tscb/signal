@@ -239,15 +239,15 @@ namespace tscb {
 		virtual bool connected(void) const throw()=0;
 		
 		/** \internal \brief Increase reference count */
-		inline void pin(void) throw() {refcount.fetch_add(1, atomics::memory_order_relaxed);}
+		inline void pin(void) throw() {refcount.fetch_add(1, memory_order_relaxed);}
 		/** \internal \brief Decrease reference count */
-		inline void release(void) throw() {if (refcount.fetch_sub(1, atomics::memory_order_relaxed)==1) delete this;}
+		inline void release(void) throw() {if (refcount.fetch_sub(1, memory_order_relaxed)==1) delete this;}
 		
 	private:
 #ifdef _LIBTSCB_CALLBACK_UNITTESTS
 	public:
 #endif
-		atomics::atomic_int refcount;
+		atomic_int refcount;
 	};
 	
 	static inline void intrusive_ptr_add_ref(abstract_callback *t) throw()
@@ -281,16 +281,12 @@ namespace tscb {
 		inline connection(const connection &conn) throw()
 		{callback=conn.callback; if (callback) callback->pin();}
 		
-		template<typename CallbackType>
-		inline connection &operator=(CallbackType * cb) throw()
-		{if (callback) callback->release(); callback=cb; if (callback) callback->pin(); return *this;}
-		
 		template<typename ConnectionType>
 		inline connection &operator=(const ConnectionType &conn) throw()
-		{if (callback) callback->release(); callback=conn.callback; if (callback) callback->pin(); return *this;}
+		{callback=conn.callback; if (callback) callback->pin(); return *this;}
 		
 		inline connection &operator=(const connection &conn) throw()
-		{if (callback) callback->release(); callback=conn.callback; if (callback) callback->pin(); return *this;}
+		{callback=conn.callback; if (callback) callback->pin(); return *this;}
 		
 		inline void disconnect(void) throw()
 		{if (callback) {callback->disconnect(); callback->release(); callback=0;}}
@@ -356,7 +352,7 @@ namespace tscb {
 		boost::function<Signature> function;
 		
 		/** \internal \brief Next element in list of active callbacks */
-		signal_callback *active_next;
+		atomic<signal_callback *> active_next;
 		/** \internal \brief Previous element in list */
 		signal_callback *prev;
 		/** \internal \brief Next element in list */
@@ -433,10 +429,10 @@ namespace tscb {
 		inline void operator()(void)
 		{
 			read_lock();
-			callback_type *l=active;
+			callback_type *l=active.load(memory_order_consume);
 			while(l) {
 				l->target();
-				l=l->active_next;
+				l=l->active_next.load(memory_order_consume);
 			}
 			read_unlock();
 		}
@@ -450,10 +446,10 @@ namespace tscb {
 		inline void operator()(Arg1 arg1)
 		{
 			read_lock();
-			callback_type *l=active;
+			callback_type *l=active.load(memory_order_consume);
 			while(l) {
 				l->function(arg1);
-				l=l->active_next;
+				l=l->active_next.load(memory_order_consume);
 			}
 			read_unlock();
 		}
@@ -467,10 +463,10 @@ namespace tscb {
 		inline void operator()(Arg1 arg1, Arg2 arg2)
 		{
 			read_lock();
-			callback_type *l=active;
+			callback_type *l=active.load(memory_order_consume);
 			while(l) {
 				l->function(arg1, arg2);
-				l=l->active_next;
+				l=l->active_next.load(memory_order_consume);
 			}
 			read_unlock();
 		}
@@ -484,10 +480,10 @@ namespace tscb {
 		inline void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3)
 		{
 			read_lock();
-			callback_type *l=active;
+			callback_type *l=active.load(memory_order_consume);
 			while(l) {
 				l->function(arg1, arg2, arg3);
-				l=l->active_next;
+				l=l->active_next.load(memory_order_consume);
 			}
 			read_unlock();
 		}
@@ -503,7 +499,11 @@ namespace tscb {
 			removal */
 			
 			while(guard.read_lock()) synchronize();
-			while (active) active->disconnect();
+			for(;;) {
+				callback_type *tmp=active.load(memory_order_relaxed);
+				if (!tmp) break;
+				tmp->disconnect();
+			}
 			if (guard.read_unlock()) {
 				/* the above cancel operations will cause synchronization
 				to be performed at the next possible point in time; if
@@ -535,7 +535,7 @@ namespace tscb {
 			region. We therefore need an explicit fence here in
 			order to avoid making an uninitialized element visible
 			during traversal of the chain */
-			atomics::fence(atomics::memory_order_release);
+			atomic_thread_fence(memory_order_release);
 			
 			l->registration_mutex.lock();
 			bool sync=guard.write_lock_async();
@@ -543,7 +543,7 @@ namespace tscb {
 			l->next=0;
 			l->prev=last;
 			
-			l->active_next=0;
+			l->active_next.store(0, memory_order_relaxed);
 			
 			/* add element to active list; find all elements that have been removed
 			from the full list and thus terminate the active list; point them to
@@ -552,11 +552,11 @@ namespace tscb {
 			callback_type *tmp=last;
 			while(true) {
 				if (!tmp) {
-					if (!active) active=l;
+					if (!active.load(memory_order_relaxed)) active.store(l, memory_order_release);
 					break;
 				}
-				if (tmp->active_next) break;
-				tmp->active_next=l;
+				if (tmp->active_next.load(memory_order_relaxed)) break;
+				tmp->active_next.store(l, memory_order_release);
 				tmp=tmp->prev;
 			}
 			
@@ -583,13 +583,14 @@ namespace tscb {
 				so this element is skipped from within the active chain */
 				
 				callback_type *tmp=l->prev;
+				callback_type *next=l->active_next.load(memory_order_relaxed);
 				while(true) {
 					if (!tmp) {
-						if (active==l) active=l->active_next;
+						if (active.load(memory_order_relaxed)==l) active.store(next, memory_order_release);
 						break;
 					}
-					if (tmp->active_next!=l) break;
-					tmp->active_next=l->active_next;
+					if (tmp->active_next.load(memory_order_relaxed)!=l) break;
+					tmp->active_next.store(next, memory_order_release);
 					tmp=tmp->prev;
 				}
 				
@@ -653,7 +654,7 @@ namespace tscb {
 			if (guard.read_unlock()) synchronize();
 		}
 		/** \internal \brief singly-linked list of active elements */
-		callback_type *active;
+		atomic<callback_type *> active;
 		
 		/** \internal \brief thread synchronization */
 		deferrable_rwlock guard;
