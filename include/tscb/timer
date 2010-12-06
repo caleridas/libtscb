@@ -6,8 +6,8 @@
  * Refer to the file_event "COPYING" for details.
  */
 
-#ifndef __TSCB_TIMER_H
-#define __TSCB_TIMER_H
+#ifndef TSCB_TIMER_H
+#define TSCB_TIMER_H
 
 /**
 	\page timer_descr Timer callbacks

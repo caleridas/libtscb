@@ -6,8 +6,8 @@
  * Refer to the file "COPYING" for details.
  */
 
-#ifndef __TSCB_COMPILER_H
-#define __TSCB_COMPILER_H
+#ifndef TSCB_COMPILER_H
+#define TSCB_COMPILER_H
 
 #if defined(__GNUC__)
  #if (__GNUC__<3)

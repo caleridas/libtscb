@@ -6,8 +6,8 @@
  * Refer to the file "COPYING" for details.
  */
 
-#ifndef __TSCB_SIGNAL_H
-#define __TSCB_SIGNAL_H
+#ifndef TSCB_SIGNAL_H
+#define TSCB_SIGNAL_H
 
 /**
 	\page signal_descr Signals and slots

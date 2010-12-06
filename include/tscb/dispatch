@@ -6,12 +6,11 @@
  * Refer to the file_event "COPYING" for details.
  */
 
-#ifndef __TSCB_DISPATCH_H
-#define __TSCB_DISPATCH_H
+#ifndef TSCB_DISPATCH_H
+#define TSCB_DISPATCH_H
 
 #include <list>
-#include <tscb/timer>
-#include <tscb/ioready>
+#include <tscb/reactor>
 
 /**
 	\page dispatcher_descr Compound event dispatching
@@ -131,32 +130,6 @@ namespace tscb {
 		This class provides the interface for submitting
 		functions calls to be performed at some later point in time.
 	*/
-	
-	class workqueue_service {
-	public:
-		virtual ~workqueue_service(void) throw();
-		
-		/**
-			\brief Queue a single function call
-			
-			\param function Function to be executed
-			
-			Queues the given function call for later execution.
-		*/
-		virtual
-		void post(const boost::function<void(void)> &function) throw(std::bad_alloc)=0;
-	};
-	
-	/**
-		\brief Posix reactor service
-		
-		Combines the interfaces \ref tscb::workqueue_service "workqueue_service",
-		\ref tscb::timer_service "timer_service" and \ref tscb::ioready_service "ioready_service"
-	*/
-	class posix_reactor_service : public workqueue_service, public timer_service, public ioready_service {
-	public:
-		virtual ~posix_reactor_service(void) throw();
-	};
 	
 	/**
 		\brief Posix reactor service provider

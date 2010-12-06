@@ -21,7 +21,7 @@ namespace tscb {
 		if (ev & EPOLLIN) e |= ioready_input;
 		if (ev & EPOLLOUT) e |= ioready_output;
 		/* deliver hangup event to input and output handlers as well */
-		if (ev & EPOLLHUP) e |= ioready_input|ioready_output|ioready_hangup;
+		if (ev & EPOLLHUP) e |= ioready_input|ioready_output|ioready_hangup|ioready_error;
 		if (ev & EPOLLERR) e |= ioready_input|ioready_output|ioready_error;
 		return e;
 	}
@@ -100,7 +100,8 @@ namespace tscb {
 		pipe_eventflag *evflag=wakeup_flag;
 		
 		int poll_timeout;
-		if (timeout) poll_timeout = timeout->total_milliseconds();
+		/* need to round up timeout; alas this is the only good way to do it in boost */
+		if (timeout) poll_timeout = (timeout->total_microseconds() + 999) / 1000;
 		else poll_timeout = -1;
 		
 		if (max > 16) max = 16;

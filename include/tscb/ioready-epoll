@@ -6,8 +6,8 @@
  * Refer to the file_event "COPYING" for details.
  */
 
-#ifndef __TSCB_IOREADY_EPOLL_H
-#define __TSCB_IOREADY_EPOLL_H
+#ifndef TSCB_IOREADY_EPOLL_H
+#define TSCB_IOREADY_EPOLL_H
 
 #include <vector>
 

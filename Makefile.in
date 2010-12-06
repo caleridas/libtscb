@@ -66,7 +66,8 @@ endif
 CXXFLAGS+=-Iinclude
 
 LIBTSCB_SOURCES=src/signal.cc src/thread.cc src/eventflag.cc src/timer.cc\
-	src/ioready.cc src/file-descriptor-table.cc src/deferred.cc src/dispatch.cc
+	src/ioready.cc src/file-descriptor-table.cc src/deferred.cc src/dispatch.cc\
+	src/workqueue.cc src/reactor.cc
 
 # include dispatcher implementations depending on configuration
 

@@ -6,8 +6,8 @@
  * Refer to the file "COPYING" for details.
  */
 
-#ifndef __TSCB_DEFERRED_H
-#define __TSCB_DEFERRED_H
+#ifndef TSCB_DEFERRED_H
+#define TSCB_DEFERRED_H
 
 #include <tscb/compiler>
 #include <tscb/atomic>

@@ -6,8 +6,8 @@
  * Refer to the file_event "COPYING" for details.
  */
 
-#ifndef __TSCB_IOREADY_H
-#define __TSCB_IOREADY_H
+#ifndef TSCB_IOREADY_H
+#define TSCB_IOREADY_H
 
 /**
 	\page ioready_descr I/O readiness
@@ -394,7 +394,7 @@ namespace tscb {
 		/** \internal \brief Instantiate ioready callback link */
 		inline ioready_callback(const boost::function<void (tscb::ioready_events)> & _target,
 			int _fd, tscb::ioready_events _event_mask) throw()
-			: target(_target), fd(_fd), event_mask(_event_mask)
+			: target(_target), fd(_fd), event_mask(_event_mask | ioready_error | ioready_hangup)
 		{}
 		virtual ~ioready_callback(void) throw();
 		

@@ -39,14 +39,6 @@ namespace tscb {
 		} else io->dispatch(0);
 	}
 	
-	workqueue_service::~workqueue_service(void) throw()
-	{
-	}
-	
-	posix_reactor_service::~posix_reactor_service(void) throw()
-	{
-	}
-	
 	posix_reactor::posix_reactor(void)
 		throw(std::bad_alloc, std::runtime_error)
 		: io(create_ioready_dispatcher()),
@@ -122,6 +114,7 @@ namespace tscb {
 				delete item;
 				workqueue_lock.lock();
 			}
+			workqueue_lock.unlock();
 		}
 		tscb::dispatch(&timer_dispatcher, io);
 	}

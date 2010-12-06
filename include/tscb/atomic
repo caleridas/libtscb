@@ -6,8 +6,8 @@
  * Refer to the file "COPYING" for details.
  */
 
-#ifndef __TSCB_ATOMIC_H
-#define __TSCB_ATOMIC_H
+#ifndef TSCB_ATOMIC_H
+#define TSCB_ATOMIC_H
 
 #include <boost/atomic.hpp>
 

@@ -6,8 +6,8 @@
  * Refer to the file "COPYING" for details.
  */
 
-#ifndef __TSCB_FIBHEAP_H
-#define __TSCB_FIBHEAP_H
+#ifndef TSCB_FIBHEAP_H
+#define TSCB_FIBHEAP_H
 
 /**
 	\page fibheap_descr Fibonacci Heap

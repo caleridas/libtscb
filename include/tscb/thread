@@ -6,8 +6,8 @@
  * Refer to the file "COPYING" for details.
  */
 
-#ifndef __TSCB_THREAD_H
-#define __TSCB_THREAD_H
+#ifndef TSCB_THREAD_H
+#define TSCB_THREAD_H
 
 #define POSIX_THREADS	/* FIXME */
 

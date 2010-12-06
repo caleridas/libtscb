@@ -98,7 +98,7 @@ namespace tscb {
 		int count, handled=0;
 		struct timeval tv, *select_timeout;
 		if (timeout) {
-			tv.tv_sec = timeout->total_seconds();
+			tv.tv_sec = timeout->total_microseconds()/1000000;
 			tv.tv_usec = timeout->total_microseconds()%1000000;
 			select_timeout = &tv;
 		} else select_timeout = 0;
