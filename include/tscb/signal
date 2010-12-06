@@ -283,10 +283,13 @@ namespace tscb {
 		
 		template<typename ConnectionType>
 		inline connection &operator=(const ConnectionType &conn) throw()
-		{callback=conn.callback; if (callback) callback->pin(); return *this;}
+		{if (callback) callback->release(); callback=conn.callback; if (callback) callback->pin(); return *this;}
 		
 		inline connection &operator=(const connection &conn) throw()
-		{callback=conn.callback; if (callback) callback->pin(); return *this;}
+		{if (callback) callback->release(); callback=conn.callback; if (callback) callback->pin(); return *this;}
+		
+		inline connection &operator=(abstract_callback *_callback) throw()
+		{if (callback) callback->release(); callback=_callback; if (callback) callback->pin(); return *this;}
 		
 		inline void disconnect(void) throw()
 		{if (callback) {callback->disconnect(); callback->release(); callback=0;}}
@@ -325,8 +328,8 @@ namespace tscb {
 	class signal_callback : public abstract_callback {
 	public:
 		/** \internal \brief Instantiate callback link */
-		signal_callback(const boost::function<Signature> &_target) throw(std::bad_alloc)
-			: function(_target), active_next(0), prev(0), next(0), chain(0)
+		signal_callback(const boost::function<Signature> &_function) throw(std::bad_alloc)
+			: function(_function), active_next(0), prev(0), next(0), chain(0)
 		{}
 		virtual ~signal_callback(void) throw()
 		{}
@@ -431,7 +434,7 @@ namespace tscb {
 			read_lock();
 			callback_type *l=active.load(memory_order_consume);
 			while(l) {
-				l->target();
+				l->function();
 				l=l->active_next.load(memory_order_consume);
 			}
 			read_unlock();

@@ -13,13 +13,13 @@
 
 using namespace tscb;
 
-static inline bool inc_if_not_zero(atomics::atomic_int &a)
+static inline bool inc_if_not_zero(tscb::atomic_int & a)
 {
 	int expected;
 	do {
-		expected=a.load(atomics::memory_order_relaxed);
-		if (expected==0) return false;
-	} while (!a.compare_exchange_strong(expected, expected+1, atomics::memory_order_acquire));
+		expected = a.load(tscb::memory_order_relaxed);
+		if (expected == 0) return false;
+	} while (!a.compare_exchange_strong(expected, expected + 1, tscb::memory_order_acquire));
 	return true;
 }
 
@@ -31,7 +31,7 @@ behave correctly when executed sequentially has already caught
 a sizable number of bugs */
 void atomictests()
 {
-	tscb::atomics::atomic_int a(0);
+	tscb::atomic_int a(0);
 	
 	ASSERT((int)a==0);
 	ASSERT(inc_if_not_zero(a)==false);

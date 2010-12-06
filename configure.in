@@ -1,10 +1,10 @@
 # Process this file with autoconf to produce a configure script.
 PACKAGE=libtscb
 
-AC_INIT(src, 0.9.2, hcb@chaoticmind.net)
+AC_INIT(src, 0.9.3, hcb@chaoticmind.net)
 AC_CONFIG_SRCDIR(.)
 
-VERSION=0.9.2
+VERSION=0.9.3
 
 AC_CANONICAL_HOST
 case "$host_os" in 

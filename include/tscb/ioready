@@ -394,8 +394,10 @@ namespace tscb {
 		/** \internal \brief Instantiate ioready callback link */
 		inline ioready_callback(const boost::function<void (tscb::ioready_events)> & _target,
 			int _fd, tscb::ioready_events _event_mask) throw()
-			: target(_target), fd(_fd), event_mask(_event_mask | ioready_error | ioready_hangup)
-		{}
+			: target(_target), fd(_fd), event_mask(_event_mask)
+		{
+			if (event_mask != ioready_none) event_mask = event_mask | ioready_error | ioready_hangup;
+		}
 		virtual ~ioready_callback(void) throw();
 		
 		virtual void disconnect(void) throw();
@@ -473,6 +475,9 @@ namespace tscb {
 		
 		inline ioready_connection(const ioready_connection & conn) throw()
 		{callback=conn.callback; if (callback) callback->pin();}
+		
+		inline ioready_connection & operator=(ioready_callback * conn) throw()
+		{if (callback) callback->release(); callback=conn; if (callback) callback->pin(); return *this;}
 		
 		template<typename ConnectionType>
 		inline ioready_connection & operator=(const ConnectionType & conn) throw()

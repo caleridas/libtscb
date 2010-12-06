@@ -27,6 +27,7 @@ namespace tscb {
 	
 	void ioready_callback::modify(ioready_events evmask) throw()
 	{
+		if (evmask != ioready_none) evmask = evmask | ioready_error | ioready_hangup;
 		cancellation_mutex.lock();
 		ioready_service *tmp=service.load(memory_order_relaxed);
 		if (tmp) tmp->modify_ioready_callback(this, evmask);

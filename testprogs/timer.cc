@@ -84,7 +84,7 @@ static inline void intrusive_ptr_release(Y *y) {y->release();}
 
 void timer_tests(void)
 {
-	generic_timerqueue_dispatcher<long long> tq(&flag);
+	generic_timerqueue_dispatcher<long long> tq(flag);
 	
 	{
 		long long zero(0);

@@ -207,7 +207,7 @@ void test_dispatcher_threading(ioready_dispatcher *d)
 	{
 		cancel_dispatching=0;
 		
-		eventflag *evflag=d->get_eventflag();
+		eventflag & evflag = d->get_eventflag();
 		
 		pthread_t thread;
 		
@@ -232,7 +232,7 @@ void test_dispatcher_threading(ioready_dispatcher *d)
 		
 		cancel_dispatching=1;
 		
-		evflag->set();
+		evflag.set();
 		
 		pthread_join(thread, 0);
 		link.disconnect();
