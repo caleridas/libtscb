@@ -43,7 +43,7 @@ namespace tscb {
 		ioready_dispatcher_epoll(void) /*throw(std::runtime_error)*/;
 		virtual ~ioready_dispatcher_epoll(void) throw();
 		
-		virtual int dispatch(const boost::posix_time::time_duration *timeout, int max) throw();
+		virtual int dispatch(const boost::posix_time::time_duration *timeout, int max);
 		
 		virtual eventflag & get_eventflag(void) /*throw(std::runtime_error, std::bad_alloc)*/;
 		
@@ -52,11 +52,11 @@ namespace tscb {
 		virtual void unregister_ioready_callback(ioready_callback *e)
 			throw();
 		virtual void modify_ioready_callback(ioready_callback *e, ioready_events event_mask)
-			throw();
+			/*throw(std::bad_alloc)*/;
 	protected:
 		void drain_queue(void) throw();
 		
-		void process_events(epoll_event events[], size_t nevents) throw();
+		void process_events(epoll_event events[], size_t nevents);
 		
 		int epoll_fd;
 		
@@ -70,7 +70,8 @@ namespace tscb {
 		atomic<pipe_eventflag *> wakeup_flag;
 		mutex singleton_mutex;
 		
-		deferrable_rwlock guard;
+		deferrable_rwlock lock;
+		friend class read_guard<ioready_dispatcher_epoll>;
 	};
 	
 }

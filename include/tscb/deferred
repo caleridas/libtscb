@@ -661,6 +661,22 @@ namespace tscb {
 		conditional waiting_writers;
 		bool queued, waiting;
 	};
+	
+	template<typename Container>
+	class read_guard {
+	public:
+		read_guard(Container & _container) : container(_container)
+		{
+			while(container.lock.read_lock()) container.synchronize();
+		}
+		
+		~read_guard(void)
+		{
+			if (container.lock.read_unlock()) container.synchronize();
+		}
+		
+		Container & container;
+	};
 
 
 #if 0

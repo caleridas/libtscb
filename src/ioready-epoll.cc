@@ -53,9 +53,9 @@ namespace tscb {
 		there is no point doing anything about it
 		*/
 		
-		while(guard.read_lock()) synchronize();
+		while(lock.read_lock()) synchronize();
 		fdtab.cancel_all();
-		if (guard.read_unlock()) {
+		if (lock.read_unlock()) {
 			/* the above cancel operations will cause synchronization
 			to be performed at the next possible point in time; if
 			there is no concurrent cancellation, this is now */
@@ -67,7 +67,7 @@ namespace tscb {
 			the object until we are certain that synchronization has
 			been performed */
 			
-			guard.write_lock_sync();
+			lock.write_lock_sync();
 			synchronize();
 			
 			/* note that synchronize implicitly calls sync_finished,
@@ -80,9 +80,8 @@ namespace tscb {
 	}
 	
 	void ioready_dispatcher_epoll::process_events(epoll_event events[], size_t nevents)
-		throw()
 	{
-		while(guard.read_lock()) synchronize();
+		read_guard<ioready_dispatcher_epoll> guard(*this);
 		
 		for(size_t n=0; n<nevents; n++) {
 			int fd = events[n].data.fd;
@@ -90,14 +89,11 @@ namespace tscb {
 			
 			fdtab.notify(fd, ev);
 		}
-		
-		if (guard.read_unlock()) synchronize();
 	}
 	
 	int ioready_dispatcher_epoll::dispatch(const boost::posix_time::time_duration *timeout, int max)
-		throw()
 	{
-		pipe_eventflag *evflag=wakeup_flag;
+		pipe_eventflag *evflag = wakeup_flag.load(memory_order_consume);
 		
 		int poll_timeout;
 		/* need to round up timeout; alas this is the only good way to do it in boost */
@@ -165,7 +161,7 @@ namespace tscb {
 	void ioready_dispatcher_epoll::synchronize(void) throw()
 	{
 		ioready_callback * stale = fdtab.synchronize();
-		guard.sync_finished();
+		lock.sync_finished();
 		
 		while(stale) {
 			ioready_callback * next = stale->inactive_next;
@@ -178,7 +174,7 @@ namespace tscb {
 	void ioready_dispatcher_epoll::register_ioready_callback(ioready_callback *link)
 		/*throw(std::bad_alloc)*/
 	{
-		bool sync = guard.write_lock_async();
+		bool sync = lock.write_lock_async();
 		
 		ioready_events old_mask, new_mask;
 		
@@ -187,7 +183,7 @@ namespace tscb {
 		}
 		catch (std::bad_alloc) {
 			if (sync) synchronize();
-			else guard.write_unlock_async();
+			else lock.write_unlock_async();
 			delete link;
 			throw;
 		}
@@ -207,13 +203,13 @@ namespace tscb {
 		link->service.store(this, memory_order_relaxed);
 		
 		if (sync) synchronize();
-		else guard.write_unlock_async();
+		else lock.write_unlock_async();
 	}
 	
 	void ioready_dispatcher_epoll::unregister_ioready_callback(ioready_callback *link)
 		throw()
 	{
-		bool sync = guard.write_lock_async();
+		bool sync = lock.write_lock_async();
 		
 		if (link->service.load(memory_order_relaxed)) {
 			int fd = link->fd;
@@ -241,13 +237,13 @@ namespace tscb {
 		link->cancellation_mutex.unlock();
 		
 		if (sync) synchronize();
-		else guard.write_unlock_async();
+		else lock.write_unlock_async();
 	}
 	
 	void ioready_dispatcher_epoll::modify_ioready_callback(ioready_callback *link, ioready_events event_mask)
-		throw()
+		/*throw(std::bad_alloc)*/
 	{
-		bool sync = guard.write_lock_async();
+		bool sync = lock.write_lock_async();
 		
 		ioready_events old_mask = fdtab.compute_mask(link->fd);
 		link->event_mask = event_mask;
@@ -275,7 +271,7 @@ namespace tscb {
 		}
 		
 		if (sync) synchronize();
-		else guard.write_unlock_async();
+		else lock.write_unlock_async();
 	}
 	
 	void ioready_dispatcher_epoll::drain_queue(void) throw()

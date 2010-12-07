@@ -116,13 +116,33 @@ namespace tscb {
 		/** \brief Exposed handle for low-level access */
 		pthread_mutex_t m;
 	#endif
-		/*
-		class scoped_lock {
+		class guard {
 		public:
-			scoped_lock(mutex &_m) throw() : m(_m) {m.lock();}
-			~scoped_lock(void) throw() {m.unlock();}
-			mutex &m;
-		};*/
+			guard(mutex & _m, bool _lock = true) : m(_m), locked(_lock)
+			{
+				if (locked) m.lock();
+			}
+			
+			~guard(void)
+			{
+				if (locked) m.unlock();
+			}
+			
+			void lock(void)
+			{
+				m.lock();
+				locked = true;
+			}
+			
+			void unlock(void)
+			{
+				m.unlock();
+				locked = false;
+			}
+			
+			mutex & m;
+			bool locked;
+		};
 	};
 	
 	/**

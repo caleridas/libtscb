@@ -644,7 +644,7 @@ namespace tscb {
 		*/
 		virtual int dispatch(const boost::posix_time::time_duration * timeout,
 			int max = 2147483647L)
-			throw()=0;
+			=0;
 		
 		/**
 			\brief Event flag to wake up prematurely

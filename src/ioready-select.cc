@@ -45,9 +45,9 @@ namespace tscb {
 		there is no point doing anything about it
 		*/
 		
-		while(guard.read_lock()) synchronize();
+		while(lock.read_lock()) synchronize();
 		fdtab.cancel_all();
-		if (guard.read_unlock()) {
+		if (lock.read_unlock()) {
 			/* the above cancel operations will cause synchronization
 			to be performed at the next possible point in time; if
 			there is no concurrent cancellation, this is now */
@@ -59,7 +59,7 @@ namespace tscb {
 			the object until we are certain that synchronization has
 			been performed */
 			
-			guard.write_lock_sync();
+			lock.write_lock_sync();
 			synchronize();
 			
 			/* note that synchronize implicitly calls sync_finished,
@@ -81,9 +81,8 @@ namespace tscb {
 	}
 	
 	int ioready_dispatcher_select::dispatch(const boost::posix_time::time_duration *timeout, int max)
-		throw()
 	{
-		while(guard.read_lock()) synchronize();
+		read_guard<ioready_dispatcher_select> guard(*this);
 		
 		fd_set l_readfds, l_writefds, l_exceptfds;
 		int l_maxfd;
@@ -136,22 +135,20 @@ namespace tscb {
 			n++;
 		}
 		
-		if (guard.read_unlock()) synchronize();
-		
 		wakeup_flag.clear();
 		
 		return handled;
 	}
 	
 	void ioready_dispatcher_select::register_ioready_callback(ioready_callback *link)
-		throw(std::bad_alloc)
+		/*throw(std::bad_alloc)*/
 	{
 		if (link->fd >= (int)FD_SETSIZE) {
 			delete link;
 			throw std::bad_alloc();
 		}
 		
-		bool sync = guard.write_lock_async();
+		bool sync = lock.write_lock_async();
 		
 		try {
 			ioready_events old_events, new_events;
@@ -160,7 +157,7 @@ namespace tscb {
 		}
 		catch (std::bad_alloc) {
 			if (sync) synchronize();
-			else guard.write_unlock_async();
+			else lock.write_unlock_async();
 			delete link;
 			throw;
 		}
@@ -168,7 +165,7 @@ namespace tscb {
 		link->service.store(this, memory_order_relaxed);
 		
 		if (sync) synchronize();
-		else guard.write_unlock_async();
+		else lock.write_unlock_async();
 		
 		wakeup_flag.set();
 	}
@@ -176,7 +173,7 @@ namespace tscb {
 	void ioready_dispatcher_select::unregister_ioready_callback(ioready_callback *link)
 		throw()
 	{
-		bool sync = guard.write_lock_async();
+		bool sync = lock.write_lock_async();
 		
 		if (link->service.load(memory_order_relaxed)) {
 			ioready_events old_events, new_events;
@@ -189,22 +186,22 @@ namespace tscb {
 		link->cancellation_mutex.unlock();
 		
 		if (sync) synchronize();
-		else guard.write_unlock_async();
+		else lock.write_unlock_async();
 		
 		wakeup_flag.set();
 	}
 	
 	void ioready_dispatcher_select::modify_ioready_callback(ioready_callback *link, ioready_events event_mask)
-		throw()
+		/*throw(std::bad_alloc)*/
 	{
-		bool sync = guard.write_lock_async();
+		bool sync = lock.write_lock_async();
 		
 		link->event_mask = event_mask;
 		ioready_events new_events = fdtab.compute_mask(link->fd);
 		update_fdsets(link->fd, new_events);
 		
 		if (sync) synchronize();
-		else guard.write_unlock_async();
+		else lock.write_unlock_async();
 		
 		wakeup_flag.set();
 	}
@@ -241,7 +238,7 @@ namespace tscb {
 	{
 		ioready_callback * stale = fdtab.synchronize();
 		
-		guard.sync_finished();
+		lock.sync_finished();
 		
 		while(stale) {
 			ioready_callback * next = stale->inactive_next;

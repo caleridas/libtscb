@@ -431,13 +431,12 @@ namespace tscb {
 		*/
 		inline void operator()(void)
 		{
-			read_lock();
+			read_guard<signal<Signature> > guard(*this);
 			callback_type *l=active.load(memory_order_consume);
 			while(l) {
 				l->function();
 				l=l->active_next.load(memory_order_consume);
 			}
-			read_unlock();
 		}
 		/**
 			\brief Call all callback functions registered with the chain
@@ -448,13 +447,12 @@ namespace tscb {
 		template<typename Arg1>
 		inline void operator()(Arg1 arg1)
 		{
-			read_lock();
+			read_guard<signal<Signature> > guard(*this);
 			callback_type *l=active.load(memory_order_consume);
 			while(l) {
 				l->function(arg1);
 				l=l->active_next.load(memory_order_consume);
 			}
-			read_unlock();
 		}
 		/**
 			\brief Call all callback functions registered with the chain
@@ -465,13 +463,12 @@ namespace tscb {
 		template<typename Arg1, typename Arg2>
 		inline void operator()(Arg1 arg1, Arg2 arg2)
 		{
-			read_lock();
+			read_guard<signal<Signature> > guard(*this);
 			callback_type *l=active.load(memory_order_consume);
 			while(l) {
 				l->function(arg1, arg2);
 				l=l->active_next.load(memory_order_consume);
 			}
-			read_unlock();
 		}
 		/**
 			\brief Call all callback functions registered with the chain
@@ -482,13 +479,12 @@ namespace tscb {
 		template<typename Arg1, typename Arg2, typename Arg3>
 		inline void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3)
 		{
-			read_lock();
+			read_guard<signal<Signature> > guard(*this);
 			callback_type *l=active.load(memory_order_consume);
 			while(l) {
 				l->function(arg1, arg2, arg3);
 				l=l->active_next.load(memory_order_consume);
 			}
-			read_unlock();
 		}
 		
 		signal(void) throw()
@@ -501,13 +497,13 @@ namespace tscb {
 			a new callback, but we must protect against concurrent
 			removal */
 			
-			while(guard.read_lock()) synchronize();
+			while(lock.read_lock()) synchronize();
 			for(;;) {
 				callback_type *tmp=active.load(memory_order_relaxed);
 				if (!tmp) break;
 				tmp->disconnect();
 			}
-			if (guard.read_unlock()) {
+			if (lock.read_unlock()) {
 				/* the above cancel operations will cause synchronization
 				to be performed at the next possible point in time; if
 				there is no concurrent cancellation, this is now */
@@ -519,7 +515,7 @@ namespace tscb {
 				the object until we are certain that synchronization has
 				been performed */
 				
-				guard.write_lock_sync();
+				lock.write_lock_sync();
 				synchronize();
 				
 				/* note that synchronize implicitly calls sync_finished,
@@ -541,7 +537,7 @@ namespace tscb {
 			atomic_thread_fence(memory_order_release);
 			
 			l->registration_mutex.lock();
-			bool sync=guard.write_lock_async();
+			bool sync=lock.write_lock_async();
 			
 			l->next=0;
 			l->prev=last;
@@ -573,12 +569,12 @@ namespace tscb {
 			l->registration_mutex.unlock();
 			
 			if (sync) synchronize();
-			else guard.write_unlock_async();
+			else lock.write_unlock_async();
 		}
 		/** \internal \brief Remove link from chain */
 		void remove(callback_type *l) throw()
 		{
-			bool sync=guard.write_lock_async();
+			bool sync=lock.write_lock_async();
 			if (l->chain==this) {
 				/* remove element from active list; we have to make
 				sure that all elements that pointed to "us" within
@@ -609,7 +605,7 @@ namespace tscb {
 			l->registration_mutex.unlock();
 			
 			if (sync) synchronize();
-			else guard.write_unlock_async();
+			else lock.write_unlock_async();
 		}
 		/** \internal \brief Synchronize when reaching quiescent state */
 		void synchronize(void) throw()
@@ -633,7 +629,7 @@ namespace tscb {
 			callback link object is called exactly once */
 			do_cancel=deferred_cancel;
 			deferred_cancel=0;
-			guard.sync_finished();
+			lock.sync_finished();
 			
 			/* now we can release the callbacks, as we are sure that no one
 			can "see" them anymore; the lock is dropped so side-effest
@@ -646,21 +642,12 @@ namespace tscb {
 				do_cancel=tmp;
 			}
 		}
-		/** \internal \brief Lock for reading (before notifying receivers) */
-		inline void read_lock(void) throw()
-		{
-			while(guard.read_lock()) synchronize();
-		}
-		/** \internal \brief Unlock for reading (after notifying receivers) */
-		inline void read_unlock(void) throw()
-		{
-			if (guard.read_unlock()) synchronize();
-		}
 		/** \internal \brief singly-linked list of active elements */
 		atomic<callback_type *> active;
 		
 		/** \internal \brief thread synchronization */
-		deferrable_rwlock guard;
+		deferrable_rwlock lock;
+		friend class read_guard<signal<Signature> >;
 		
 		/** \internal \brief First element in the chain, whether active or not */
 		callback_type *first;

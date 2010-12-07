@@ -11,7 +11,7 @@
 namespace tscb {
 	
 	void dispatch(tscb::timerqueue_dispatcher *tq,
-		tscb::ioready_dispatcher *io) throw()
+		tscb::ioready_dispatcher *io)
 	{
 		/* if there are no timers pending, avoid call to gettimeofday
 		it is debatable whether this should be considered fast-path
@@ -53,7 +53,7 @@ namespace tscb {
 	}
 	
 	void
-	posix_reactor::post(const boost::function<void(void)> & function) throw(std::bad_alloc)
+	posix_reactor::post(const boost::function<void(void)> & function) /*throw(std::bad_alloc)*/
 	{
 		workitem * item = new workitem(function);
 		workqueue_lock.lock();
@@ -73,7 +73,7 @@ namespace tscb {
 	}
 	
 	void
-	posix_reactor::register_ioready_callback(ioready_callback * cb) throw(std::bad_alloc)
+	posix_reactor::register_ioready_callback(ioready_callback * cb) /*throw(std::bad_alloc)*/
 	{
 		io->register_ioready_callback(cb);
 	}
@@ -85,7 +85,7 @@ namespace tscb {
 	}
 	
 	void
-	posix_reactor::modify_ioready_callback(ioready_callback * cb, ioready_events event_mask) throw()
+	posix_reactor::modify_ioready_callback(ioready_callback * cb, ioready_events event_mask) /*throw(std::bad_alloc)*/
 	{
 		io->modify_ioready_callback(cb, event_mask);
 	}

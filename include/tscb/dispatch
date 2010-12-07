@@ -122,7 +122,7 @@ namespace tscb {
 		dispatcher is associated with
 	*/
 	void dispatch(tscb::timerqueue_dispatcher *tq,
-		tscb::ioready_dispatcher *io) throw();
+		tscb::ioready_dispatcher *io);
 	
 	/**
 		\brief Queue of work items to be performed
@@ -150,7 +150,7 @@ namespace tscb {
 		
 		/* workqueue_service */
 		virtual void
-		post(const boost::function<void(void)> &function) throw(std::bad_alloc);
+		post(const boost::function<void(void)> &function) /*throw(std::bad_alloc)*/;
 		
 		/* timer_service */
 		
@@ -165,7 +165,7 @@ namespace tscb {
 		/** \internal \brief Register callback link */
 		virtual void
 		register_ioready_callback(ioready_callback *l)
-			throw(std::bad_alloc);
+			/*throw(std::bad_alloc)*/;
 		/** \internal \brief Unregister callback link */
 		virtual void
 		unregister_ioready_callback(ioready_callback *e)
@@ -173,7 +173,7 @@ namespace tscb {
 		/** \internal \brief Update event set */
 		virtual void
 		modify_ioready_callback(ioready_callback *e, ioready_events event_mask)
-			throw();
+			/*throw(std::bad_alloc)*/;
 		
 		virtual eventflag &
 		get_eventflag(void) /*throw(std::bad_alloc)*/;

@@ -42,7 +42,7 @@ namespace tscb {
 			Queues the given function call for later execution.
 		*/
 		virtual
-		void post(const boost::function<void(void)> &function) throw(std::bad_alloc)=0;
+		void post(const boost::function<void(void)> &function) /*throw(std::bad_alloc)*/ = 0;
 	};
 	
 };

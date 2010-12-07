@@ -38,7 +38,7 @@ namespace tscb {
 		ioready_dispatcher_poll(void) /*throw(std::bad_alloc, std::runtime_error)*/;
 		virtual ~ioready_dispatcher_poll(void) throw();
 		
-		virtual int dispatch(const boost::posix_time::time_duration * timeout, int max) throw();
+		virtual int dispatch(const boost::posix_time::time_duration * timeout, int max);
 		
 		virtual eventflag & get_eventflag(void) throw();
 		
@@ -72,7 +72,8 @@ namespace tscb {
 		file_descriptor_table fdtab;
 		std::vector<int> polltab_index;
 		
-		deferrable_rwlock guard;
+		deferrable_rwlock lock;
+		friend class read_guard<ioready_dispatcher_poll>;
 		
 		pipe_eventflag wakeup_flag;
 		

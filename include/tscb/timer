@@ -490,12 +490,13 @@ namespace tscb {
 		
 		virtual ~generic_timerqueue_dispatcher(void) throw()
 		{
-			queue_mutex.lock();
+			mutex::guard guard(queue_mutex);
+			
 			abstract_timer_callback<Timeval> *link = timer_queue.extract_min();
 			while (link) {
 				/* mark item as "unqueued" */
 				link->next = 0;
-				queue_mutex.unlock();
+				guard.unlock();
 				
 				/* since the item has been marked "unqueued", concurrent cancel operations
 				will simply do nothing (and, especially, not drop the reference that
@@ -512,10 +513,9 @@ namespace tscb {
 				link->cancelled();
 				link->release();
 				
-				queue_mutex.lock();
+				guard.lock();
 				link = timer_queue.extract_min();
 			}
-			queue_mutex.unlock();
 		}
 		
 		/**
@@ -572,14 +572,13 @@ namespace tscb {
 		*/
 		inline bool next_timer(Timeval &tv) const throw()
 		{
-			queue_mutex.lock();
-			abstract_timer_callback<Timeval> *t=timer_queue.peek_min();
+			mutex::guard guard(queue_mutex);
+			
+			abstract_timer_callback<Timeval> *t = timer_queue.peek_min();
 			if (t) {
-				tv=t->when;
-				queue_mutex.unlock();
+				tv = t->when;
 				return true;
 			}
-			queue_mutex.unlock();
 			return false;
 		}
 		
@@ -600,18 +599,15 @@ namespace tscb {
 			
 			If no timers remain, the function returns false.
 		*/
-		bool run_queue(Timeval &time) throw()
+		bool run_queue(Timeval &time)
 		{
-			queue_mutex.lock();
+			mutex::guard guard(queue_mutex);
 			
 			abstract_timer_callback<Timeval> *t = timer_queue.peek_min();
 			
-			if (!t) {
-				queue_mutex.unlock();
-				return false;
-			}
+			if (!t) return false;
 			
-			timer_queue_running=true;
+			timer_queue_running = true;
 			
 			while(t) {
 				if (!t) break;
@@ -620,9 +616,10 @@ namespace tscb {
 				t = timer_queue.extract_min();
 				/* mark item as "unqueued" */
 				t->next = 0;
-				queue_mutex.unlock();
+				guard.unlock();
 				
 				Timeval expires = time;
+				/* FIXME: what is supposed to happen if this throws? */
 				bool rearm = t->target(expires);
 				
 				if (!rearm) {
@@ -638,7 +635,7 @@ namespace tscb {
 					
 					t->cancelled();
 					t->release();
-					queue_mutex.lock();
+					guard.lock();
 					goto nexttimer;
 				}
 				
@@ -654,11 +651,11 @@ namespace tscb {
 				if (__builtin_expect(!t->connected(), false)) {
 					t->cancelled();
 					t->release();
-					queue_mutex.lock();
+					guard.lock();
 					goto nexttimer;
 				}
 				
-				queue_mutex.lock();
+				guard.lock();
 				/* we are now optimistic that the timer can be rearmed;
 				since ->service is only modified under the lock, we
 				can now perform the last check without worrying about
@@ -668,7 +665,7 @@ namespace tscb {
 					/* okay the timer has been cancelled within the
 					race window above; now we have to perform
 					slow path cleanup */
-					queue_mutex.unlock();
+					guard.unlock();
 					
 					/* this could potentially drop the last reference
 					to the link object and result in a cascade of
@@ -677,7 +674,7 @@ namespace tscb {
 					t->cancelled();
 					t->release();
 					
-					queue_mutex.lock();
+					guard.lock();
 					goto nexttimer;
 				}
 				
@@ -693,10 +690,8 @@ namespace tscb {
 			
 			if (t) {
 				time = t->when;
-				queue_mutex.unlock();
 				return true;
 			} else {
-				queue_mutex.unlock();
 				return false;
 			}
 		}
