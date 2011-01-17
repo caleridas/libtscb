@@ -677,7 +677,24 @@ namespace tscb {
 		
 		Container & container;
 	};
-
+	
+	template<typename Container>
+	class async_write_guard {
+	public:
+		async_write_guard(Container & _container) : container(_container)
+		{
+			sync = container.lock.write_lock_async();
+		}
+		
+		~async_write_guard(void)
+		{
+			if (sync) container.synchronize();
+			else container.lock.write_unlock_async();
+		}
+		
+		Container & container;
+		bool sync;
+	};
 
 #if 0
 	template <

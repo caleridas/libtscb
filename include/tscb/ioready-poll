@@ -74,6 +74,7 @@ namespace tscb {
 		
 		deferrable_rwlock lock;
 		friend class read_guard<ioready_dispatcher_poll>;
+		friend class async_write_guard<ioready_dispatcher_poll>;
 		
 		pipe_eventflag wakeup_flag;
 		

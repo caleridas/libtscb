@@ -174,7 +174,7 @@ namespace tscb {
 	void ioready_dispatcher_epoll::register_ioready_callback(ioready_callback *link)
 		/*throw(std::bad_alloc)*/
 	{
-		bool sync = lock.write_lock_async();
+		async_write_guard<ioready_dispatcher_epoll> guard(*this);
 		
 		ioready_events old_mask, new_mask;
 		
@@ -182,8 +182,6 @@ namespace tscb {
 			fdtab.insert(link, old_mask, new_mask);
 		}
 		catch (std::bad_alloc) {
-			if (sync) synchronize();
-			else lock.write_unlock_async();
 			delete link;
 			throw;
 		}
@@ -201,15 +199,12 @@ namespace tscb {
 		}
 		
 		link->service.store(this, memory_order_relaxed);
-		
-		if (sync) synchronize();
-		else lock.write_unlock_async();
 	}
 	
 	void ioready_dispatcher_epoll::unregister_ioready_callback(ioready_callback *link)
 		throw()
 	{
-		bool sync = lock.write_lock_async();
+		async_write_guard<ioready_dispatcher_epoll> guard(*this);
 		
 		if (link->service.load(memory_order_relaxed)) {
 			int fd = link->fd;
@@ -235,15 +230,12 @@ namespace tscb {
 		}
 		
 		link->cancellation_mutex.unlock();
-		
-		if (sync) synchronize();
-		else lock.write_unlock_async();
 	}
 	
 	void ioready_dispatcher_epoll::modify_ioready_callback(ioready_callback *link, ioready_events event_mask)
 		/*throw(std::bad_alloc)*/
 	{
-		bool sync = lock.write_lock_async();
+		async_write_guard<ioready_dispatcher_epoll> guard(*this);
 		
 		ioready_events old_mask = fdtab.compute_mask(link->fd);
 		link->event_mask = event_mask;
@@ -269,9 +261,6 @@ namespace tscb {
 			}
 			epoll_ctl(epoll_fd, op, link->fd, &event);
 		}
-		
-		if (sync) synchronize();
-		else lock.write_unlock_async();
 	}
 	
 	void ioready_dispatcher_epoll::drain_queue(void) throw()

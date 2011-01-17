@@ -230,24 +230,21 @@ namespace tscb {
 	void ioready_dispatcher_poll::register_ioready_callback(ioready_callback *link)
 		/*throw(std::bad_alloc)*/
 	{
-		bool sync = lock.write_lock_async();
-		
-		try {
-			ioready_events old_mask, new_mask;
-			fdtab.insert(link, old_mask, new_mask);
-			if (old_mask != new_mask) update_polltab_entry(link->fd, new_mask);
+		{
+			async_write_guard<ioready_dispatcher_poll> guard(*this);
+			
+			try {
+				ioready_events old_mask, new_mask;
+				fdtab.insert(link, old_mask, new_mask);
+				if (old_mask != new_mask) update_polltab_entry(link->fd, new_mask);
+			}
+			catch (std::bad_alloc) {
+				delete link;
+				throw;
+			}
+			
+			link->service.store(this, memory_order_relaxed);
 		}
-		catch (std::bad_alloc) {
-			if (sync) synchronize();
-			else lock.write_unlock_async();
-			delete link;
-			throw;
-		}
-		
-		link->service.store(this, memory_order_relaxed);
-		
-		if (sync) synchronize();
-		else lock.write_unlock_async();
 		
 		wakeup_flag.set();
 	}
@@ -255,34 +252,39 @@ namespace tscb {
 	void ioready_dispatcher_poll::unregister_ioready_callback(ioready_callback *link)
 		throw()
 	{
-		bool sync = lock.write_lock_async();
-		
-		if (link->service.load(memory_order_relaxed)) {
-			ioready_events old_mask, new_mask;
-			fdtab.remove(link, old_mask, new_mask);
-			if (old_mask != new_mask) update_polltab_entry(link->fd, new_mask);
+		{
+			async_write_guard<ioready_dispatcher_poll> guard(*this);
 			
-			link->service.store(0, memory_order_relaxed);
+			if (link->service.load(memory_order_relaxed)) {
+				ioready_events old_mask, new_mask;
+				fdtab.remove(link, old_mask, new_mask);
+				if (old_mask != new_mask) update_polltab_entry(link->fd, new_mask);
+				
+				link->service.store(0, memory_order_relaxed);
+			}
+			
+			link->cancellation_mutex.unlock();
 		}
-		
-		link->cancellation_mutex.unlock();
-		
-		if (sync) synchronize();
-		else lock.write_unlock_async();
 		
 		wakeup_flag.set();
 	}
 	
 	void ioready_dispatcher_poll::modify_ioready_callback(ioready_callback *link, ioready_events event_mask)
 	{
-		bool sync = lock.write_lock_async();
-		
-		link->event_mask = event_mask;
-		ioready_events new_events = fdtab.compute_mask(link->fd);
-		update_polltab_entry(link->fd, new_events);
-		
-		if (sync) synchronize();
-		else lock.write_unlock_async();
+		{
+			async_write_guard<ioready_dispatcher_poll> guard(*this);
+			
+			ioready_events old_mask = link->event_mask;
+			link->event_mask = event_mask;
+			ioready_events new_events = fdtab.compute_mask(link->fd);
+			try {
+				update_polltab_entry(link->fd, new_events);
+			}
+			catch(std::bad_alloc) {
+				link->event_mask = old_mask;
+				throw;
+			}
+		}
 		
 		wakeup_flag.set();
 	}

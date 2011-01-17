@@ -148,24 +148,21 @@ namespace tscb {
 			throw std::bad_alloc();
 		}
 		
-		bool sync = lock.write_lock_async();
-		
-		try {
+		{
+			async_write_guard<ioready_dispatcher_select> guard(*this);
+			
 			ioready_events old_events, new_events;
-			fdtab.insert(link, old_events, new_events);
+			try {
+				fdtab.insert(link, old_events, new_events);
+			}
+			catch (std::bad_alloc) {
+				delete link;
+				throw;
+			}
 			update_fdsets(link->fd, new_events);
+			
+			link->service.store(this, memory_order_relaxed);
 		}
-		catch (std::bad_alloc) {
-			if (sync) synchronize();
-			else lock.write_unlock_async();
-			delete link;
-			throw;
-		}
-		
-		link->service.store(this, memory_order_relaxed);
-		
-		if (sync) synchronize();
-		else lock.write_unlock_async();
 		
 		wakeup_flag.set();
 	}
@@ -173,20 +170,19 @@ namespace tscb {
 	void ioready_dispatcher_select::unregister_ioready_callback(ioready_callback *link)
 		throw()
 	{
-		bool sync = lock.write_lock_async();
-		
-		if (link->service.load(memory_order_relaxed)) {
-			ioready_events old_events, new_events;
-			fdtab.remove(link, old_events, new_events);
-			update_fdsets(link->fd, new_events);
+		{
+			async_write_guard<ioready_dispatcher_select> guard(*this);
 			
-			link->service.store(0, memory_order_relaxed);
+			if (link->service.load(memory_order_relaxed)) {
+				ioready_events old_events, new_events;
+				fdtab.remove(link, old_events, new_events);
+				update_fdsets(link->fd, new_events);
+				
+				link->service.store(0, memory_order_relaxed);
+			}
+			
+			link->cancellation_mutex.unlock();
 		}
-		
-		link->cancellation_mutex.unlock();
-		
-		if (sync) synchronize();
-		else lock.write_unlock_async();
 		
 		wakeup_flag.set();
 	}
@@ -194,14 +190,13 @@ namespace tscb {
 	void ioready_dispatcher_select::modify_ioready_callback(ioready_callback *link, ioready_events event_mask)
 		/*throw(std::bad_alloc)*/
 	{
-		bool sync = lock.write_lock_async();
-		
-		link->event_mask = event_mask;
-		ioready_events new_events = fdtab.compute_mask(link->fd);
-		update_fdsets(link->fd, new_events);
-		
-		if (sync) synchronize();
-		else lock.write_unlock_async();
+		{
+			async_write_guard<ioready_dispatcher_select> guard(*this);
+			
+			link->event_mask = event_mask;
+			ioready_events new_events = fdtab.compute_mask(link->fd);
+			update_fdsets(link->fd, new_events);
+		}
 		
 		wakeup_flag.set();
 	}
@@ -218,11 +213,7 @@ namespace tscb {
 		
 		if (mask) {
 			if (fd >= maxfd) maxfd = fd + 1;
-			pthread_mutex_unlock(&fdset_mtx);
-			return;
-		}
-		
-		if (fd == maxfd - 1) {
+		} else if (fd == maxfd - 1) {
 			for(;;) {
 				maxfd--;
 				if (!maxfd) break;
