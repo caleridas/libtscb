@@ -486,6 +486,89 @@ namespace tscb {
 				l=l->active_next.load(memory_order_consume);
 			}
 		}
+		/**
+			\brief Call all callback functions registered with the chain
+			
+			Calls all callback functions registered trough \ref connect
+			with the given arguments.
+		*/
+		template<typename Arg1, typename Arg2, typename Arg3, typename Arg4>
+		inline void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4)
+		{
+			read_guard<signal<Signature> > guard(*this);
+			callback_type *l=active.load(memory_order_consume);
+			while(l) {
+				l->function(arg1, arg2, arg3, arg4);
+				l=l->active_next.load(memory_order_consume);
+			}
+		}
+		/**
+			\brief Call all callback functions registered with the chain
+			
+			Calls all callback functions registered trough \ref connect
+			with the given arguments.
+		*/
+		template<typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5>
+		inline void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5)
+		{
+			read_guard<signal<Signature> > guard(*this);
+			callback_type *l=active.load(memory_order_consume);
+			while(l) {
+				l->function(arg1, arg2, arg3, arg4, arg5);
+				l=l->active_next.load(memory_order_consume);
+			}
+		}
+		
+		/**
+			\brief Call all callback functions registered with the chain
+			
+			Calls all callback functions registered trough \ref connect
+			with the given arguments.
+		*/
+		template<typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5, typename Arg6>
+		inline void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5, Arg6 arg6)
+		{
+			read_guard<signal<Signature> > guard(*this);
+			callback_type *l=active.load(memory_order_consume);
+			while(l) {
+				l->function(arg1, arg2, arg3, arg4, arg5, arg6);
+				l=l->active_next.load(memory_order_consume);
+			}
+		}
+		
+		/**
+			\brief Call all callback functions registered with the chain
+			
+			Calls all callback functions registered trough \ref connect
+			with the given arguments.
+		*/
+		template<typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5, typename Arg6, typename Arg7>
+		inline void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5, Arg6 arg6, Arg7 arg7)
+		{
+			read_guard<signal<Signature> > guard(*this);
+			callback_type *l=active.load(memory_order_consume);
+			while(l) {
+				l->function(arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+				l=l->active_next.load(memory_order_consume);
+			}
+		}
+		
+		/**
+			\brief Call all callback functions registered with the chain
+			
+			Calls all callback functions registered trough \ref connect
+			with the given arguments.
+		*/
+		template<typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5, typename Arg6, typename Arg7, typename Arg8>
+		inline void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5, Arg6 arg6, Arg7 arg7, Arg8 arg8)
+		{
+			read_guard<signal<Signature> > guard(*this);
+			callback_type *l=active.load(memory_order_consume);
+			while(l) {
+				l->function(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
+				l=l->active_next.load(memory_order_consume);
+			}
+		}
 		
 		signal(void) throw()
 			: active(0), first(0), last(0), deferred_cancel(0)
