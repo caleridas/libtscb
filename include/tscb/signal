@@ -606,6 +606,23 @@ namespace tscb {
 			}
 		}
 		
+		/**
+			\brief Disconnect all registered callbacks
+			
+			Disconnects all registered callbacks. The result is the
+			same as if \ref connection::disconnect had been called on
+			\ref connection object returned by \ref connect.
+		*/
+		inline void disconnect_all(void)
+		{
+			read_guard<signal<Signature> > guard(*this);
+			callback_type * l = active.load(memory_order_consume);
+			while(l) {
+				l->disconnect();
+				l = l->active_next.load(memory_order_consume);
+			}
+		}
+		
 	protected:
 		/** \internal \brief Add link to end of chain */
 		void push_back(callback_type *l) throw()
