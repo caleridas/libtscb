@@ -268,27 +268,19 @@ namespace tscb {
 	*/
 	class connection {
 	public:
-		inline connection(abstract_callback *_callback=0, bool add_ref=true) throw() : callback(_callback)
+		inline connection(abstract_callback *_callback = 0, bool add_ref = true) throw() : callback(_callback)
 		{if (callback && add_ref) callback->pin();}
 		
 		inline ~connection(void) throw()
 		{if (callback) callback->release();}
 		
-		template<typename ConnectionType>
-		inline connection(const ConnectionType &conn) throw()
+		inline connection(const connection & conn) throw()
 		{callback=conn.callback; if (callback) callback->pin();}
 		
-		inline connection(const connection &conn) throw()
-		{callback=conn.callback; if (callback) callback->pin();}
-		
-		template<typename ConnectionType>
-		inline connection &operator=(const ConnectionType &conn) throw()
+		inline connection &operator=(const connection & conn) throw()
 		{if (callback) callback->release(); callback=conn.callback; if (callback) callback->pin(); return *this;}
 		
-		inline connection &operator=(const connection &conn) throw()
-		{if (callback) callback->release(); callback=conn.callback; if (callback) callback->pin(); return *this;}
-		
-		inline connection &operator=(abstract_callback *_callback) throw()
+		inline connection &operator=(abstract_callback * _callback) throw()
 		{if (callback) callback->release(); callback=_callback; if (callback) callback->pin(); return *this;}
 		
 		inline void disconnect(void) throw()

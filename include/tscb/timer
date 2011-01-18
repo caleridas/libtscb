@@ -342,16 +342,8 @@ namespace tscb {
 		inline ~abstract_timer_connection(void) throw()
 		{if (callback) callback->release();}
 		
-		template<typename ConnectionType>
-		inline abstract_timer_connection(const ConnectionType &conn) throw()
-		{callback=conn.callback; if (callback) callback->pin();}
-		
 		inline abstract_timer_connection(const abstract_timer_connection &conn) throw()
 		{callback=conn.callback; if (callback) callback->pin();}
-		
-		template<typename ConnectionType>
-		inline abstract_timer_connection &operator=(const ConnectionType &conn) throw()
-		{if (callback) callback->release(); callback=conn.callback; if (callback) callback->pin(); return *this;}
 		
 		inline abstract_timer_connection &operator=(const abstract_timer_connection &conn) throw()
 		{if (callback) callback->release(); callback=conn.callback; if (callback) callback->pin(); return *this;}
@@ -365,6 +357,9 @@ namespace tscb {
 		inline bool connected(void) const throw()
 		{return callback && callback->connected();}
 		
+		inline operator abstract_callback * (void) const throw() {return callback;}
+		inline operator connection (void) const throw() {return callback;}
+		
 		#ifdef __GXX_EXPERIMENTAL_CXX0X__
 		template<typename ConnectionType>
 		inline abstract_timer_connection(ConnectionType && conn) throw()
@@ -377,7 +372,6 @@ namespace tscb {
 		
 	private:
 		callback_type *callback;
-		friend class connection;
 	};
 	
 	/** \cond NEVER -- ignored by doxygen */
