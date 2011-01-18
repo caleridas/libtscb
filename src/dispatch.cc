@@ -56,9 +56,14 @@ namespace tscb {
 	posix_reactor::post(const boost::function<void(void)> & function) /*throw(std::bad_alloc)*/
 	{
 		workitem * item = new workitem(function);
-		workqueue_lock.lock();
-		workqueue.push_back(item);
-		workqueue_lock.unlock();
+		try {
+			mutex::guard guard(workqueue_lock);
+			workqueue.push_back(item);
+		}
+		catch(...) {
+			delete item;
+			throw;
+		}
 		flag.set();
 	}
 		
