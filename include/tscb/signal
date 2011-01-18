@@ -152,7 +152,7 @@
 	callback:
 	
 	\code
-		conn.cancel();
+		conn.disconnect();
 	\endcode
 	
 	The associated callback function will not be invoked subsequently,
@@ -174,6 +174,118 @@
 	In this case, a <TT>boost::shared_ptr</TT> instance is kept for as long as
 	the callback can be activated -- thus the object will not be deallocated
 	until it is guaranteed that the callback cannot be delivered any longer.
+	
+	\section signal_connections_single_threaded Connection management, single-threaded
+	
+	\warning The below is potentially not thread-safe and should
+	be done with care.
+	
+	The return value of the \ref tscb::signal::connect "connect" method
+	may be assigned to a \ref tscb::scoped_connection "scoped_connection"
+	object (instead of a \ref tscb::connection "scoped_connection"):
+	
+	\code
+		class MyObserver {
+		public:
+			MyObserver(MyClass *c)
+			{
+				conn = c->onValueChange().connect(boost::bind(&MyObserver::notify_change, this, _1, _2));
+			}
+		protected:
+			void notify_change(int oldval, int newval)
+			{
+				printf("Value changed from %d to %d!\n", oldval, newval);
+			}
+			
+			scoped_connection conn;
+		};
+	\endcode
+	
+	The impact of this is that the connection will be broken automatically
+	when the \ref tscb::scoped_connection "scoped_connection" object
+	goes out of scope or is destroyed otherwise. This provides a
+	convenient mechanism for an object to track pending callbacks to
+	itself, and have them broken automatically when the object
+	is destroyed:
+	
+	\code
+		MyObserver * observer = new MyObserver(c);
+		...
+		delete observer; // will implicitly perform conn.disconnect();
+	\endcode
+	
+	\warning It is very important that you are on your own in ensuring that
+	no other thread may race to perform a signal delivery while the object
+	is being destroyed. You are safe if all signal delivery operations happen
+	in the same thread as the deletion of the object (as is trivially the
+	case when the program is single-threaded). 
+	
+	\section signal_connections_multi_threaded Connection management, multi-threaded
+	
+	The recommended pattern for dynamically managed objects that need to receive
+	callbacks from multiple threads:
+	
+	\code
+		class MyObserver;
+		static inline void intrusive_ptr_add_ref(const MyObserver *);
+		static inline void intrusive_ptr_release(const MyObserver *);
+		
+		class MyObserver {
+		public:
+			typedef boost::intrusive_ptr<MyObserver> pointer;
+			
+			static pointer
+			create(MyClass * c)
+			{
+				// constructor initializes refcount to 1, so no initial increment
+				return pointer(new MyClass(c), false);
+			}
+			
+			void
+			disconnect(void)
+			{
+				conn.disconnect();
+			}
+		protected:
+			MyObserver(MyClass *c)
+				: refcount(1)
+			{
+				// use ref-counted pointer instead of naked pointer in
+				// binding function object: causes functional to acquire
+				// a reference to this object, thus this object will not
+				// be deleted when there might be outstanding callbacks
+				conn = c->onValueChange().connect(boost::bind(&MyObserver::notify_change, pointer(this), _1, _2));
+				// it is important that the constructor itself holds a reference
+				// before registering the callback: there could be a race
+				// causing the connection to be broken from the other side
+				// before the constructor finishes, which would cause the
+				// function object to drop its reference. If the reference
+				// count were dropped to zero, the object would be
+				// destroyed before it was fully constructed!
+			}
+			
+			void notify_change(int oldval, int newval)
+			{
+				std::cout << "Value changed from " << oldval << " to " << newval << "!\n";
+			}
+			
+			connection conn;
+			
+			// atomic reference count implementation
+			mutable atomic_int refcount;
+			friend void intrusive_ptr_add_ref(const MyObserver * obj)
+			{
+				obj->fetch_add(memory_order_relaxed, 1);
+			}
+			friend void intrusive_ptr_release(const MyObserver * obj)
+			{
+				if (obj->fetch_sub(memory_order_relaxed, 1) == 1) {
+					atomic_thread_fence(memory_order_acquire);
+					delete obj;
+				}
+			}
+		};
+	\endcode
 	
 */
 
@@ -319,13 +431,22 @@ namespace tscb {
 	class scoped_connection {
 	public:
 		inline scoped_connection(void) throw() {}
-		inline scoped_connection(connection & _conn) throw() : conn(_conn) {}
-		inline ~scoped_connection(void) throw() {if (connected()) disconnect();}
+		inline ~scoped_connection(void) throw() {disconnect();}
 		
 		inline bool connected(void) const throw() {return conn.connected();}
+		
 		inline void disconnect(void) throw() {conn.disconnect();}
-		inline scoped_connection & operator=(connection & _connection) throw()
+		
+		inline scoped_connection(const connection & _conn) throw() : conn(_conn) {}
+		
+		inline scoped_connection & operator=(const connection & _connection) throw()
 		{disconnect(); conn = _connection; return *this;}
+		
+		inline scoped_connection(abstract_callback * callback) throw()
+		{disconnect(); conn = callback;}
+		
+		inline scoped_connection & operator=(abstract_callback * callback) throw()
+		{disconnect(); conn = callback; return *this;}
 	protected:
 		scoped_connection(const scoped_connection & other); /* deleted */
 		scoped_connection & operator=(const scoped_connection & other); /* deleted */

@@ -374,6 +374,45 @@ namespace tscb {
 		callback_type *callback;
 	};
 	
+	/**
+		\brief Scoped connection between signal and receiver
+		
+		Variant of \ref abstract_timerconnection object that
+		automatically breaks the connection when this object goes
+		out of scope.
+		
+		\warning This class can be used by an object to track
+		signal connections to itself, and have all connections
+		broken automatically when the object is destroyed.
+		Only do this when you know that all callback invocations
+		as well as the destructor will always run from the
+		same thread.
+	*/
+	template<typename Timeval>
+	class scoped_abstract_timer_connection {
+	public:
+		inline scoped_abstract_timer_connection(void) throw() {}
+		inline ~scoped_abstract_timer_connection(void) throw() {disconnect();}
+		
+		inline bool connected(void) const throw() {return conn.connected();}
+		
+		inline void disconnect(void) throw() {conn.disconnect();}
+		
+		inline scoped_abstract_timer_connection(const abstract_timer_connection<Timeval> & _conn) throw() : conn(_conn) {}
+		
+		inline scoped_abstract_timer_connection & operator=(const abstract_timer_connection<Timeval> & _connection) throw()
+		{disconnect(); conn = _connection; return *this;}
+		
+		inline scoped_abstract_timer_connection(abstract_timer_callback<Timeval> * callback) throw()
+		{disconnect(); conn = callback;}
+		
+		inline scoped_abstract_timer_connection & operator=(abstract_timer_callback<Timeval> * callback) throw()
+		{disconnect(); conn = callback; return *this;}
+	protected:
+		scoped_abstract_timer_connection(const scoped_connection & other); /* deleted */
+		scoped_abstract_timer_connection & operator=(const scoped_connection & other); /* deleted */
+		abstract_timer_connection<Timeval> conn;
+	};
 	/** \cond NEVER -- ignored by doxygen */
 	template<typename Timeval>
 	void intrusive_ptr_add_ref(abstract_timer_callback<Timeval> *t) {t->pin();}
@@ -737,6 +776,9 @@ namespace tscb {
 	
 	/** \brief Reference to timer callback link using posix_time::ptime to represent time values */
 	typedef abstract_timer_connection<boost::posix_time::ptime> timer_connection;
+	
+	/** \brief Scoped reference to timer callback link using posix_time::ptime to represent time values */
+	typedef scoped_abstract_timer_connection<boost::posix_time::ptime> scoped_timer_connection;
 	
 	/**
 		\typedef tscb::timer_service
