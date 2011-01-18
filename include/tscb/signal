@@ -311,6 +311,35 @@ namespace tscb {
 		abstract_callback *callback;
 	};
 	
+	/**
+		\brief Scoped connection between signal and receiver
+		
+		Variant of \ref connection object that automatically
+		breaks the connection when this object goes out of scope.
+		
+		\warning This class can be used by an object to track
+		signal connections to itself, and have all connections
+		broken automatically when the object is destroyed.
+		Only do this when you know that all callback invocations
+		as well as the destructor will always run from the
+		same thread.
+	*/
+	class scoped_connection {
+	public:
+		inline scoped_connection(void) throw() {}
+		inline scoped_connection(connection & _conn) throw() : conn(_conn) {}
+		inline ~scoped_connection(void) throw() {if (connected()) disconnect();}
+		
+		inline bool connected(void) const throw() {return conn.connected();}
+		inline void disconnect(void) throw() {conn.disconnect();}
+		inline scoped_connection & operator=(connection & _connection) throw()
+		{disconnect(); conn = _connection; return *this;}
+	protected:
+		scoped_connection(const scoped_connection & other); /* deleted */
+		scoped_connection & operator=(const scoped_connection & other); /* deleted */
+		connection conn;
+	};
+	
 	template<typename Signature> class signal_callback;
 	template<typename Signature> class signal_proxy;
 	template<typename Signature> class signal;
