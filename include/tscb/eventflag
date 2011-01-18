@@ -15,8 +15,6 @@
 
 namespace tscb {
 	
-	/* FIXME: write documentation */
-	
 	/**
 		\brief Event flag interface
 		
@@ -27,10 +25,18 @@ namespace tscb {
 		flag is cleared, a \ref wait operation will block until
 		the state of the flag is changed to set.
 		
-		In contrast to conditionals, threads will not block on an
+		In contrast to condition variables, threads will not block on an
 		event flag if it has been set previously. Mutexes and
-		event flags can be used as replacements for mutexes and conditionals,
-		however event flags are considered more difficult to use.
+		event flags can be used as replacements for mutexes and condition
+		variables, however the stateful nature of event flags requires
+		maintaining correct ordering of operations to avoid
+		missed wakeups.
+		
+		The important distinguishing property between eventflags and
+		condition is that eventflags can be set from within
+		signal handlers: For all eventflag implementations, the
+		\ref eventflags::set operation is guaranteed to be wait-free
+		and async-signal safe.
 		
 		Eventflags are used in <B>tscb</B> to provide a
 		generic interface for thread wakeup.
