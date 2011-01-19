@@ -46,7 +46,7 @@ namespace tscb {
 		
 		virtual int dispatch(const boost::posix_time::time_duration * timeout, int max);
 		
-		virtual eventflag & get_eventflag(void) throw();
+		virtual eventtrigger & get_eventtrigger(void) throw();
 		
 		virtual void register_ioready_callback(ioready_callback *l)
 			/*throw(std::bad_alloc)*/;

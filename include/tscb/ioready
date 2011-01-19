@@ -231,15 +231,15 @@
 	the function will check the registered receivers and process pending
 	IO readiness callbacks.
 	
-	The second method, \ref tscb::ioready_dispatcher::get_eventflag
-	"ioready_dispatcher::get_eventflag",
-	allows to obtain a reference to an event flag associated with
+	The second method, \ref tscb::ioready_dispatcher::get_eventtrigger
+	"ioready_dispatcher::get_eventtrigger",
+	allows to obtain a reference to an event trigger associated with
 	the dispatcher:
 	
 	\code
-		tscb::ioready_dispatcher *dispatcher;
+		tscb::ioready_dispatcher * dispatcher;
 		...
-		tscb::eventflag flag=dispatcher->get_eventflag();
+		tscb::eventtrigger & trigger = dispatcher->get_eventtrigger();
 	\endcode
 	
 	After returning from \ref tscb::ioready_dispatcher::dispatch
@@ -253,9 +253,9 @@
 	and cause the call to return as soon as possible:
 	
 	\code
-		tscb::eventflag *flag;
+		tscb::eventtrigger & trigger;
 		...
-		flag->set();
+		trigger.set();
 	\endcode
 	
 	Applications can use this capability as a mechanism to force a 
@@ -268,23 +268,29 @@
 	
 	<UL>
 		<LI>
-			the eventflag is associated with the <I>dispatcher</I> and not
+			the \ref eventtrigger is associated with the <I>dispatcher</I> and not
 			one particular <I>thread</I> entering
 			\ref tscb::ioready_dispatcher::dispatch
 			"ioready_dispatcher::dispatch";
 		</LI>
 		<LI>
-			the lifetime of the eventflag matches the lifetime of
+			the lifetime of the \ref eventtrigger matches the lifetime of
 			the dispatcher
 		</LI>
 		<LI>
-			depending on the implementation, raising the flag may
+			depending on the implementation, activating the trigger may
 			cause one, many, or all threads currently in
 			\ref tscb::ioready_dispatcher::dispatch "ioready_dispatcher::dispatch"
 			to return prematurely.
 		</LI>
 		<LI>
-			before returning, the event flag will be cleared
+			activating the trigger causes interruption to 
+			\ref tscb::ioready_dispatcher::dispatch
+			"ioready_dispatcher::dispatch" only once -- unless
+			the trigger is activated again after the call
+			returns, the next call to \ref tscb::ioready_dispatcher::dispatch
+			"ioready_dispatcher::dispatch" will wait for events
+			normally.
 		</LI>
 	</UL>
 */
@@ -658,8 +664,8 @@ namespace tscb {
 					will wait indefinitely
 				</LI>
 				<LI>
-					the \ref tscb::eventflag associated with the dispatcher
-					has been raised (see \ref get_eventflag)
+					the \ref tscb::eventtrigger associated with the dispatcher
+					has been raised (see \ref get_eventtrigger)
 				</LI>
 				<LI>
 					registration: depending on the dispatcher implementation
@@ -682,34 +688,57 @@ namespace tscb {
 		/**
 			\brief Event flag to wake up prematurely
 			
-			Returns a pointer to an event flag that allows interrupting
+			\deprecated Use \ref get_eventtrigger instead
+		*/
+		inline eventflag & get_eventflag(void)
+		{
+			return dynamic_cast<eventflag &>(get_eventtrigger());
+		}
+		
+		/**
+			\brief Event trigger to wake up prematurely
+			
+			Returns a pointer to an \ref eventtrigger that allows interrupting
 			waiting for the timeout specified as argument to \ref dispatch.
-			Setting this flag (possibly from another thread) via \ref
-			tscb::eventflag::set will cause
-			the \ref dispatch function to return immediately. The flag
-			will be cleared by the \ref dispatch function before returning.
+			Activating the trigger (possibly from another thread) via
+			\ref tscb::eventtrigger::set "eventtrigger::set" will cause
+			the \ref dispatch function to return prematurely. Activating
+			the trigger (possibly multiple times) after one call to
+			\ref dispatch has returned will only cause the next call to
+			\ref dispatch to return, any later invocation will wait for
+			events normally.
 			
 			This functionality is mostly useful in multi-threaded
 			programs to interrupt one dispatcher, e.g. because a
-			timeout has to be shortened.
+			timeout has to be shortened. It is also permissible to
+			activate the trigger from a posix signal handler to have
+			the main thread process asynchronously queued events.
 			
-			The \ref tscb::eventflag returned is inseparably associated
+			The \ref eventtrigger returned is inseparably associated
 			with the dispatcher; its lifetime is implicitly determined
 			by the lifetime of the dispatcher object, and it must
-			not be destroyed by the caller. Furthermore, multiple calls
-			to \ref get_eventflag will always return the same event
-			flag (instead of creating a new one)
+			not be destroyed by the caller. Multiple calls to
+			\ref get_eventtrigger will likely always return the same trigger
+			object (instead of creating a new one).
 		*/
-		virtual eventflag & get_eventflag(void)
-			/* throw(std::bad_alloc, std::runtime_error)*/=0;
+		virtual eventtrigger & get_eventtrigger(void)
+			/* throw(std::bad_alloc, std::runtime_error)*/ = 0;
 		
 		/**
 			\brief Instantiate ioready_dispatcher
 			
-			Instantiates an object of type \ref ioready_dispatcher,
+			Instantiates a "standalone" \ref ioready_dispatcher,
 			using the dispatching mechanism most suitable for the
-			current platform. Alias for
-			\ref create_ioready_dispatcher
+			current platform. The function
+			will select the "best" dispatcher available on the current
+			platform dynamically; the order of preference is:
+			
+			<UL>
+				<LI>\ref tscb::ioready_dispatcher_kqueue "ioready_dispatcher_kqueue"</LI>
+				<LI>\ref tscb::ioready_dispatcher_epoll "ioready_dispatcher_epoll"</LI>
+				<LI>\ref tscb::ioready_dispatcher_poll "ioready_dispatcher_poll"</LI>
+				<LI>\ref tscb::ioready_dispatcher_select "ioready_dispatcher_select"</LI>
+			</UL>
 		*/
 		static
 		ioready_dispatcher *

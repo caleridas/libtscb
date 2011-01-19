@@ -102,7 +102,7 @@ namespace tscb {
 		delete master_ptab.load(memory_order_relaxed);
 	}
 	
-	eventflag & ioready_dispatcher_poll::get_eventflag(void) throw()
+	eventtrigger & ioready_dispatcher_poll::get_eventtrigger(void) throw()
 	{
 		return wakeup_flag;
 	}

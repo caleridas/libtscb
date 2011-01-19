@@ -124,7 +124,7 @@ namespace tscb {
 		return nevents;
 	}
 	
-	eventflag & ioready_dispatcher_epoll::get_eventflag(void)
+	eventtrigger & ioready_dispatcher_epoll::get_eventtrigger(void)
 		/* throw(std::runtime_error, std::bad_alloc) */
 	{
 		pipe_eventflag * flag = wakeup_flag.load(memory_order_consume);

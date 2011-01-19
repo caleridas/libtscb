@@ -67,7 +67,7 @@ namespace tscb {
 		}
 	}
 	
-	eventflag & ioready_dispatcher_select::get_eventflag(void) throw()
+	eventtrigger & ioready_dispatcher_select::get_eventtrigger(void) throw()
 	{
 		return wakeup_flag;
 	}

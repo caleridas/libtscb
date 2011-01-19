@@ -16,6 +16,27 @@
 namespace tscb {
 	
 	/**
+		\brief Event trigger interface
+		
+		Provides the interface of a simple event trigger. It
+		provides a single operation that triggers some event.
+		All implementations of this interface are async-signal
+		safe, thus it is possible to activate the trigger
+		from signal handlers.
+	*/
+	class eventtrigger {
+	public:
+		virtual ~eventtrigger(void) throw();
+		
+		/**
+			\brief Trigger the event
+			
+			Trigger the event.
+		*/
+		virtual void set(void) throw()=0;
+	};
+	
+	/**
 		\brief Event flag interface
 		
 		Provides the interface of an event flag synchronization primitive.
@@ -41,7 +62,7 @@ namespace tscb {
 		Eventflags are used in <B>tscb</B> to provide a
 		generic interface for thread wakeup.
 	*/
-	class eventflag {
+	class eventflag : public eventtrigger {
 	public:
 		virtual ~eventflag(void) throw();
 		

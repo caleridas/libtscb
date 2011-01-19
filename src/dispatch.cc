@@ -42,8 +42,8 @@ namespace tscb {
 	posix_reactor::posix_reactor(void)
 		throw(std::bad_alloc, std::runtime_error)
 		: io(create_ioready_dispatcher()),
-		flag(io->get_eventflag()),
-		timer_dispatcher(flag)
+		trigger(io->get_eventtrigger()),
+		timer_dispatcher(trigger)
 	{
 	}
 	
@@ -64,7 +64,7 @@ namespace tscb {
 			delete item;
 			throw;
 		}
-		flag.set();
+		trigger.set();
 	}
 		
 	void posix_reactor::register_timer(timer_callback * cb) throw()
@@ -95,10 +95,10 @@ namespace tscb {
 		io->modify_ioready_callback(cb, event_mask);
 	}
 	
-	eventflag &
-	posix_reactor::get_eventflag(void) /*throw(std::bad_alloc)*/
+	eventtrigger &
+	posix_reactor::get_eventtrigger(void) /*throw(std::bad_alloc)*/
 	{
-		return flag;
+		return trigger;
 	}
 	
 	void

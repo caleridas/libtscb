@@ -36,6 +36,8 @@ namespace tscb {
 	class posix_reactor_service : public workqueue_service, public timer_service, public ioready_service {
 	public:
 		virtual ~posix_reactor_service(void) throw();
+		
+		virtual eventtrigger & get_eventtrigger(void);
 	};
 	
 };

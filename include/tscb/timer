@@ -516,8 +516,8 @@ namespace tscb {
 			case, the given event flag is signalled and \ref run_queue should
 			be called again as soon as possible.
 		*/
-		generic_timerqueue_dispatcher(eventflag & flag) throw()
-			: timer_queue_running(false), timer_added(flag)
+		generic_timerqueue_dispatcher(eventtrigger & trigger) throw()
+			: timer_queue_running(false), timer_added(trigger)
 		{
 		}
 		
@@ -768,7 +768,7 @@ namespace tscb {
 		/** \internal \brief Set to true while timers are being processed */
 		bool timer_queue_running;
 		/** \internal \brief Event flag signalled when timer has been added */
-		eventflag & timer_added;
+		eventtrigger & timer_added;
 	};
 	
 	/** \brief Timer callback link using posix_time::ptime to represent time values */

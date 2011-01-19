@@ -10,6 +10,10 @@
 
 namespace tscb {
 	
+	eventtrigger::~eventtrigger(void) throw()
+	{
+	}
+	
 	eventflag::~eventflag(void) throw()
 	{
 	}
