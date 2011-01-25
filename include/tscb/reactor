@@ -37,7 +37,7 @@ namespace tscb {
 	public:
 		virtual ~posix_reactor_service(void) throw();
 		
-		virtual eventtrigger & get_eventtrigger(void);
+		virtual eventtrigger & get_eventtrigger(void) = 0;
 	};
 	
 };
