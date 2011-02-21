@@ -370,6 +370,9 @@ namespace tscb {
 		{callback=conn.callback; conn.callback=0; return *this;}
 		#endif
 		
+		inline callback_type * get(void) const throw()
+		{return callback;}
+		
 	private:
 		callback_type *callback;
 	};

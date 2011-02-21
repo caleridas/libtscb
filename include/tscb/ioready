@@ -505,6 +505,9 @@ namespace tscb {
 		{callback=conn.callback; conn.callback = 0; return *this;}
 		#endif
 		
+		inline ioready_callback * get(void) const throw()
+		{return callback;}
+		
 	private:
 		ioready_callback *callback;
 	};

@@ -353,7 +353,13 @@ namespace tscb {
 		/** \internal \brief Increase reference count */
 		inline void pin(void) throw() {refcount.fetch_add(1, memory_order_relaxed);}
 		/** \internal \brief Decrease reference count */
-		inline void release(void) throw() {if (refcount.fetch_sub(1, memory_order_relaxed)==1) delete this;}
+		inline void release(void) throw()
+		{
+			if (refcount.fetch_sub(1, memory_order_release) == 1) {
+				atomic_thread_fence(memory_order_acquire);
+				delete this;
+			}
+		}
 		
 	private:
 #ifdef _LIBTSCB_CALLBACK_UNITTESTS
@@ -410,6 +416,9 @@ namespace tscb {
 		inline connection &operator=(ConnectionType && conn) throw()
 		{callback=conn.callback; conn.callback=0; return *this;}
 		#endif
+		
+		inline abstract_callback * get(void) const throw()
+		{return callback;}
 		
 	private:
 		abstract_callback *callback;
