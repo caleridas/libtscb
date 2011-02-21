@@ -6,6 +6,10 @@
  * Refer to the file_event "COPYING" for details.
  */
 
+#ifdef HAVE_POLL
+#include <sys/poll.h>
+#endif
+
 #include <tscb/eventflag>
 
 namespace tscb {
@@ -80,7 +84,21 @@ namespace tscb {
 		start_waiting();
 		
 		if (flagged.load(memory_order_acquire)==0) {
-			/* poll file descriptor */
+			#ifdef HAVE_POLL
+			struct pollfd pfd;
+			pfd.fd = readfd;
+			pfd.events = POLLIN;
+			for(;;) {
+				poll(&pfd, 1, -1);
+				if (pfd.revents & POLLIN) break;
+			}
+			#else
+			/* old OS X do not have poll -- pretty dumb, but
+			have to comply, so just read and re-inject token */
+			char c;
+			read(readfd, &c, 1);
+			write(writefd, &c, 1);
+			#endif
 		}
 		
 		stop_waiting();
