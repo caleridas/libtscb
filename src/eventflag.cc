@@ -6,6 +6,9 @@
  * Refer to the file_event "COPYING" for details.
  */
 
+#include <unistd.h>
+#include <fcntl.h>
+
 #ifdef HAVE_POLL
 #include <sys/poll.h>
 #endif
@@ -31,8 +34,10 @@ namespace tscb {
 		
 		if (error) throw std::runtime_error("Unable to create control pipe");
 		
-		readfd=filedes[0];
-		writefd=filedes[1];
+		readfd = filedes[0];
+		fcntl(readfd, F_SETFL, O_CLOEXEC);
+		writefd = filedes[1];
+		fcntl(writefd, F_SETFL, O_CLOEXEC);
 	}
 	
 	pipe_eventflag::~pipe_eventflag(void) throw()

@@ -8,6 +8,8 @@
 
 #include <boost/bind.hpp>
 
+#include <unistd.h>
+#include <fcntl.h>
 #include <sys/fcntl.h>
 #include <sys/epoll.h>
 
@@ -40,6 +42,7 @@ namespace tscb {
 	{
 		epoll_fd = epoll_create(1024);
 		if (epoll_fd<0) throw std::runtime_error("Unable to create epoll descriptor");
+		fcntl(epoll_fd, F_SETFL, O_CLOEXEC);
 	}
 	
 	ioready_dispatcher_epoll::~ioready_dispatcher_epoll(void) throw()
