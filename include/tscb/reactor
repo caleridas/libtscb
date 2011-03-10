@@ -38,6 +38,17 @@ namespace tscb {
 		virtual ~posix_reactor_service(void) throw();
 		
 		virtual eventtrigger & get_eventtrigger(void) = 0;
+		
+		/**
+			\brief Event flag to wake up prematurely
+			
+			\deprecated Use \ref get_eventtrigger instead
+		*/
+		inline eventflag & get_eventflag(void)
+		{
+			return dynamic_cast<eventflag &>(get_eventtrigger());
+		}
+		
 	};
 	
 };
