@@ -4,7 +4,7 @@
 # it under the terms of the GNU Lesser General Public License version 2.
 # Refer to the file "COPYING" for details.
 
-TESTS=atomic deferred signal fibheap timer eventflag
+TESTS=atomic deferred signal fibheap timer eventflag connections
 
 ifeq ($(DISPATCHER_POLL), yes)
   TESTS+=ioready-poll

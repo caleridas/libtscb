@@ -112,4 +112,10 @@ namespace tscb {
 		return (*ioready_dispatcher_creator_func)();
 	}
 	
+	ioready_dispatcher *
+	ioready_dispatcher::create(void) /* throw(std::bad_alloc, std::runtime_error) */
+	{
+		return create_ioready_dispatcher();
+	}
+	
 }

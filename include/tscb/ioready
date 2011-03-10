@@ -492,7 +492,6 @@ namespace tscb {
 		inline bool connected(void) const throw()
 		{return callback && callback->connected();}
 		
-		inline operator abstract_callback * (void) const throw() {return callback;}
 		inline operator connection (void) const throw() {return callback;}
 		
 		#ifdef __GXX_EXPERIMENTAL_CXX0X__
