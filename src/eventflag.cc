@@ -9,6 +9,8 @@
 #include <unistd.h>
 #include <fcntl.h>
 
+#include <tscb/config>
+
 #ifdef HAVE_POLL
 #include <sys/poll.h>
 #endif
@@ -30,14 +32,23 @@ namespace tscb {
 		: flagged(0), waiting(0)
 	{
 		int filedes[2];
-		int error=pipe(filedes);
+		int error = -1;
+		
+#ifdef HAVE_PIPE2
+		error = pipe2(filedes, O_CLOEXEC);
+#endif
+		if (error) {
+			error = pipe(filedes);
+			if (error == 0) {
+				fcntl(filedes[0], F_SETFL, O_CLOEXEC);
+				fcntl(filedes[1], F_SETFL, O_CLOEXEC);
+			}
+		}
 		
 		if (error) throw std::runtime_error("Unable to create control pipe");
 		
 		readfd = filedes[0];
-		fcntl(readfd, F_SETFL, O_CLOEXEC);
 		writefd = filedes[1];
-		fcntl(writefd, F_SETFL, O_CLOEXEC);
 	}
 	
 	pipe_eventflag::~pipe_eventflag(void) throw()
