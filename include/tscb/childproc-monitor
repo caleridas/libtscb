@@ -1,0 +1,94 @@
+/* -*- C++ -*-
+ * (c) 2011 Helge Bahmann <hcb@chaoticmind.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License version 2.1.
+ * Refer to the file "COPYING" for details.
+ */
+
+#ifndef TSCB_CHILDPROC_MONITOR_H
+#define TSCB_CHILDPROC_MONITOR_H
+
+#include <sys/resource.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+
+#include <tscb/signal>
+
+namespace tscb {
+	
+	class childproc_monitor;
+	
+	class childproc_callback : public abstract_callback {
+	public:
+		virtual ~childproc_callback(void) throw();
+		
+		virtual void disconnect(void) throw();
+		
+		virtual bool connected(void) const throw();
+	protected:
+		inline childproc_callback(pid_t _pid, const boost::function<void(int, const rusage &)> _function)
+			: service(0), prev(0), next(0), active_next(0), deferred_cancel_next(0),
+			pid(_pid), function(_function)
+		{}
+		
+		mutable mutex registration_mutex;
+		childproc_monitor * service;
+		childproc_callback * prev, * next;
+		atomic<childproc_callback *> active_next;
+		childproc_callback * deferred_cancel_next;
+		
+		pid_t pid;
+		boost::function<void(int, const rusage &)> function;
+		
+		inline void cancelled(void)
+		{
+			function = 0;
+		}
+		
+		friend class childproc_monitor;
+	};
+	
+	class childproc_monitor_service {
+	public:
+		virtual ~childproc_monitor_service(void) throw();
+		
+		virtual connection
+		watch_childproc(const boost::function<void(int, const rusage &)> & function, pid_t pid) = 0;
+	};
+	
+	class childproc_monitor : public childproc_monitor_service {
+	public:
+		childproc_monitor(bool reap_all_children = false);
+		
+		virtual ~childproc_monitor(void) throw();
+		
+		virtual connection
+		watch_childproc(const boost::function<void(int, const rusage &)> & function, pid_t pid);
+		
+		void
+		dispatch(void);
+	protected:
+		void
+		remove(childproc_callback * cb) throw();
+		
+		void
+		synchronize(void);
+		
+		deferrable_rwlock lock;
+		friend class read_guard<childproc_monitor>;
+		
+		bool reap_all_children;
+		
+		atomic<childproc_callback *> active;
+		childproc_callback * first;
+		childproc_callback * last;
+		childproc_callback * deferred_cancel;
+		
+		friend class childproc_callback;
+	};
+	
+};
+
+#endif

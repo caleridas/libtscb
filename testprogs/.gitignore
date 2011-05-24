@@ -11,3 +11,4 @@ timer
 fibheap
 connections
 async-work
+childproc
