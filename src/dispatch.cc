@@ -106,21 +106,15 @@ namespace tscb {
 	posix_reactor::dispatch(void)
 	{
 		if (__builtin_expect(!workqueue.empty(), 0)) {
-			workitem * item;
-			workqueue_lock.lock();
-			while( (item = workqueue.pop()) != 0) {
-				workqueue_lock.unlock();
-				try {
-					item->function();
-				}
-				catch (...) {
-					delete item;
-					throw;
-				}
-				delete item;
-				workqueue_lock.lock();
-			}
-			workqueue_lock.unlock();
+			mutex::guard guard(workqueue_lock);
+			std::auto_ptr<workitem> item(workqueue.pop());
+			guard.unlock();
+			
+			item->function();
+			
+			guard.lock();
+			if (!workqueue.empty())
+				trigger.set();
 		}
 		async_workqueue.dispatch();
 		tscb::dispatch(&timer_dispatcher, io);
