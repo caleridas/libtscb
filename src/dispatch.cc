@@ -43,7 +43,8 @@ namespace tscb {
 		throw(std::bad_alloc, std::runtime_error)
 		: io(create_ioready_dispatcher()),
 		trigger(io->get_eventtrigger()),
-		timer_dispatcher(trigger)
+		timer_dispatcher(trigger),
+		async_workqueue(io->get_eventtrigger())
 	{
 	}
 	
@@ -121,6 +122,7 @@ namespace tscb {
 			}
 			workqueue_lock.unlock();
 		}
+		async_workqueue.dispatch();
 		tscb::dispatch(&timer_dispatcher, io);
 	}
 	

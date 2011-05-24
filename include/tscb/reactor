@@ -13,6 +13,7 @@
 #include <tscb/timer>
 #include <tscb/ioready>
 #include <tscb/workqueue>
+#include <tscb/async-safe-work>
 
 /**
 	\page reactor_descr Reactor interface
@@ -33,7 +34,7 @@ namespace tscb {
 		Combines the interfaces \ref tscb::workqueue_service "workqueue_service",
 		\ref tscb::timer_service "timer_service" and \ref tscb::ioready_service "ioready_service"
 	*/
-	class posix_reactor_service : public workqueue_service, public timer_service, public ioready_service {
+	class posix_reactor_service : public workqueue_service, public timer_service, public ioready_service, public async_safe_work_service {
 	public:
 		virtual ~posix_reactor_service(void) throw();
 		

@@ -175,6 +175,10 @@ namespace tscb {
 		modify_ioready_callback(ioready_callback *e, ioready_events event_mask)
 			/*throw(std::bad_alloc)*/;
 		
+		/* async_safe_work_service */
+		virtual async_safe_connection
+		async_procedure(const boost::function<void(void)> & function);
+		
 		virtual eventtrigger &
 		get_eventtrigger(void) /*throw(std::bad_alloc)*/;
 	protected:
@@ -240,6 +244,8 @@ namespace tscb {
 		
 		workitem_list workqueue;
 		mutex workqueue_lock;
+		
+		async_safe_work_dispatcher async_workqueue;
 	};
 };
 
