@@ -1,0 +1,203 @@
+/* -*- C++ -*-
+ * (c) 2010 Helge Bahmann <hcb@chaoticmind.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License version 2.1.
+ * Refer to the file_event "COPYING" for details.
+ */
+
+#ifndef TSCB_ASYNC_SAFE_WORK_H
+#define TSCB_ASYNC_SAFE_WORK_H
+
+/**
+	\page async_safe_work_descr Async-safe triggered work interface
+	
+*/
+
+#include <list>
+
+#include <tscb/eventflag>
+#include <tscb/signal>
+
+namespace tscb {
+	
+	class async_safe_callback;
+	class async_safe_connection;
+	class async_safe_work_service;
+	class async_safe_work_dispatcher;
+	
+	class async_safe_callback : public abstract_callback {
+	public:
+		virtual
+		~async_safe_callback(void) throw();
+		
+		virtual void
+		disconnect(void) throw();
+		
+		virtual bool
+		connected(void) const throw();
+		
+		inline void
+		trigger(void) throw();
+	
+	protected:
+		inline async_safe_callback(const boost::function<void(void)> & _function, async_safe_work_dispatcher * _service)
+			: function(_function), activation_flag(false), pending_next(0), prev(0), next(0), service(_service), disconnected(false)
+		{}
+		
+		inline void
+		trigger_bottom(void) throw();
+	
+		boost::function<void(void)> function;
+		
+		atomic_flag activation_flag;
+		async_safe_callback * pending_next;
+		async_safe_callback * prev, * next;
+		async_safe_work_dispatcher * service;
+		
+		enum state_type {
+			state_connected,
+			state_disconnect_async,
+			state_disconnected
+		};
+		
+		bool disconnected;
+		
+		/** \internal \brief Serialize deregistration */
+		mutex registration_mutex;
+		
+		friend class async_safe_work_dispatcher;
+		friend class async_pending_dequeue_helper;
+	};
+	
+	/**
+		\brief Connection between signal and receiver
+		
+		Every other connection implemented in this library can be
+		downcast to this type.
+	*/
+	class async_safe_connection : public eventtrigger {
+	public:
+		inline async_safe_connection(async_safe_callback *_callback = 0, bool add_ref = true) throw() : callback(_callback)
+		{if (callback && add_ref) callback->pin();}
+		
+		virtual ~async_safe_connection(void) throw();
+		
+		inline async_safe_connection(const async_safe_connection & conn) throw()
+		{callback=conn.callback; if (callback) callback->pin();}
+		
+		inline async_safe_connection &operator=(const async_safe_connection & conn) throw()
+		{if (callback) callback->release(); callback=conn.callback; if (callback) callback->pin(); return *this;}
+		
+		inline async_safe_connection &operator=(async_safe_callback * _callback) throw()
+		{if (callback) callback->release(); callback=_callback; if (callback) callback->pin(); return *this;}
+		
+		inline void disconnect(void) throw()
+		{if (callback) {callback->disconnect(); callback->release(); callback=0;}}
+		
+		inline bool connected(void) const throw()
+		{return callback && callback->connected();}
+		
+		inline operator connection (void) const throw() {return callback;}
+		
+		inline void set(void) throw()
+		{callback->trigger();}
+		
+		#ifdef __GXX_EXPERIMENTAL_CXX0X__
+		template<typename ConnectionType>
+		inline connection(ConnectionType && conn) throw()
+		{callback=conn.callback; conn.callback=0;}
+		
+		template<typename ConnectionType>
+		inline connection &operator=(ConnectionType && conn) throw()
+		{callback=conn.callback; conn.callback=0; return *this;}
+		#endif
+		
+		inline async_safe_callback * get(void) const throw()
+		{return callback;}
+		
+	private:
+		async_safe_callback * callback;
+	};
+	
+	/**
+		\brief Async-triggered procedures interface
+		
+		Represents a registration interface for procedures that can be
+		triggered in an async-safe way.
+	*/
+	class async_safe_work_service {
+	public:
+		virtual ~async_safe_work_service(void) throw();
+		
+		/**
+			\brief Register async-safe triggered work procedure
+			
+			\param function The procedure to be called
+			\returns Connection object
+			
+			Registers a procedure and associates it with an eventflag.
+			When the eventflag is set, the designated procedure will
+			eventually be called at least once. The eventflag can
+			safely be triggered from signal handler context.
+		*/
+		virtual async_safe_connection
+		async_procedure(const boost::function<void(void)> & function) = 0;
+	};
+	
+	/**
+		\brief Stand-alone dispatcher for async-triggered procedures
+	*/
+	class async_safe_work_dispatcher : public async_safe_work_service {
+	public:
+		async_safe_work_dispatcher(eventtrigger & trigger);
+		virtual ~async_safe_work_dispatcher(void) throw();
+		
+		virtual async_safe_connection
+		async_procedure(const boost::function<void(void)> & function);
+		
+		virtual void
+		dispatch(void);
+		
+	protected:
+		/** \internal \brief Singly-linked list of pending async procedures */
+		atomic<async_safe_callback *> pending;
+		
+		/** \internal \brief Count of procs to be cancelled asynchronously */
+		atomic<int> async_cancel_count;
+		
+		/** \internal \brief Doubly-linked list of available async procedures */
+		async_safe_callback * first;
+		async_safe_callback * last;
+		
+		mutex list_mutex;
+		
+		eventtrigger & trigger;
+		
+		friend class async_safe_callback;
+	};
+	
+	inline void
+	async_safe_callback::trigger(void) throw()
+	{
+		/* if triggered already, do nothing */
+		if (activation_flag.test_and_set(memory_order_acquire))
+			return;
+		
+		trigger_bottom();
+	}
+	
+	inline void
+	async_safe_callback::trigger_bottom(void) throw()
+	{
+		async_safe_callback * tmp = service->pending.load(memory_order_relaxed);
+		do {
+			pending_next = tmp;
+		} while(!service->pending.compare_exchange_weak(tmp, this, memory_order_release, memory_order_relaxed));
+		/* small(ish) problem: trigger might race with final clean-up */
+		service->trigger.set();
+	}
+	
+};
+
+#endif
