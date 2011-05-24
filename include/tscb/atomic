@@ -14,6 +14,7 @@
 namespace tscb {
 	using boost::atomic;
 	using boost::atomic_int;
+	using boost::atomic_flag;
 	
 	using boost::atomic_thread_fence;
 	using boost::memory_order_relaxed;
