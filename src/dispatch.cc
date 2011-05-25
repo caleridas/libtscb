@@ -96,6 +96,12 @@ namespace tscb {
 		io->modify_ioready_callback(cb, event_mask);
 	}
 	
+	async_safe_connection
+	posix_reactor::async_procedure(const boost::function<void(void)> & function)
+	{
+		return async_workqueue.async_procedure(function);
+	}
+	
 	eventtrigger &
 	posix_reactor::get_eventtrigger(void) /*throw(std::bad_alloc)*/
 	{
