@@ -153,6 +153,7 @@ namespace tscb {
 				async_safe_callback * next = proc->pending_next;
 				proc->release();
 				proc = next;
+				async_cancel_count.fetch_sub(1, memory_order_relaxed);
 			}
 		}
 	}

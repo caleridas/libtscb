@@ -182,6 +182,18 @@ void test_disconnect_race(void)
 	assert(called_count == 0);
 }
 
+void test_async_cancel()
+{
+	tscb::pipe_eventflag event;
+	tscb::async_safe_work_dispatcher async(event);
+	
+	called_count.store(0);
+	
+	tscb::async_safe_connection c = async.async_procedure(work_handler);
+	
+	c.set();
+}
+
 int main()
 {
 	test_basic_operation();
@@ -189,4 +201,5 @@ int main()
 	test_disconnect_triggered();
 	test_dispatch_throw();
 	test_disconnect_race();
+	test_async_cancel();
 }
