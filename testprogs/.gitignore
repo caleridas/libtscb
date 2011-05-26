@@ -10,5 +10,6 @@ list
 timer
 fibheap
 connections
+reactor-dispatch
 async-work
 childproc

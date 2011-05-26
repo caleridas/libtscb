@@ -4,7 +4,17 @@
 # it under the terms of the GNU Lesser General Public License version 2.
 # Refer to the file "COPYING" for details.
 
-TESTS=atomic deferred signal fibheap timer eventflag connections async-work childproc
+TESTS = \
+	atomic \
+	deferred \
+	signal \
+	fibheap \
+	timer \
+	eventflag \
+	connections \
+	reactor-dispatch \
+	async-work \
+	childproc \
 
 ifeq ($(DISPATCHER_POLL), yes)
   TESTS+=ioready-poll
