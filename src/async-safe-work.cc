@@ -106,11 +106,13 @@ namespace tscb {
 		eventtrigger & trigger;
 	};
 	
-	void
+	size_t
 	async_safe_work_dispatcher::dispatch(void)
 	{
+		size_t handled = 0;
 		/* fast-path check */
-		if (pending.load(memory_order_relaxed) == 0) return;
+		if (pending.load(memory_order_relaxed) == 0)
+			return 0;
 		
 		async_pending_dequeue_helper deq(pending, trigger);
 		
@@ -125,12 +127,15 @@ namespace tscb {
 				/* if this throws, the current proc will be considered "processed",
 				while the remaining are re-added to the queue */
 				proc->function();
+				handled ++;
 			} else {
 				list_mutex.unlock();
 				proc->release();
 				async_cancel_count.fetch_sub(1, memory_order_relaxed);
 			}
 		}
+		
+		return handled;
 	}
 	
 	async_safe_work_dispatcher::~async_safe_work_dispatcher(void) throw()

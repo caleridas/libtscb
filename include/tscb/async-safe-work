@@ -156,7 +156,12 @@ namespace tscb {
 		virtual async_safe_connection
 		async_procedure(const boost::function<void(void)> & function);
 		
-		virtual void
+		/**
+			\brief Dispatch pending events
+			\return
+				Number of pending async procedures processed
+		*/
+		virtual size_t
 		dispatch(void);
 		
 	protected:
