@@ -116,7 +116,8 @@ namespace tscb {
 			std::auto_ptr<workitem> item(workqueue.pop());
 			guard.unlock();
 			
-			item->function();
+			if (item.get())
+				item->function();
 			
 			guard.lock();
 			if (!workqueue.empty())
@@ -126,4 +127,43 @@ namespace tscb {
 		tscb::dispatch(&timer_dispatcher, io);
 	}
 	
+	bool
+	posix_reactor::dispatch_pending(void)
+	{
+		bool processed_events = false;
+		
+		if (__builtin_expect(!workqueue.empty(), 0)) {
+			mutex::guard guard(workqueue_lock);
+			std::auto_ptr<workitem> item(workqueue.pop());
+			guard.unlock();
+			
+			if (item.get()) {
+				item->function();
+				processed_events = true;
+			}
+			
+			guard.lock();
+			if (!workqueue.empty())
+				trigger.set();
+		}
+		
+		if (async_workqueue.dispatch())
+			processed_events = true;
+		
+		boost::posix_time::ptime first_timer_due;
+		if (__builtin_expect(timer_dispatcher.next_timer(first_timer_due), false)) {
+			boost::posix_time::ptime now = monotonic_time();
+			
+			if (first_timer_due <= now) {
+				processed_events = true;
+				
+				timer_dispatcher.run_queue(now);
+			}
+		}
+		
+		if (io->dispatch_pending())
+			processed_events = true;
+		
+		return processed_events;
+	}
 };

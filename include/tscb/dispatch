@@ -148,6 +148,20 @@ namespace tscb {
 		*/
 		void dispatch(void);
 		
+		/**
+			\brief Dispatcher pending events, but don't wait
+			
+			\return
+				Whether any event was processed
+			
+			Processes a number of events (not necessarily all) that are pending
+			currently. Returns "true" if any event was processed (in which
+			case it usually makes sense to call the function again to check
+			for further events), or "false" if no event can be processed at
+			the moment.
+		*/
+		bool dispatch_pending(void);
+		
 		/* workqueue_service */
 		virtual void
 		post(const boost::function<void(void)> &function) /*throw(std::bad_alloc)*/;

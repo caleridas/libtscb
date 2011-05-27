@@ -91,8 +91,79 @@ void test_workqueue_monopolization(void)
 		reactor.dispatch();
 }
 
+void test_pending(void)
+{
+	tscb::posix_reactor reactor;
+	
+	assert(reactor.dispatch_pending() == false);
+	
+	/* timers pending */
+	{
+		int timer_called = 0;
+		boost::posix_time::ptime due = tscb::monotonic_time() + boost::posix_time::milliseconds(10);
+		tscb::connection c = reactor.timer(boost::bind(dummy_timer, &timer_called, _1), due);
+		
+		/* registering a new event source may as a side effect cause
+		a spurious wakeup, so clear this first */
+		while(reactor.dispatch_pending()) { /* nothing */ }
+		
+		assert(!timer_called);
+		
+		while(tscb::monotonic_time() < due)
+			usleep(1000);
+		
+		assert(reactor.dispatch_pending());
+		
+		assert(timer_called);
+		
+		c.disconnect();
+		/* removal may cause spurious wakeup as well */
+		while(reactor.dispatch_pending()) { /* nothing */ }
+	}
+	
+	/* io events pending */
+	{
+		int fds[2];
+		int reader_called = 0;
+		pipe(fds);
+		tscb::connection c = reactor.watch(boost::bind(dummy_reader, &reader_called, fds[0], _1), fds[0], tscb::ioready_input);
+		
+		/* registering a new event source may as a side effect cause
+		a spurious wakeup, so clear this first */
+		while(reactor.dispatch_pending()) { /* nothing */ }
+		
+		assert(!reader_called);
+		
+		write(fds[1], "x", 1);
+		
+		assert(reactor.dispatch_pending());
+		
+		assert(reader_called);
+		
+		c.disconnect();
+		
+		close(fds[0]);
+		close(fds[1]);
+		/* removal may cause spurious wakeup as well */
+		while(reactor.dispatch_pending()) { /* nothing */ }
+	}
+	
+	/* pending work items */
+	{
+		int worker_called = 0;
+		reactor.post(boost::bind(dummy_work, &worker_called));
+		
+		assert(reactor.dispatch_pending());
+		
+		assert(worker_called);
+		
+		assert(!reactor.dispatch_pending());
+	}
+}
+
 int main()
 {
 	test_basic_operation();
 	test_workqueue_monopolization();
+	test_pending();
 }
