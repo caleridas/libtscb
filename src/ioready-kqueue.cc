@@ -82,19 +82,18 @@ namespace tscb {
 		if (guard.read_unlock()) synchronize();
 	}
 	
-	int ioready_dispatcher_kqueue::dispatch(const boost::posix_time::time_duration *timeout, int max)
-		throw()
+	size_t ioready_dispatcher_kqueue::dispatch(const boost::posix_time::time_duration *timeout, size_t max)
 	{
-		pipe_eventflag *evflag=wakeup_flag;
+		pipe_eventflag *evflag = wakeup_flag;
 		
 		struct timespec tv, *t;
 		if (timeout) {
-			tv.tv_sec=timeout->total_seconds();
-			tv.tv_nsec=timeout->total_nanoseconds()%1000000000;
-			t=&tv;
-		} else t=0;
+			tv.tv_sec = timeout->total_seconds();
+			tv.tv_nsec = timeout->total_nanoseconds() % 1000000000;
+			t = &tv;
+		} else t = 0;
 		
-		if (max>16) max=16;
+		if (max>16) max = 16;
 		struct kevent events[max];
 		
 		ssize_t nevents;
@@ -120,6 +119,29 @@ namespace tscb {
 			
 			evflag->clear();
 		}
+		return nevents;
+	}
+	
+	size_t ioready_dispatcher_kqueue::dispatch_pending(size_t max)
+	{
+		pipe_eventflag *evflag=wakeup_flag;
+		
+		struct timespec tv;
+		tv.tv_sec = 0;
+		tv.tv_nsec = 0;
+		
+		if (max>16) max = 16;
+		struct kevent events[16];
+		
+		ssize_t nevents;
+		
+		nevents = kevent(kqueue_fd, NULL, 0, events, max, &tv);
+		
+		if (nevents>0) process_events(events, nevents);
+		else nevents=0;
+		
+		evflag->clear();
+		
 		return nevents;
 	}
 	

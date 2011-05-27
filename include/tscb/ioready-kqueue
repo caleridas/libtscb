@@ -47,7 +47,9 @@ namespace tscb {
 		ioready_dispatcher_kqueue(void) throw(std::runtime_error);
 		virtual ~ioready_dispatcher_kqueue(void) throw();
 		
-		virtual int dispatch(const boost::posix_time::time_duration *timeout, int max) throw();
+		virtual size_t dispatch(const boost::posix_time::time_duration *timeout, int max);
+		
+		virtual size_t dispatch_pending(size_t max);
 		
 		virtual eventflag *get_eventflag(void)
 			throw(std::runtime_error, std::bad_alloc);

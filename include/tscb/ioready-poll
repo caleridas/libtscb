@@ -38,7 +38,9 @@ namespace tscb {
 		ioready_dispatcher_poll(void) /*throw(std::bad_alloc, std::runtime_error)*/;
 		virtual ~ioready_dispatcher_poll(void) throw();
 		
-		virtual int dispatch(const boost::posix_time::time_duration * timeout, int max);
+		virtual size_t dispatch(const boost::posix_time::time_duration *timeout, size_t max);
+		
+		virtual size_t dispatch_pending(size_t max);
 		
 		virtual eventtrigger & get_eventtrigger(void) throw();
 		

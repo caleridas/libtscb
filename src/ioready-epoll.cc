@@ -99,7 +99,7 @@ namespace tscb {
 		}
 	}
 	
-	int ioready_dispatcher_epoll::dispatch(const boost::posix_time::time_duration *timeout, int max)
+	size_t ioready_dispatcher_epoll::dispatch(const boost::posix_time::time_duration *timeout, size_t max)
 	{
 		pipe_eventflag *evflag = wakeup_flag.load(memory_order_consume);
 		
@@ -109,7 +109,7 @@ namespace tscb {
 		else poll_timeout = -1;
 		
 		if (max > 16) max = 16;
-		epoll_event events[max];
+		epoll_event events[16];
 		
 		ssize_t nevents;
 		
@@ -129,6 +129,26 @@ namespace tscb {
 			
 			evflag->clear();
 		}
+		return nevents;
+	}
+	
+	size_t ioready_dispatcher_epoll::dispatch_pending(size_t max)
+	{
+		pipe_eventflag *evflag = wakeup_flag.load(memory_order_consume);
+		
+		if (max > 16) max = 16;
+		epoll_event events[16];
+		
+		ssize_t nevents;
+		
+		nevents = epoll_wait(epoll_fd, events, max, 0);
+		
+		if (nevents > 0) process_events(events, nevents);
+		else nevents = 0;
+		
+		if (evflag)
+			evflag->clear();
+		
 		return nevents;
 	}
 	

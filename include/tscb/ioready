@@ -638,12 +638,14 @@ namespace tscb {
 		virtual ~ioready_dispatcher(void) throw();
 		
 		/**
-			\brief Dispatch a number of pending events
+			\brief Dispatch an event or wait until timeout
 			
 			\param timeout
 				Timeout, or a NULL pointer
 			\param max
 				Maximum number of events to be processed
+			\return
+				Number of events processed
 			
 			Check state of all registered file descriptors and process
 			registered callback functions.
@@ -683,9 +685,35 @@ namespace tscb {
 			may not be terribly useful, as some dispatchers will attempt
 			to dispatch the same event in multiple threads.
 		*/
-		virtual int dispatch(const boost::posix_time::time_duration * timeout,
-			int max = 2147483647L)
+		virtual size_t dispatch(const boost::posix_time::time_duration * timeout,
+			size_t max = 2147483647L)
 			=0;
+		
+		/**
+			\brief Dispatch a number of pending events
+			
+			\param max
+				Maximum number of events to be processed
+			\return
+				Number of events processed
+			
+			Check state of all registered file descriptors and process
+			registered callback functions.
+			
+			All pending events are processed up to the indicated maximum
+			number of events; unprocessed events will be processed in further
+			calls to \ref dispatch.
+			
+			The function will return after processing the specified maximum
+			number of events. It will not wait for events if none is pending.
+			
+			The function is generally reentrant, multiple threads
+			can enter the dispatching loop simultaneously. However depending
+			on the concrete dispatcher implementation the behaviour
+			may not be terribly useful, as some dispatchers will attempt
+			to dispatch the same event in multiple threads.
+		*/
+		virtual size_t dispatch_pending(size_t max = 2147483647L) = 0;
 		
 		/**
 			\brief Event flag to wake up prematurely

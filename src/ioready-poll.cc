@@ -107,7 +107,7 @@ namespace tscb {
 		return wakeup_flag;
 	}
 	
-	int ioready_dispatcher_poll::dispatch(const boost::posix_time::time_duration *timeout, int max)
+	size_t ioready_dispatcher_poll::dispatch(const boost::posix_time::time_duration *timeout, size_t max)
 	{
 		read_guard<ioready_dispatcher_poll> guard(*this);
 		
@@ -130,8 +130,42 @@ namespace tscb {
 		wakeup_flag.stop_waiting();
 		
 		if (count < 0) count = 0;
-		if (count > max) count = max;
+		if ((size_t)count > max) count = max;
 		int n=0;
+		while(count) {
+			if (ptab->pfd[n].revents) {
+				int fd = ptab->pfd[n].fd;
+				ioready_events ev = translate_os_to_tscb(ptab->pfd[n].revents);
+				fdtab.notify(fd, ev);
+				
+				count--;
+				handled++;
+			}
+			n++;
+		}
+		
+		wakeup_flag.clear();
+		
+		if (lock.read_unlock()) synchronize();
+		
+		return handled;
+	}
+	
+	size_t ioready_dispatcher_poll::dispatch_pending(size_t max)
+	{
+		read_guard<ioready_dispatcher_poll> guard(*this);
+		
+		polltab * ptab = master_ptab.load(memory_order_consume);
+		
+		ssize_t count;
+		size_t handled = 0;
+		
+		count = poll(ptab->pfd, ptab->size, 0);
+		
+		if (count < 0) count = 0;
+		if ((size_t)count > max) count = max;
+		
+		size_t n = 0;
 		while(count) {
 			if (ptab->pfd[n].revents) {
 				int fd = ptab->pfd[n].fd;

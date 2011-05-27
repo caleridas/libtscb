@@ -80,7 +80,7 @@ namespace tscb {
 		memcpy(dst, src, copybytes);
 	}
 	
-	int ioready_dispatcher_select::dispatch(const boost::posix_time::time_duration *timeout, int max)
+	size_t ioready_dispatcher_select::dispatch(const boost::posix_time::time_duration *timeout, size_t max)
 	{
 		read_guard<ioready_dispatcher_select> guard(*this);
 		
@@ -114,9 +114,58 @@ namespace tscb {
 		
 		wakeup_flag.stop_waiting();
 		
-		if (count<0) count = 0;
-		if (count>max) count = max;
-		int n = 0;
+		if (count < 0) count = 0;
+		if ((size_t)count > max) count = max;
+		size_t n = 0;
+		while(count) {
+			int r = FD_ISSET(n, &l_readfds);
+			int w = FD_ISSET(n, &l_writefds);
+			int e = FD_ISSET(n, &l_exceptfds);
+			if (r | w | e) {
+				ioready_events ev = ioready_none;
+				if (r) ev = ioready_input;
+				if (w) ev |= ioready_output;
+				/* deliver exception events to everyone */
+				if (e) ev |= ioready_error|ioready_input|ioready_output;
+				
+				fdtab.notify(n, ev);
+				count--;
+				handled++;
+			}
+			n++;
+		}
+		
+		wakeup_flag.clear();
+		
+		return handled;
+	}
+	
+	size_t ioready_dispatcher_select::dispatch_pending(size_t max)
+	{
+		read_guard<ioready_dispatcher_select> guard(*this);
+		
+		fd_set l_readfds, l_writefds, l_exceptfds;
+		int l_maxfd;
+		
+		pthread_mutex_lock(&fdset_mtx);
+		l_maxfd = maxfd;
+		copy_fdset(&l_readfds, &readfds, maxfd);
+		copy_fdset(&l_writefds, &writefds, maxfd);
+		copy_fdset(&l_exceptfds, &exceptfds, maxfd);
+		pthread_mutex_unlock(&fdset_mtx);
+		
+		struct timeval tv;
+		tv.tv_sec = 0;
+		tv.tv_usec = 0;
+		
+		ssize_t count;
+		size_t handled = 0;
+		count = select(l_maxfd, &l_readfds, &l_writefds, &l_exceptfds, &tv);
+		
+		if (count < 0) count = 0;
+		if ((size_t)count > max) count = max;
+		
+		size_t n = 0;
 		while(count) {
 			int r = FD_ISSET(n, &l_readfds);
 			int w = FD_ISSET(n, &l_writefds);
