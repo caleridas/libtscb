@@ -118,7 +118,7 @@ void test_pending(void)
 		
 		c.disconnect();
 		/* removal may cause spurious wakeup as well */
-		while(reactor.dispatch_pending()) { /* nothing */ }
+		reactor.dispatch_pending_all();
 	}
 	
 	/* io events pending */
@@ -130,7 +130,7 @@ void test_pending(void)
 		
 		/* registering a new event source may as a side effect cause
 		a spurious wakeup, so clear this first */
-		while(reactor.dispatch_pending()) { /* nothing */ }
+		reactor.dispatch_pending_all();
 		
 		assert(!reader_called);
 		

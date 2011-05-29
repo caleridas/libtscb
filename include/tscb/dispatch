@@ -149,7 +149,7 @@ namespace tscb {
 		void dispatch(void);
 		
 		/**
-			\brief Dispatcher pending events, but don't wait
+			\brief Dispatch pending events, but do not wait
 			
 			\return
 				Whether any event was processed
@@ -161,6 +161,17 @@ namespace tscb {
 			the moment.
 		*/
 		bool dispatch_pending(void);
+		
+		/**
+			\brief Dispatch all pending events, but do not wait
+			
+			\return
+				Whether any event was processed
+			
+			Processes all pending events, but do not wait for new events
+			to arrive.
+		*/
+		void dispatch_pending_all(void);
 		
 		/* workqueue_service */
 		virtual void

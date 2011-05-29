@@ -166,4 +166,12 @@ namespace tscb {
 		
 		return processed_events;
 	}
+	
+	void posix_reactor::dispatch_pending_all(void)
+	{
+		while (dispatch_pending()) {
+			/* empty */
+		}
+	}
+	
 };
