@@ -41,7 +41,12 @@ testprogs/ioready-select: testprogs/ioready-select.o testprogs/ioready-dispatche
 testprogs/ioready-kqueue: testprogs/ioready-kqueue.o testprogs/ioready-dispatcher.o
 
 RUNTESTS=$(patsubst %, run-%, $(TESTS))
+
 check: $(RUNTESTS)
+
+VALGRIND_RUNTESTS=$(patsubst %, valgrind-run-%, $(TESTS))
+
+valgrind-check: $(VALGRIND_RUNTESTS)
 
 TESTEXECUTABLES=$(patsubst %, testprogs/%, $(TESTS))
 EXECUTABLES+=$(TESTEXECUTABLES)
@@ -50,3 +55,6 @@ $(TESTEXECUTABLES): % : %.o libtscb.a
 
 $(RUNTESTS): run-%: testprogs/%
 	$^
+
+$(VALGRIND_RUNTESTS): valgrind-run-%: testprogs/%
+	valgrind --error-exitcode=1 $^
