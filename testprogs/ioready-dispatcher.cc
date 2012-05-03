@@ -15,6 +15,7 @@
 
 #include <tscb/ioready>
 #include <pthread.h>
+#include <fcntl.h>
 
 using namespace tscb;
 
@@ -189,7 +190,67 @@ void test_dispatcher(ioready_dispatcher *d)
 	}
 }
 
-static int cancel_dispatching;
+class pipe_swapper {
+public:
+	void handle_pipe1(ioready_events events)
+	{
+		char c;
+		ssize_t count = read(pipe1[0], &c, 1);
+		if (count == 0)
+			events |= ioready_hangup;
+		assert((events & ioready_hangup) != 0);
+		conn.disconnect();
+		close(pipe1[0]);
+		dup2(pipe2[0], pipe1[0]);
+		conn = d->watch(boost::bind(&pipe_swapper::handle_pipe2, this, _1), pipe1[0], ioready_input);
+	}
+	
+	void handle_pipe2(ioready_events events)
+	{
+		char c;
+		ssize_t count = read(pipe1[0], &c, 1);
+		if (count == 0)
+			events |= ioready_hangup;
+		assert(count == 1);
+		assert( !(events & ioready_hangup) );
+		assert(events & ioready_input);
+		conn.disconnect();
+		finished = true;
+	}
+	
+	int pipe1[2], pipe2[2];
+	connection conn;
+	ioready_dispatcher * d;
+	bool finished;
+};
+
+void test_dispatcher_sync_disconnect(ioready_dispatcher * d)
+{
+	pipe_swapper sw;
+	
+	pipe(sw.pipe1);
+	fcntl(sw.pipe1[0], F_SETFL, O_NONBLOCK);
+	pipe(sw.pipe2);
+	fcntl(sw.pipe2[0], F_SETFL, O_NONBLOCK);
+	sw.d = d;
+	sw.conn = d->watch(boost::bind(&pipe_swapper::handle_pipe1, &sw, _1), sw.pipe1[0], ioready_input);
+	sw.finished = false;
+	
+	char c = 0;
+	write(sw.pipe2[1], &c, 1);
+	close(sw.pipe1[1]);
+	
+	while (!sw.finished) {
+		boost::posix_time::time_duration t(0);
+		d->dispatch(&t);
+	}
+	
+	close(sw.pipe1[0]);
+	close(sw.pipe2[0]);
+	close(sw.pipe2[1]);
+}
+
+static int cancel_dispatching = 0;
 
 static void *run_dispatcher(void *arg)
 {

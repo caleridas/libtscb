@@ -13,5 +13,6 @@
 
 void test_dispatcher(tscb::ioready_dispatcher *d);
 void test_dispatcher_threading(tscb::ioready_dispatcher *d);
+void test_dispatcher_sync_disconnect(tscb::ioready_dispatcher * d);
 
 #endif

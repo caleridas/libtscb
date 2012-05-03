@@ -24,6 +24,7 @@ int main()
 	
 	test_dispatcher(dispatcher);
 	test_dispatcher_threading(dispatcher);
+	test_dispatcher_sync_disconnect(dispatcher);
 	
 	delete dispatcher;
 }
