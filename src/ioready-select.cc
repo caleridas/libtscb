@@ -84,6 +84,8 @@ namespace tscb {
 	{
 		read_guard<ioready_dispatcher_select> guard(*this);
 		
+		uint32_t cookie = fdtab.get_cookie();
+		
 		fd_set l_readfds, l_writefds, l_exceptfds;
 		int l_maxfd;
 		
@@ -128,7 +130,7 @@ namespace tscb {
 				/* deliver exception events to everyone */
 				if (e) ev |= ioready_error|ioready_input|ioready_output;
 				
-				fdtab.notify(n, ev);
+				fdtab.notify(n, ev, cookie);
 				count--;
 				handled++;
 			}
@@ -143,6 +145,8 @@ namespace tscb {
 	size_t ioready_dispatcher_select::dispatch_pending(size_t max)
 	{
 		read_guard<ioready_dispatcher_select> guard(*this);
+		
+		uint32_t cookie = fdtab.get_cookie();
 		
 		fd_set l_readfds, l_writefds, l_exceptfds;
 		int l_maxfd;
@@ -177,7 +181,7 @@ namespace tscb {
 				/* deliver exception events to everyone */
 				if (e) ev |= ioready_error|ioready_input|ioready_output;
 				
-				fdtab.notify(n, ev);
+				fdtab.notify(n, ev, cookie);
 				count--;
 				handled++;
 			}

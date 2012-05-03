@@ -114,6 +114,19 @@ namespace tscb {
 		}
 		old_mask = new_mask | cb->event_mask;
 		
+		/* If this is the last callback registered for this descriptor,
+		then user might be tempted to synchronously close and reuse it;
+		this could lead to a pending event being delivered for the new
+		descriptor. Guard against this by changing the cookie for the
+		callback chain. */
+		if (entry->active.load(memory_order_relaxed) == 0) {
+			uint32_t old_cookie = cookie.fetch_add(1, memory_order_relaxed);
+			uint32_t new_cookie = old_cookie + 1;
+			entry->cookie.store(new_cookie, memory_order_relaxed);
+			if (((old_cookie ^ new_cookie) & (1<<16)) != 0)
+				need_cookie_sync = true;
+		}
+		
 		/* put into list of elements marked for deferred cancellation */
 		cb->inactive_next = inactive;
 		inactive = cb;
@@ -148,6 +161,16 @@ namespace tscb {
 			link = link->inactive_next;
 		}
 		
+		if (need_cookie_sync) {
+			need_cookie_sync = true;
+			uint32_t current_cookie = cookie.load(memory_order_relaxed);
+			for (size_t n = 0; n < tab->capacity; ++n) {
+				file_descriptor_chain * entry = tab->entries[n];
+				if (!entry)
+					continue;
+				entry->cookie.store(current_cookie, memory_order_relaxed);
+			}
+		}
 		/* return first inactive callback so they can be deallocated
 		outside the lock */
 		link = inactive;

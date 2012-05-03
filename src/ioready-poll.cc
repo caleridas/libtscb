@@ -111,6 +111,8 @@ namespace tscb {
 	{
 		read_guard<ioready_dispatcher_poll> guard(*this);
 		
+		uint32_t cookie = fdtab.get_cookie();
+		
 		polltab * ptab = master_ptab.load(memory_order_consume);
 		
 		int count, handled = 0;
@@ -123,7 +125,8 @@ namespace tscb {
 		
 		wakeup_flag.start_waiting();
 		
-		if (wakeup_flag.flagged.load(memory_order_relaxed) != 0) poll_timeout = 0;
+		if (wakeup_flag.flagged.load(memory_order_relaxed) != 0)
+			poll_timeout = 0;
 		
 		count = poll(ptab->pfd, ptab->size, poll_timeout);
 		
@@ -136,7 +139,7 @@ namespace tscb {
 			if (ptab->pfd[n].revents) {
 				int fd = ptab->pfd[n].fd;
 				ioready_events ev = translate_os_to_tscb(ptab->pfd[n].revents);
-				fdtab.notify(fd, ev);
+				fdtab.notify(fd, ev, cookie);
 				
 				count--;
 				handled++;
@@ -160,6 +163,8 @@ namespace tscb {
 		ssize_t count;
 		size_t handled = 0;
 		
+		uint32_t cookie = fdtab.get_cookie();
+		
 		count = poll(ptab->pfd, ptab->size, 0);
 		
 		if (count < 0) count = 0;
@@ -170,7 +175,7 @@ namespace tscb {
 			if (ptab->pfd[n].revents) {
 				int fd = ptab->pfd[n].fd;
 				ioready_events ev = translate_os_to_tscb(ptab->pfd[n].revents);
-				fdtab.notify(fd, ev);
+				fdtab.notify(fd, ev, cookie);
 				
 				count--;
 				handled++;

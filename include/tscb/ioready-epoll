@@ -58,7 +58,7 @@ namespace tscb {
 	protected:
 		void drain_queue(void) throw();
 		
-		void process_events(epoll_event events[], size_t nevents);
+		void process_events(epoll_event events[], size_t nevents, uint32_t cookie);
 		
 		int epoll_fd;
 		

@@ -9,6 +9,8 @@
 #ifndef TSCB_FILE_DESCRIPTOR_TABLE_H
 #define TSCB_FILE_DESCRIPTOR_TABLE_H
 
+#include <stdint.h>
+
 #include <tscb/ioready>
 
 namespace tscb {
@@ -22,9 +24,10 @@ namespace tscb {
 	public:
 		atomic<ioready_callback *> active;
 		ioready_callback * first, * last;
+		atomic<uint32_t> cookie;
 		
 		file_descriptor_chain(void)
-			: active(0), first(0), last(0)
+			: active(0), first(0), last(0), cookie(0)
 		{
 		}
 	};
@@ -35,7 +38,7 @@ namespace tscb {
 	class file_descriptor_table {
 	public:
 		inline file_descriptor_table(size_t initial = 32)  /*throw(std::bad_alloc)*/
-			: table(new volatile_table(initial)), inactive(0)
+			: table(new volatile_table(initial)), inactive(0), cookie(0), need_cookie_sync(false)
 		{
 		}
 		
@@ -80,7 +83,7 @@ namespace tscb {
 		void cancel_all(void) throw();
 		
 		/* must be called under read lock */
-		inline void notify(int fd, ioready_events events)
+		inline void notify(int fd, ioready_events events, uint32_t call_cookie)
 		{
 			volatile_table * tab = table.load(memory_order_consume);
 			if ((size_t)fd >= tab->capacity)
@@ -92,6 +95,9 @@ namespace tscb {
 			
 			ioready_callback * cb = entry->active.load(memory_order_consume);
 			while (cb) {
+				int32_t delta = entry->cookie.load(memory_order_relaxed) - call_cookie;
+				if (__builtin_expect(delta > 0, 0))
+					break;
 				if ((events & cb->event_mask) != 0)
 					cb->target(events & cb->event_mask);
 				cb = cb->active_next.load(memory_order_consume);
@@ -101,6 +107,11 @@ namespace tscb {
 		/* must be called after read_unlock/write_lock indicates that synchronization
 		is required */
 		ioready_callback * synchronize(void) throw();
+		
+		inline uint32_t get_cookie(void) const throw()
+		{
+			return cookie.load(memory_order_relaxed);
+		}
 		
 	protected:
 		class volatile_table {
@@ -148,6 +159,8 @@ namespace tscb {
 		
 		atomic<volatile_table *> table;
 		ioready_callback *inactive;
+		atomic<uint32_t> cookie;
+		bool need_cookie_sync;
 	};
 	
 	/** \endcond NEVER internal class */

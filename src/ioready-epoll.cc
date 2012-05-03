@@ -87,7 +87,7 @@ namespace tscb {
 		if (wakeup_flag.load(memory_order_relaxed)) delete wakeup_flag.load(memory_order_relaxed);
 	}
 	
-	void ioready_dispatcher_epoll::process_events(epoll_event events[], size_t nevents)
+	void ioready_dispatcher_epoll::process_events(epoll_event events[], size_t nevents, uint32_t cookie)
 	{
 		read_guard<ioready_dispatcher_epoll> guard(*this);
 		
@@ -95,7 +95,7 @@ namespace tscb {
 			int fd = events[n].data.fd;
 			ioready_events ev = translate_os_to_tscb(events[n].events);
 			
-			fdtab.notify(fd, ev);
+			fdtab.notify(fd, ev, cookie);
 		}
 	}
 	
@@ -103,12 +103,17 @@ namespace tscb {
 	{
 		pipe_eventflag *evflag = wakeup_flag.load(memory_order_consume);
 		
+		uint32_t cookie = fdtab.get_cookie();
+		
 		int poll_timeout;
 		/* need to round up timeout; alas this is the only good way to do it in boost */
-		if (timeout) poll_timeout = (timeout->total_microseconds() + 999) / 1000;
-		else poll_timeout = -1;
+		if (timeout)
+			poll_timeout = (timeout->total_microseconds() + 999) / 1000;
+		else
+			poll_timeout = -1;
 		
-		if (max > 16) max = 16;
+		if (max > 16)
+			max = 16;
 		epoll_event events[16];
 		
 		ssize_t nevents;
@@ -116,16 +121,21 @@ namespace tscb {
 		if (__builtin_expect(evflag == 0, 1)) {
 			nevents = epoll_wait(epoll_fd, events, max, poll_timeout);
 			
-			if (nevents > 0) process_events(events, nevents);
-			else nevents = 0;
+			if (nevents > 0)
+				process_events(events, nevents, cookie);
+			else
+				nevents = 0;
 		} else {
 			evflag->start_waiting();
-			if (evflag->flagged.load(memory_order_relaxed) != 0) poll_timeout = 0;
+			if (evflag->flagged.load(memory_order_relaxed) != 0)
+				poll_timeout = 0;
 			nevents = epoll_wait(epoll_fd, events, max, poll_timeout);
 			evflag->stop_waiting();
 			
-			if (nevents > 0) process_events(events, nevents);
-			else nevents = 0;
+			if (nevents > 0)
+				process_events(events, nevents, cookie);
+			else
+				nevents = 0;
 			
 			evflag->clear();
 		}
@@ -136,15 +146,20 @@ namespace tscb {
 	{
 		pipe_eventflag *evflag = wakeup_flag.load(memory_order_consume);
 		
-		if (max > 16) max = 16;
+		uint32_t cookie = fdtab.get_cookie();
+		
+		if (max > 16)
+			max = 16;
 		epoll_event events[16];
 		
 		ssize_t nevents;
 		
 		nevents = epoll_wait(epoll_fd, events, max, 0);
 		
-		if (nevents > 0) process_events(events, nevents);
-		else nevents = 0;
+		if (nevents > 0)
+			process_events(events, nevents, cookie);
+		else
+			nevents = 0;
 		
 		if (evflag)
 			evflag->clear();
