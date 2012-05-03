@@ -189,9 +189,9 @@ namespace tscb {
 	{
 		ioready_callback *stale = fdtab.synchronize();
 		
-		polltab *ptab = master_ptab.load(memory_order_relaxed);
-		polltab *discard_ptab = ptab->old;
-		ptab->old=0;
+		polltab * ptab = master_ptab.load(memory_order_relaxed);
+		polltab * discard_ptab = ptab->old;
+		ptab->old = 0;
 		
 		lock.sync_finished();
 		
@@ -220,10 +220,11 @@ namespace tscb {
 			if (!mask) return;
 			
 			/* no entry so far, just create new one */
+			while (polltab_index.size() <= (size_t) fd)
+				polltab_index.push_back(-1);
 			
-			while (polltab_index.size() <= (size_t) fd) polltab_index.push_back(-1);
 			polltab * p = new polltab(old_ptab->size + 1);
-			for(size_t n = 0; n<old_ptab->size; n++) {
+			for (size_t n = 0; n < old_ptab->size; n++) {
 				p->pfd[n].fd = old_ptab->pfd[n].fd;
 				p->pfd[n].events = old_ptab->pfd[n].events;
 			}
@@ -232,6 +233,7 @@ namespace tscb {
 			p->pfd[p->size-1].events = translate_tscb_to_os(mask);
 			
 			polltab_index[fd] = p->size - 1;
+			p->old = old_ptab;
 			
 			master_ptab.store(p, memory_order_release);
 			
@@ -257,7 +259,7 @@ namespace tscb {
 		}
 		
 		polltab_index[fd] = -1;
-		
+		p->old = old_ptab;
 		master_ptab.store(p, memory_order_release);
 	}
 	
@@ -270,7 +272,8 @@ namespace tscb {
 			try {
 				ioready_events old_mask, new_mask;
 				fdtab.insert(link, old_mask, new_mask);
-				if (old_mask != new_mask) update_polltab_entry(link->fd, new_mask);
+				if (old_mask != new_mask)
+					update_polltab_entry(link->fd, new_mask);
 			}
 			catch (std::bad_alloc) {
 				delete link;
