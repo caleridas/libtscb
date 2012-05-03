@@ -17,8 +17,11 @@ namespace tscb {
 	{
 		volatile_table * tab = table.load(memory_order_consume);
 		for(size_t n=0; n<tab->capacity; n++) {
+			file_descriptor_chain * entry = tab->entries[n].load(memory_order_consume);
+			if (!entry)
+				continue;
 			for(;;) {
-				ioready_callback * cb = tab->entries[n].active.load(memory_order_relaxed);
+				ioready_callback * cb = entry->active.load(memory_order_consume);
 				if (!cb) break;
 				cb->disconnect();
 			}
@@ -29,11 +32,15 @@ namespace tscb {
 	void file_descriptor_table::insert(ioready_callback * cb, ioready_events & old_mask, ioready_events & new_mask) /*throw(std::bad_alloc)*/
 	{
 		volatile_table * tab = get_extend_table(cb->fd);
-		file_descriptor_chain & entry = tab->entries[cb->fd];
+		file_descriptor_chain * entry = tab->entries[cb->fd].load(memory_order_relaxed);
+		if (!entry) {
+			entry = new file_descriptor_chain;
+			tab->entries[cb->fd].store(entry, memory_order_consume);
+		}
 		
 		/* compute old event mask */
 		old_mask = ioready_none;
-		ioready_callback * tmp = entry.active.load(memory_order_relaxed);
+		ioready_callback * tmp = entry->active.load(memory_order_relaxed);
 		while(tmp) {
 			old_mask |= tmp->event_mask;
 			tmp = tmp->active_next.load(memory_order_relaxed);
@@ -41,7 +48,7 @@ namespace tscb {
 		new_mask = old_mask | cb->event_mask;
 		
 		/* prepare element */
-		cb->prev = entry.last;
+		cb->prev = entry->last;
 		cb->next = 0;
 		cb->active_next.store(0, memory_order_relaxed);
 		
@@ -54,12 +61,12 @@ namespace tscb {
 		from the full list and thus terminate the active list; point them to
 		the newly-added element */
 		
-		tmp = entry.last;
+		tmp = entry->last;
 		
 		for(;;) {
 			if (!tmp) {
-				if (entry.active.load(memory_order_relaxed) == 0)
-					entry.active.store(cb, memory_order_relaxed);
+				if (entry->active.load(memory_order_relaxed) == 0)
+					entry->active.store(cb, memory_order_relaxed);
 				break;
 			}
 			if (tmp->active_next.load(memory_order_relaxed)) break;
@@ -67,16 +74,18 @@ namespace tscb {
 			tmp=tmp->prev;
 		}
 		
-		if (entry.last) entry.last->next = cb;
-		else entry.first = cb;
-		entry.last = cb;
+		if (entry->last)
+			entry->last->next = cb;
+		else
+			entry->first = cb;
+		entry->last = cb;
 	}
 	
 	/* must be called under write lock */
 	void file_descriptor_table::remove(ioready_callback * cb, ioready_events & old_mask, ioready_events & new_mask) throw()
 	{
 		volatile_table * tab = table.load(memory_order_relaxed);
-		file_descriptor_chain & entry = tab->entries[cb->fd];
+		file_descriptor_chain * entry = tab->entries[cb->fd].load(memory_order_relaxed);
 		
 		/* remove protocol: remove element from active list; we have to make
 		sure that all elements that pointed to "us" within
@@ -86,19 +95,20 @@ namespace tscb {
 		ioready_callback * next = cb->active_next.load(memory_order_relaxed);
 		for(;;) {
 			if (!tmp) {
-				if (entry.active.load(memory_order_relaxed) == cb)
-					entry.active.store(next, memory_order_release);
+				if (entry->active.load(memory_order_relaxed) == cb)
+					entry->active.store(next, memory_order_release);
 				break;
 			}
-			if (tmp->active_next.load(memory_order_relaxed) != cb) break;
+			if (tmp->active_next.load(memory_order_relaxed) != cb)
+				break;
 			tmp->active_next.store(next, memory_order_release);
 			tmp = tmp->prev;
 		}
 		
 		/* compute old event mask */
 		new_mask = ioready_none;
-		tmp = entry.active.load(memory_order_relaxed);
-		while(tmp) {
+		tmp = entry->active.load(memory_order_relaxed);
+		while (tmp) {
 			old_mask |= tmp->event_mask;
 			tmp = tmp->active_next.load(memory_order_relaxed);
 		}
@@ -125,12 +135,16 @@ namespace tscb {
 		
 		/* remove inactive callbacks */
 		ioready_callback * link = inactive;
-		while(link) {
-			file_descriptor_chain & entry = tab->entries[link->fd];
-			if (link->prev) link->prev->next = link->next;
-			else entry.first = link->next;
-			if (link->next) link->next->prev = link->prev;
-			else entry.last = link->prev;
+		while (link) {
+			file_descriptor_chain * entry = tab->entries[link->fd].load(memory_order_relaxed);
+			if (link->prev)
+				link->prev->next = link->next;
+			else
+				entry->first = link->next;
+			if (link->next)
+				link->next->prev = link->prev;
+			else
+				entry->last = link->prev;
 			link = link->inactive_next;
 		}
 		
@@ -148,7 +162,8 @@ namespace tscb {
 		if (new_capacity <= (size_t)maxfd) new_capacity = maxfd + 1;
 		
 		volatile_table * newtab = new volatile_table(new_capacity);
-		for(size_t n = 0; n<tab->capacity; n++) newtab->entries[n] = tab->entries[n];
+		for (size_t n = 0; n<tab->capacity; n++)
+			newtab->entries[n].store(tab->entries[n].load(memory_order_relaxed), memory_order_relaxed);
 		newtab->old = tab;
 		
 		table.store(newtab, memory_order_release);

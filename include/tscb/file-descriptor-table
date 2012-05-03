@@ -22,12 +22,10 @@ namespace tscb {
 	public:
 		atomic<ioready_callback *> active;
 		ioready_callback * first, * last;
-		inline const file_descriptor_chain & operator=(const file_descriptor_chain & other)
+		
+		file_descriptor_chain(void)
+			: active(0), first(0), last(0)
 		{
-			active.store(other.active, memory_order_relaxed);
-			first = other.first;
-			last = other.last;
-			return *this;
 		}
 	};
 	
@@ -44,6 +42,7 @@ namespace tscb {
 		inline ~file_descriptor_table(void) throw()
 		{
 			volatile_table * tab = table.load(memory_order_consume);
+			tab->clear_entries();
 			while(tab) {
 				volatile_table * tmp = tab->old;
 				delete tab;
@@ -60,12 +59,16 @@ namespace tscb {
 		/* must be called under write lock */
 		inline ioready_events compute_mask(int fd)
 		{
-			volatile_table * tab = table.load(memory_order_relaxed);
-			file_descriptor_chain & entry = tab->entries[fd];
-			
 			ioready_events mask = ioready_none;
-			ioready_callback * tmp = entry.active.load(memory_order_relaxed);
-			while(tmp) {
+			
+			volatile_table * tab = table.load(memory_order_relaxed);
+			file_descriptor_chain * entry = tab->entries[fd].load(memory_order_relaxed);
+			
+			if (!entry)
+				return mask;
+			
+			ioready_callback * tmp = entry->active.load(memory_order_relaxed);
+			while (tmp) {
 				mask |= tmp->event_mask;
 				tmp = tmp->active_next.load(memory_order_relaxed);
 			}
@@ -80,11 +83,17 @@ namespace tscb {
 		inline void notify(int fd, ioready_events events)
 		{
 			volatile_table * tab = table.load(memory_order_consume);
-			if ((size_t)fd >= tab->capacity) return;
-			ioready_callback * cb = tab->entries[fd].active.load(memory_order_consume);
+			if ((size_t)fd >= tab->capacity)
+				return;
 			
-			while(cb) {
-				if (events & cb->event_mask) cb->target(events & cb->event_mask);
+			file_descriptor_chain * entry = tab->entries[fd].load(memory_order_consume);
+			if (!entry)
+				return;
+			
+			ioready_callback * cb = entry->active.load(memory_order_consume);
+			while (cb) {
+				if ((events & cb->event_mask) != 0)
+					cb->target(events & cb->event_mask);
 				cb = cb->active_next.load(memory_order_consume);
 			}
 		}
@@ -97,11 +106,12 @@ namespace tscb {
 		class volatile_table {
 		public:
 			inline volatile_table(size_t initial)
-				: capacity(initial), entries(new file_descriptor_chain[capacity]), old(0)
+				: capacity(initial), entries(new atomic<file_descriptor_chain *>[capacity]), old(0)
 			{
-				for(size_t n=0; n<capacity; n++) {
-					entries[n].active.store(0, memory_order_relaxed);
-					entries[n].first = entries[n].last = 0;
+				for (size_t n = 0; n<capacity; ++n) {
+					entries[n].store(0, memory_order_relaxed);
+					/* entries[n].active.store(0, memory_order_relaxed);
+					entries[n].first = entries[n].last = 0; */
 				}
 			}
 			
@@ -110,8 +120,15 @@ namespace tscb {
 				delete []entries;
 			}
 			
+			inline void clear_entries(void) throw()
+			{
+				for (size_t n = 0; n < capacity; ++n) {
+					delete entries[n];
+				}
+			}
+			
 			size_t capacity;
-			file_descriptor_chain * entries;
+			atomic<file_descriptor_chain *> * entries;
 			
 			volatile_table * old;
 		};
