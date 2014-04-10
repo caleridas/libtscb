@@ -109,7 +109,7 @@ namespace tscb {
 		new_mask = ioready_none;
 		tmp = entry->active.load(memory_order_relaxed);
 		while (tmp) {
-			old_mask |= tmp->event_mask;
+			new_mask |= tmp->event_mask;
 			tmp = tmp->active_next.load(memory_order_relaxed);
 		}
 		old_mask = new_mask | cb->event_mask;

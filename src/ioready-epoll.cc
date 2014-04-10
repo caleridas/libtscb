@@ -261,7 +261,7 @@ namespace tscb {
 				int op;
 				if (new_mask) {
 					event.events = translate_tscb_to_os(new_mask);
-					op = EPOLL_CTL_ADD;
+					op = EPOLL_CTL_MOD;
 				} else {
 					event.events = translate_tscb_to_os(old_mask);
 					op = EPOLL_CTL_DEL;
