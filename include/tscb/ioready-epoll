@@ -43,7 +43,7 @@ namespace tscb {
 		ioready_dispatcher_epoll(void) /*throw(std::runtime_error)*/;
 		virtual ~ioready_dispatcher_epoll(void) throw();
 		
-		virtual size_t dispatch(const boost::posix_time::time_duration *timeout, size_t max);
+		virtual size_t dispatch(const std::chrono::steady_clock::duration *timeout, size_t max);
 		
 		virtual size_t dispatch_pending(size_t max);
 		
@@ -60,19 +60,19 @@ namespace tscb {
 		
 		void process_events(epoll_event events[], size_t nevents, uint32_t cookie);
 		
-		int epoll_fd;
-		
 		void synchronize(void) throw();
 		
 		inline ioready_events translate_os_to_tscb(int ev) throw();
 		inline int translate_tscb_to_os(ioready_events ev) throw();
 		
-		file_descriptor_table fdtab;
+		int epoll_fd_;
 		
-		atomic<pipe_eventflag *> wakeup_flag;
-		mutex singleton_mutex;
+		file_descriptor_table fdtab_;
 		
-		deferrable_rwlock lock;
+		std::atomic<pipe_eventflag *> wakeup_flag_;
+		std::mutex singleton_mutex_;
+		
+		deferrable_rwlock lock_;
 		friend class read_guard<ioready_dispatcher_epoll>;
 		friend class async_write_guard<ioready_dispatcher_epoll>;
 	};

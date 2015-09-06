@@ -9,9 +9,11 @@
 #ifndef TSCB_DEFERRED_H
 #define TSCB_DEFERRED_H
 
+#include <atomic>
+#include <condition_variable>
+#include <mutex>
+
 #include <tscb/compiler>
-#include <tscb/atomic>
-#include <tscb/thread>
 
 /**
 	\page deferred_descr Deferred synchronization
@@ -309,7 +311,7 @@
 	one mutex acquisiton/release.
 	
 	For the \ref tscb::deferrable_rwlock case the additional cost in the
-	contention cases is a broadcast operation on a conditional variable,
+	contention cases is a broadcast operation on a condition variable,
 	and waiting on the variable for the synchronous locks.
 	
 	Since the atomic variable is modified everytime a read lock is acquired,
@@ -346,7 +348,7 @@ namespace tscb {
 	class deferred_rwlock {
 	public:
 		inline deferred_rwlock(void)
-			: readers(1), queued(false)
+			: readers_(1), queued_(false)
 		{
 		}
 		
@@ -367,8 +369,11 @@ namespace tscb {
 		*/
 		inline bool read_lock(void) throw()
 		{
-			if (read_acquire()) return false;
-			return read_lock_slow();
+			if (read_acquire()) {
+				return false;
+			} else {
+				return read_lock_slow();
+			}
 		}
 		
 		/**
@@ -385,8 +390,11 @@ namespace tscb {
 		*/
 		inline bool read_unlock(void) throw()
 		{
-			if (read_release()) return false;
-			return read_unlock_slow();
+			if (read_release()) {
+				return false;
+			} else {
+				return read_unlock_slow();
+			}
 		}
 		
 		/**
@@ -412,10 +420,10 @@ namespace tscb {
 		*/
 		inline bool write_lock_async(void)
 		{
-			writers.lock();
-			if (!queued) {
-				queued=true;
-				return readers.fetch_sub(1, memory_order_acquire)==1;
+			writers_.lock();
+			if (!queued_) {
+				queued_ = true;
+				return readers_.fetch_sub(1, std::memory_order_acquire) == 1;
 			}
 			return false;
 		}
@@ -429,7 +437,7 @@ namespace tscb {
 		*/
 		inline void write_unlock_async(void)
 		{
-			writers.unlock();
+			writers_.unlock();
 		}
 		
 		/**
@@ -441,36 +449,38 @@ namespace tscb {
 		*/
 		inline void sync_finished(void)
 		{
-			queued=false;
-			readers.fetch_add(1, memory_order_release);
+			queued_ = false;
+			readers_.fetch_add(1, std::memory_order_release);
 			write_unlock_async();
 		}
 		
-	//private:
+	private:
 		/* out of line slow-path functions */
 		bool read_lock_slow(void) throw();
 		bool read_unlock_slow(void) throw();
 		
 		inline bool read_acquire(void) throw()
 		{
-			int expected;
+			size_t expected;
 			bool success;
 			do {
-				expected=readers.load(memory_order_relaxed);
-				if (__builtin_expect(expected==0, 0)) return false;;
-				success=readers.compare_exchange_strong(expected, expected+1, memory_order_acquire);
+				expected = readers_.load(std::memory_order_relaxed);
+				if (__builtin_expect(expected == 0, 0)) {
+					return false;
+				}
+				success = readers_.compare_exchange_strong(expected, expected + 1, std::memory_order_acquire);
 			} while(__builtin_expect(!success, 0));
 			return true;
 		}
 		
 		inline bool read_release(void) throw()
 		{
-			return __builtin_expect(readers.fetch_sub(1, memory_order_release)!=1, 1);
+			return __builtin_expect(readers_.fetch_sub(1, std::memory_order_release)!=1, 1);
 		}
 		
-		atomic_int readers;
-		mutex writers;
-		bool queued;
+		std::atomic<size_t> readers_;
+		std::mutex writers_;
+		bool queued_;
 	};
 
 	/**
@@ -497,7 +507,7 @@ namespace tscb {
 	class deferrable_rwlock {
 	public:
 		inline deferrable_rwlock(void)
-			: readers(1), queued(false), waiting(false)
+			: readers_(1), queued_(false), waiting_(false)
 		{
 		}
 		
@@ -563,11 +573,13 @@ namespace tscb {
 		*/
 		inline bool write_lock_async(void)
 		{
-			writers.lock();
-			bool sync=false;
+			writers_.lock();
+			bool sync = false;
 			
-			if ((!queued) && (!waiting)) sync=readers.fetch_sub(1, memory_order_acquire)==1;
-			queued=true;
+			if ((!queued_) && (!waiting_)) {
+				sync = readers_.fetch_sub(1, std::memory_order_acquire) == 1;
+			}
+			queued_ = true;
 
 			return sync;
 		}
@@ -581,7 +593,7 @@ namespace tscb {
 		*/
 		inline void write_unlock_async(void)
 		{
-			writers.unlock();
+			writers_.unlock();
 		}
 		
 		/**
@@ -591,16 +603,19 @@ namespace tscb {
 			readers or writers are active. After the caller is finished
 			he must call \ref write_unlock_sync.
 		*/
-		inline void write_lock_sync(void)
+		inline std::unique_lock<std::mutex> write_lock_sync(void)
 		{
-			writers.lock();
-			while(1) {
-				if ((!queued) && (!waiting)) {
-					if (readers.fetch_sub(1, memory_order_acquire)==1) return;
+			std::unique_lock<std::mutex> guard(writers_);
+			for(;;) {
+				if ((!queued_) && (!waiting_)) {
+					if (readers_.fetch_sub(1, std::memory_order_acquire) == 1) {
+						return guard;
+					}
 				}
-				waiting=true;
-				waiting_writers.wait(writers);
+				waiting_ = true;
+				waiting_writers_.wait(guard);
 			}
+			return guard;
 		}
 		
 		/**
@@ -610,12 +625,12 @@ namespace tscb {
 			Note that this operation is completely equivalent to
 			\ref sync_finished.
 		*/
-		inline void write_unlock_sync(void)
+		inline void write_unlock_sync(std::unique_lock<std::mutex> guard)
 		{
-			queued=false;
-			waiting=false;
-			readers.fetch_sub(1, memory_order_release);
-			writers.unlock();
+			queued_ = false;
+			waiting_ = false;
+			readers_.fetch_sub(1, std::memory_order_release);
+			guard.unlock();
 		}
 		
 		/**
@@ -628,9 +643,9 @@ namespace tscb {
 		*/
 		inline void sync_finished(void)
 		{
-			queued=false;
-			waiting=false;
-			readers.fetch_add(1, memory_order_release);
+			queued_ = false;
+			waiting_ = false;
+			readers_.fetch_add(1, std::memory_order_release);
 			write_unlock_async();
 		}
 
@@ -641,59 +656,70 @@ namespace tscb {
 		
 		inline bool read_acquire(void) throw()
 		{
-			int expected;
+			size_t expected;
 			bool success;
 			do {
-				expected=readers.load(memory_order_relaxed);
-				if (__builtin_expect(expected==0, 0)) return false;;
-				success=readers.compare_exchange_strong(expected, expected+1, memory_order_acquire);
+				expected = readers_.load(std::memory_order_relaxed);
+				if (__builtin_expect(expected==0, 0)) {
+					return false;
+				}
+				success = readers_.compare_exchange_strong(expected, expected + 1, std::memory_order_acquire);
 			} while(__builtin_expect(!success, 0));
 			return true;
 		}
 		
 		inline bool read_release(void) throw()
 		{
-			return __builtin_expect(readers.fetch_sub(1, memory_order_release)!=1, 1);
+			return __builtin_expect(readers_.fetch_sub(1, std::memory_order_release)!=1, 1);
 		}
 		
-		atomic_int readers;
-		mutex writers;
-		conditional waiting_writers;
-		bool queued, waiting;
+		std::atomic<size_t> readers_;
+		std::mutex writers_;
+		std::condition_variable waiting_writers_;
+		bool queued_, waiting_;
 	};
 	
 	template<typename Container>
 	class read_guard {
 	public:
-		read_guard(Container & _container) : container(_container)
+		read_guard(Container & container) : container_(container)
 		{
-			while(container.lock.read_lock()) container.synchronize();
+			while(container_.lock_.read_lock()) {
+				container.synchronize();
+			}
 		}
 		
 		~read_guard(void)
 		{
-			if (container.lock.read_unlock()) container.synchronize();
+			if (container_.lock_.read_unlock()) {
+				container_.synchronize();
+			}
 		}
 		
-		Container & container;
+	private:
+		Container & container_;
 	};
 	
 	template<typename Container>
 	class async_write_guard {
 	public:
-		async_write_guard(Container & _container) : container(_container)
+		async_write_guard(Container & container) : container_(container)
 		{
-			sync = container.lock.write_lock_async();
+			sync_ = container_.lock_.write_lock_async();
 		}
 		
 		~async_write_guard(void)
 		{
-			if (sync) container.synchronize();
-			else container.lock.write_unlock_async();
+			if (sync_) {
+				container_.synchronize();
+			} else {
+				container_.lock_.write_unlock_async();
+			}
 		}
 		
-		Container & container;
-		bool sync;
+	private:
+		Container & container_;
+		bool sync_;
 	};
 
 #if 0

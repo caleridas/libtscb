@@ -91,13 +91,13 @@ namespace tscb {
 			track of node degree
 	*/
 	template<class Node,
-		class Less=std::less<Node>,
-		class LessEqual=std::less_equal<Node>,
-		Node *Node::*next=&Node::next,
-		Node *Node::*prev=&Node::prev,
-		Node *Node::*parent=&Node::parent,
-		Node *Node::*child=&Node::child,
-		int Node::*degree=&Node::degree
+		class Less = std::less<Node>,
+		class LessEqual = std::less_equal<Node>,
+		Node *Node::*next = &Node::next_,
+		Node *Node::*prev = &Node::prev_,
+		Node *Node::*parent = &Node::parent_,
+		Node *Node::*child = &Node::child_,
+		int Node::*degree = &Node::degree_
 	>
 	class fibheap {
 	private:
@@ -262,17 +262,19 @@ namespace tscb {
 		template<class Value>
 		inline void decrease_key(Node *n, const Value &newval)
 		{
-			*n=newval;
-			if (n->*parent!=0) {
-				Node *parent=n->*parent;
-				if (lt(*parent, *n)) return;
+			*n = newval;
+			if (n->*parent != nullptr) {
+				Node * p = n->*parent;
+				if (lt(*p, *n)) return;
 				__remove(n);
 				
 				__push_root(n);
 				
-				cascade(parent);
+				cascade(p);
 			}
-			if (lt(*n->v, *root)) root=n;
+			if (lt(*n->v, *root)) {
+				root = n;
+			}
 		}
 		
 		/**

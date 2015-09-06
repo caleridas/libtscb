@@ -44,7 +44,7 @@ namespace tscb {
 		ioready_dispatcher_select(void) /*throw(std::bad_alloc, std::runtime_error)*/;
 		virtual ~ioready_dispatcher_select(void) throw();
 		
-		virtual size_t dispatch(const boost::posix_time::time_duration *timeout, size_t max);
+		virtual size_t dispatch(const std::chrono::steady_clock::duration * timeout, size_t max);
 		
 		virtual size_t dispatch_pending(size_t max);
 		
@@ -57,20 +57,21 @@ namespace tscb {
 		virtual void modify_ioready_callback(ioready_callback *e, ioready_events event_mask)
 			/*throw(std::bad_alloc)*/;
 	protected:
-		pthread_mutex_t fdset_mtx;
-		fd_set readfds, writefds, exceptfds;
-		int maxfd;
+		pthread_mutex_t fdset_mtx_;
+		fd_set readfds_, writefds_, exceptfds_;
+		int maxfd_;
 		
 		void synchronize(void) throw();
 		void update_fdsets(int fd, ioready_events mask) throw();
 		
-		file_descriptor_table fdtab;
+		file_descriptor_table fdtab_;
 		
-		deferrable_rwlock lock;
+		deferrable_rwlock lock_;
 		friend class read_guard<ioready_dispatcher_select>;
 		friend class async_write_guard<ioready_dispatcher_select>;
 		
-		pipe_eventflag wakeup_flag;
+		pipe_eventflag wakeup_flag_;
+		
 	private:
 		void drain_queue(void) throw();
 	};

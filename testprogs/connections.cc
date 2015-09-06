@@ -53,7 +53,7 @@ void test_ioready_casts(void)
 	delete ioready;
 }
 
-static bool timer_handler(boost::posix_time::ptime & now)
+static bool timer_handler(std::chrono::steady_clock::time_point & now)
 {
 	(void)now;
 	return false;
@@ -66,30 +66,30 @@ void test_timer_casts(void)
 	
 	/* no casts, assignment/construction to/from same type */
 	{
-		tscb::timer_connection construct(timer.timer(timer_handler, tscb::monotonic_time()));
+		tscb::timer_connection construct(timer.timer(timer_handler, std::chrono::steady_clock::now()));
 		construct.disconnect();
 		
 		tscb::timer_connection assign;
-		assign = timer.timer(timer_handler, tscb::monotonic_time());
+		assign = timer.timer(timer_handler, std::chrono::steady_clock::now());
 		assign.disconnect();
 	}
 	
 	/* downcast to "connection" */
 	{
-		tscb::connection construct(timer.timer(timer_handler, tscb::monotonic_time()));
+		tscb::connection construct(timer.timer(timer_handler, std::chrono::steady_clock::now()));
 		construct.disconnect();
 		
 		tscb::connection assign;
-		assign = timer.timer(timer_handler, tscb::monotonic_time());
+		assign = timer.timer(timer_handler, std::chrono::steady_clock::now());
 		assign.disconnect();
 	}
 	
 	/* scoped_connection */
 	{
-		tscb::scoped_connection construct(timer.timer(timer_handler, tscb::monotonic_time()));
+		tscb::scoped_connection construct(timer.timer(timer_handler, std::chrono::steady_clock::now()));
 		
 		tscb::scoped_connection assign;
-		assign = timer.timer(timer_handler, tscb::monotonic_time());
+		assign = timer.timer(timer_handler, std::chrono::steady_clock::now());
 	}
 }
 

@@ -6,8 +6,6 @@
  * Refer to the file "COPYING" for details.
  */
 
-#include <boost/bind.hpp>
-
 #define private public
 #define protected public
 
@@ -30,7 +28,7 @@ public:
 };
 
 my_eventflag flag;
-int called=0;
+int called = 0;
 int released=0;
 
 tscb::abstract_timer_connection<long long> timer_link;
@@ -47,9 +45,9 @@ bool my_fn2(long long &time)
 {
 	time++;
 	called++;
-	ASSERT(released==0);
+	ASSERT(released == 0);
 	timer_link.disconnect();
-	ASSERT(released==0);
+	ASSERT(released == 0);
 	return true;
 }
 
@@ -87,74 +85,75 @@ void timer_tests(void)
 	generic_timerqueue_dispatcher<long long> tq(flag);
 	
 	{
-		long long zero(0);
-		bool pending=tq.run_queue(zero);
-		ASSERT(pending==false);
+		long long zero = 0;
+		bool pending = tq.run_queue(zero);
+		ASSERT(pending == false);
 	}
 	
 	{
-		long long zero(0);
-		bool pending=tq.run_queue(zero);
-		ASSERT(pending==false);
+		long long zero = 0;;
+		bool pending = tq.run_queue(zero);
+		ASSERT(pending == false);
 	}
 	
 	{
-		called=0;
-		long long time(0);
+		called = 0;
+		long long time = 0;
 		
-		timer_link=tq.timer(my_fn, time);
-		ASSERT(timer_link.callback->refcount==2);
+		timer_link = tq.timer(my_fn, time);
+		ASSERT(timer_link.callback_->refcount_ == 2);
 		
-		ASSERT(flag.flagged==true);
+		ASSERT(flag.flagged == true);
 		flag.clear();
 		
-		bool pending=tq.run_queue(time);
-		ASSERT(pending==true);
-		ASSERT(called==1);
-		ASSERT(time==1);
-		ASSERT(flag.flagged==false);
+		bool pending = tq.run_queue(time);
+		ASSERT(pending == true);
+		ASSERT(called == 1);
+		ASSERT(time == 1);
+		ASSERT(flag.flagged == false);
 		timer_link.disconnect();
-		ASSERT(flag.flagged==true);
+		ASSERT(flag.flagged == true);
 		flag.clear();
-		pending=tq.run_queue(time);
-		ASSERT(pending==false);
-		ASSERT(called==1);
-		ASSERT(flag.flagged==false);
+		pending = tq.run_queue(time);
+		ASSERT(pending == false);
+		ASSERT(called = 1);
+		ASSERT(flag.flagged == false);
 		
 		ASSERT(!timer_link.connected());
 	}
 	
 	{
-		long long time(0);
-		timer_link=tq.timer(my_fn2, time);
+		long long time = 0;
+		timer_link = tq.timer(my_fn2, time);
 		
-		called=0; released=0;
+		called = 0;
+		released = 0;
 		tq.run_queue(time);
-		ASSERT(called==1);
+		ASSERT(called = 1);
 		ASSERT(!timer_link.connected());
 	}
 	
 	{
 		X x;
 		long long time(0);
-		timer_link=tq.timer(boost::bind(&X::fn, &x, _1), time);
+		timer_link=tq.timer(std::bind(&X::fn, &x, std::placeholders::_1), time);
 		timer_link.disconnect();
 		ASSERT(!timer_link.connected());
 	}
 	{
 		X x;
 		long long time(0);
-		ASSERT(x.refcount==1);
-		timer_link=tq.timer(boost::bind(&X::fn, boost::intrusive_ptr<X>(&x), _1), time);
-		ASSERT(x.refcount==2);
+		ASSERT(x.refcount == 1);
+		timer_link=tq.timer(std::bind(&X::fn, tscb::intrusive_ptr<X>(&x), std::placeholders::_1), time);
+		ASSERT(x.refcount == 2);
 		timer_link.disconnect();
-		ASSERT(x.refcount==1);
+		ASSERT(x.refcount == 1);
 		ASSERT(!timer_link.connected());
 	}
 	{
 		Y y;
 		long long time(0);
-		timer_link=tq.timer(boost::bind(&Y::fn, boost::intrusive_ptr<Y>(&y), _1), time);
+		timer_link=tq.timer(std::bind(&Y::fn, tscb::intrusive_ptr<Y>(&y), std::placeholders::_1), time);
 		tq.run_queue(time);
 	}
 }

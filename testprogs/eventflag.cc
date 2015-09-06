@@ -6,8 +6,6 @@
  * Refer to the file "COPYING" for details.
  */
 
-#include <boost/bind.hpp>
-
 #define private public
 #define protected public
 
@@ -20,19 +18,19 @@ void test_pipe_eventflag(void)
 {
 	tscb::pipe_eventflag e;
 	
-	ASSERT(e.flagged==0);
+	ASSERT(e.flagged_ == 0);
 	e.set();
-	ASSERT(e.flagged==1);
+	ASSERT(e.flagged_ == 1);
 	e.clear();
-	ASSERT(e.flagged==0);
+	ASSERT(e.flagged_ == 0);
 	
 	e.start_waiting();
-	ASSERT(e.waiting==1);
+	ASSERT(e.waiting_ == 1);
 	e.stop_waiting();
-	ASSERT(e.waiting==0);
+	ASSERT(e.waiting_ == 0);
 	
 	e.set();
-	ASSERT(e.flagged==1);
+	ASSERT(e.flagged_ == 1);
 	e.clear();
 }
 

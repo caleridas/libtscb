@@ -9,6 +9,8 @@
 #ifndef TSCB_IOREADY_H
 #define TSCB_IOREADY_H
 
+#include <mutex>
+
 /**
 	\page ioready_descr I/O readiness
 	
@@ -29,12 +31,12 @@
 	\code
 		class IOHandler {
 		public:
-			void onDataReady(int fd, tscb::ioready_events event_mask) throw()
+			void onDataReady(int fd, tscb::ioready_events event_mask) noexcept
 			{
 				// process data
 			}
 			
-			void finish(void) throw()
+			void finish(void) noexcept
 			{
 				close(descriptor);
 				delete this;
@@ -58,12 +60,12 @@
 	\code
 		class IOContext;
 		
-		void onDataReady(IOContext *ctx, int fd, tscb::ioready_events event_mask) throw()
+		void onDataReady(IOContext *ctx, int fd, tscb::ioready_events event_mask) noexcept
 		{
 			// process data
 		}
 		
-		void finish(IOContext *ctx) throw()
+		void finish(IOContext *ctx) noexcept
 		{
 			delete IOContext;
 		}
@@ -84,12 +86,12 @@
 	\code
 		class IOHandler {
 		public:
-			void onDataReady(int fd, tscb::ioready_events event_mask) throw()
+			void onDataReady(int fd, tscb::ioready_events event_mask) noexcept
 			{
 				// process data
 			}
 			
-			void finish(void) throw()
+			void finish(void) noexcept
 			{
 				close(descriptor);
 				delete this;
@@ -218,7 +220,7 @@
 	\code
 		tscb::ioready_dispatcher *dispatcher;
 		...
-		boost::posix_time::time_duration timeout(1000);
+		std::chrono::steady_clock::duration timeout(1000);
 		
 		while(true) dispatcher->dispatch(&timeout, 16);
 	\endcode
@@ -295,8 +297,8 @@
 	</UL>
 */
 
-#include <boost/function.hpp>
-#include <boost/date_time/posix_time/posix_time_types.hpp>
+#include <chrono>
+#include <functional>
 
 #include <tscb/eventflag>
 #include <tscb/signal>
@@ -398,18 +400,20 @@ namespace tscb {
 	class ioready_callback : public abstract_callback {
 	public:
 		/** \internal \brief Instantiate ioready callback link */
-		inline ioready_callback(const boost::function<void (tscb::ioready_events)> & _target,
-			int _fd, tscb::ioready_events _event_mask) throw()
-			: target(_target), fd(_fd), event_mask(_event_mask)
+		inline ioready_callback(std::function<void (tscb::ioready_events)> target,
+			int fd, tscb::ioready_events event_mask) noexcept
+			: target_(target), fd_(fd), event_mask_(event_mask)
 		{
-			if (event_mask != ioready_none) event_mask = event_mask | ioready_error | ioready_hangup;
+			if (event_mask_ != ioready_none) {
+				event_mask_ = event_mask_ | ioready_error | ioready_hangup;
+			}
 		}
-		virtual ~ioready_callback(void) throw();
+		virtual ~ioready_callback(void) noexcept;
 		
-		virtual void disconnect(void) throw();
+		virtual void disconnect(void) noexcept;
 		
 		/** \internal \brief Destroy function object after completing cancellation */
-		inline void cancelled(void) throw() {target=0;}
+		inline void cancelled(void) noexcept {target_ = nullptr;}
 		/**
 			\brief modify the mask of events the receiver is interested in
 			
@@ -427,38 +431,43 @@ namespace tscb {
 			previous event mask may be generated for each thread that
 			is allowed to dispatch events for this callback.
 		*/
-		void modify(tscb::ioready_events new_event_mask) throw();
+		void modify(tscb::ioready_events new_event_mask) noexcept;
 		
-		virtual bool connected(void) const throw();
+		virtual bool connected(void) const noexcept;
+		
+		inline tscb::ioready_events event_mask(void) const noexcept
+		{
+			return event_mask_;
+		}
 		
 		/** \internal \brief Function object to call */
-		boost::function<void(tscb::ioready_events)> target;
+		std::function<void(tscb::ioready_events)> target_;
 		/** \internal \brief File descriptor to watch */
-		int fd;
+		int fd_;
 		/** \internal \brief Events to watch file descriptor for */
-		tscb::ioready_events event_mask;
+		tscb::ioready_events event_mask_;
 		
 		/** \internal \brief Next active element */
-		atomic<ioready_callback *> active_next;
+		std::atomic<ioready_callback *> active_next_;
 		/** \internal \brief Previous element (active or to be removed) */
-		ioready_callback * prev;
+		ioready_callback * prev_;
 		/** \internal \brief Next element (active or to be removed) */
-		ioready_callback * next;
+		ioready_callback * next_;
 		/** \internal \brief Next element scheduled for deferred cancellation */
-		ioready_callback * inactive_next;
+		ioready_callback * inactive_next_;
 		/** \internal \brief ioready_service this element is linked to */
-		atomic<ioready_service *> service;
+		std::atomic<ioready_service *> service_;
 		/** \internal \brief Protect against concurrent cancellation */
-		mutex cancellation_mutex;
+		std::mutex cancellation_mutex_;
 	};
 	
 	/** \cond NEVER -- ignored by doxygen */
-	static inline void intrusive_ptr_add_ref(ioready_callback * t) throw()
+	static inline void intrusive_ptr_add_ref(ioready_callback * t) noexcept
 	{
 		t->pin();
 	}
 	
-	static inline void intrusive_ptr_release(ioready_callback * t) throw()
+	static inline void intrusive_ptr_release(ioready_callback * t) noexcept
 	{
 		t->release();
 	}
@@ -469,46 +478,107 @@ namespace tscb {
 	*/
 	class ioready_connection {
 	public:
-		inline ioready_connection(ioready_callback * _callback = 0, bool add_ref = true) throw() : callback(_callback)
-		{if (callback && add_ref) callback->pin();}
+		inline ioready_connection(ioready_callback * callback = 0, bool add_ref = true) noexcept
+			: callback_(callback)
+		{
+			if (callback_ && add_ref) {
+				callback_->pin();
+			}
+		}
 		
-		inline ~ioready_connection(void) throw()
-		{if (callback) callback->release();}
+		inline ~ioready_connection(void) noexcept
+		{
+			if (callback_) {
+				callback_->release();
+			}
+		}
 		
-		inline ioready_connection(const ioready_connection & conn) throw()
-		{callback=conn.callback; if (callback) callback->pin();}
+		inline ioready_connection(const ioready_connection & other) noexcept
+			: callback_(other.callback_)
+		{
+			if (callback_) {
+				callback_->pin();
+			}
+		}
 		
-		inline ioready_connection & operator=(ioready_callback * conn) throw()
-		{if (callback) callback->release(); callback=conn; if (callback) callback->pin(); return *this;}
+		inline const ioready_connection & operator=(ioready_callback * callback) noexcept
+		{
+			if (callback_) {
+				callback_->release();
+			}
+			callback_ = callback;
+			if (callback_) {
+				callback_->pin();
+			}
+			return *this;
+		}
 		
-		inline ioready_connection & operator=(const ioready_connection & conn) throw()
-		{if (callback) callback->release(); callback=conn.callback; if (callback) callback->pin(); return *this;}
+		inline const ioready_connection & operator=(const ioready_connection & other) noexcept
+		{
+			if (callback_) {
+				callback_->release();
+			}
+			callback_ = other.callback_;
+			if (callback_) {
+				callback_->pin();
+			}
+			return *this;
+		}
 		
-		inline void disconnect(void) throw()
-		{if (callback) {callback->disconnect(); callback->release(); callback = 0;}}
+		inline void disconnect(void) noexcept
+		{
+			if (callback_) {
+				callback_->disconnect();
+				callback_->release();
+				callback_ = nullptr;
+			}
+		}
 		
-		inline void modify(ioready_events new_event_mask) {if (callback) callback->modify(new_event_mask);}
+		inline void modify(ioready_events new_event_mask)
+		{
+			if (callback_) {
+				callback_->modify(new_event_mask);
+			}
+		}
 		
-		inline bool connected(void) const throw()
-		{return callback && callback->connected();}
+		inline bool connected(void) const noexcept
+		{
+			return callback_ && callback_->connected();
+		}
 		
-		inline operator connection (void) const throw() {return callback;}
+		inline operator connection(void) const noexcept
+		{
+			return connection(callback_, true);
+		}
 		
-		#ifdef __GXX_EXPERIMENTAL_CXX0X__
 		template<typename ConnectionType>
-		inline ioready_connection(ConnectionType && conn) throw()
-		{callback=conn.callback; conn.callback = 0;}
+		inline ioready_connection(ConnectionType && other) noexcept
+			: callback_(other.callback_)
+		{
+			other.callback_ = nullptr;
+		}
 		
 		template<typename ConnectionType>
-		inline ioready_connection &operator=(ConnectionType && conn) throw()
-		{callback=conn.callback; conn.callback = 0; return *this;}
-		#endif
+		inline const ioready_connection &operator=(ConnectionType && other) noexcept
+		{
+			if (callback_) {
+				callback_->release();
+			}
+			callback_ = other.callback_;
+			if (callback_) {
+				callback_->pin();
+			}
+			other.callback_ = nullptr;
+			return *this;
+		}
 		
-		inline ioready_callback * get(void) const throw()
-		{return callback;}
+		inline ioready_callback * get(void) const noexcept
+		{
+			return callback_;
+		}
 		
 	private:
-		ioready_callback *callback;
+		ioready_callback * callback_;
 	};
 	
 	/**
@@ -526,24 +596,24 @@ namespace tscb {
 	*/
 	class scoped_ioready_connection {
 	public:
-		inline scoped_ioready_connection(void) throw() {}
-		inline ~scoped_ioready_connection(void) throw() {disconnect();}
+		inline scoped_ioready_connection(void) noexcept {}
+		inline ~scoped_ioready_connection(void) noexcept {disconnect();}
 		
-		inline bool connected(void) const throw() {return conn.connected();}
+		inline bool connected(void) const noexcept {return conn.connected();}
 		
-		inline void disconnect(void) throw() {conn.disconnect();}
+		inline void disconnect(void) noexcept {conn.disconnect();}
 		
 		inline void modify(ioready_events new_event_mask) {conn.modify(new_event_mask);}
 		
-		inline scoped_ioready_connection(const ioready_connection & _conn) throw() : conn(_conn) {}
+		inline scoped_ioready_connection(const ioready_connection & _conn) noexcept : conn(_conn) {}
 		
-		inline scoped_ioready_connection & operator=(const ioready_connection & _connection) throw()
+		inline scoped_ioready_connection & operator=(const ioready_connection & _connection) noexcept
 		{disconnect(); conn = _connection; return *this;}
 		
-		inline scoped_ioready_connection(ioready_callback * callback) throw()
+		inline scoped_ioready_connection(ioready_callback * callback) noexcept
 		{disconnect(); conn = callback;}
 		
-		inline scoped_ioready_connection & operator=(ioready_callback * callback) throw()
+		inline scoped_ioready_connection & operator=(ioready_callback * callback) noexcept
 		{disconnect(); conn = callback; return *this;}
 	protected:
 		scoped_ioready_connection(const scoped_connection & other); /* deleted */
@@ -561,7 +631,7 @@ namespace tscb {
 	*/
 	class ioready_service {
 	public:
-		virtual ~ioready_service(void) throw();
+		virtual ~ioready_service(void) noexcept;
 		
 		/**
 			\brief register callback for file event
@@ -607,9 +677,9 @@ namespace tscb {
 			or cancel the callback.
 		*/
 		ioready_connection
-		watch(const boost::function<void(tscb::ioready_events)> & function, int fd, tscb::ioready_events event_mask) /*throw(std::bad_alloc)*/
+		watch(std::function<void(tscb::ioready_events)> function, int fd, tscb::ioready_events event_mask) /*throw(std::bad_alloc)*/
 		{
-			ioready_callback *link = new ioready_callback(function, fd, event_mask);
+			ioready_callback *link = new ioready_callback(std::move(function), fd, event_mask);
 			register_ioready_callback(link);
 			return ioready_connection(link);
 		}
@@ -635,7 +705,7 @@ namespace tscb {
 	*/
 	class ioready_dispatcher : public ioready_service {
 	public:
-		virtual ~ioready_dispatcher(void) throw();
+		virtual ~ioready_dispatcher(void) noexcept;
 		
 		/**
 			\brief Dispatch an event or wait until timeout
@@ -685,7 +755,7 @@ namespace tscb {
 			may not be terribly useful, as some dispatchers will attempt
 			to dispatch the same event in multiple threads.
 		*/
-		virtual size_t dispatch(const boost::posix_time::time_duration * timeout,
+		virtual size_t dispatch(const std::chrono::steady_clock::duration * timeout,
 			size_t max = 2147483647L)
 			=0;
 		

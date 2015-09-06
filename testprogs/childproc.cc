@@ -9,27 +9,31 @@
 #define private public
 #define protected public
 
+#include <assert.h>
 #include <pthread.h>
-#include <boost/bind.hpp>
+#include <unistd.h>
+
 #include <tscb/childproc-monitor>
 
-tscb::atomic<int> called_count(0);
+std::atomic<int> called_count(0);
 
 static void proc_handler(void)
 {
-	called_count.fetch_add(1, tscb::memory_order_relaxed);
+	called_count.fetch_add(1, std::memory_order_relaxed);
 }
 
 static void throwing_proc_handler(void)
 {
-	called_count.fetch_add(1, tscb::memory_order_relaxed);
+	called_count.fetch_add(1, std::memory_order_relaxed);
 	throw std::runtime_error("foo");
 }
 
 static pid_t launch_temp_process(void)
 {
 	pid_t pid = fork();
-	if (pid == 0) _exit(0);
+	if (pid == 0) {
+		_exit(0);
+	}
 	return pid;
 }
 
@@ -37,7 +41,9 @@ static pid_t launch_pers_process(void)
 {
 	pid_t pid = fork();
 	if (pid == 0) {
-		for(;;) sleep(60);
+		for (;;) {
+			sleep(60);
+		}
 	}
 	return pid;
 }
@@ -76,7 +82,7 @@ void test_basic_operation(void)
 	
 	pid_t pid = launch_temp_process();
 	
-	tscb::connection c = m.watch_childproc(boost::bind(proc_handler), pid);
+	tscb::connection c = m.watch_childproc(std::bind(proc_handler), pid);
 	
 	assert(called_count == 0);
 	
@@ -96,7 +102,7 @@ void test_cancel(void)
 	
 	pid_t pid = launch_pers_process();
 	
-	tscb::connection c = m.watch_childproc(boost::bind(proc_handler), pid);
+	tscb::connection c = m.watch_childproc(std::bind(proc_handler), pid);
 	
 	m.dispatch();
 	
@@ -133,7 +139,7 @@ void test_ignore_unknown(void)
 	m.dispatch();
 	assert(called_count == 0);
 	
-	tscb::connection c = m.watch_childproc(boost::bind(proc_handler), pid);
+	tscb::connection c = m.watch_childproc(std::bind(proc_handler), pid);
 	
 	/* now that dispatcher knows, it will reap */
 	m.dispatch();
@@ -155,8 +161,8 @@ void test_throwing_handler(void)
 	/* wait until child process has terminated */
 	guard.wait();
 	
-	tscb::connection c1 = m.watch_childproc(boost::bind(throwing_proc_handler), pid1);
-	tscb::connection c2 = m.watch_childproc(boost::bind(throwing_proc_handler), pid2);
+	tscb::connection c1 = m.watch_childproc(std::bind(throwing_proc_handler), pid1);
+	tscb::connection c2 = m.watch_childproc(std::bind(throwing_proc_handler), pid2);
 	
 	try {
 		m.dispatch();

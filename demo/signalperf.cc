@@ -12,7 +12,7 @@ void test_function(int &arg)
 	arg++;
 }
 
-double timed_run(boost::function<void(size_t)> fn)
+double timed_run(std::function<void(size_t)> fn)
 {
 	double t=0.0;
 	size_t iterations=1;
@@ -59,7 +59,7 @@ public:
 
 class functionlist_test {
 public:
-	typedef std::list<boost::function<void (int &)> > siglist;
+	typedef std::list<std::function<void (int &)> > siglist;
 	siglist sig;
 	void call(size_t iterations, size_t ncallbacks)
 	{

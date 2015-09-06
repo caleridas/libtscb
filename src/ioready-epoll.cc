@@ -6,7 +6,7 @@
  * Refer to the file "COPYING" for details.
  */
 
-#include <boost/bind.hpp>
+#include <tscb/ioready-epoll>
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -14,11 +14,9 @@
 #include <sys/epoll.h>
 
 #include <tscb/config>
-#include <tscb/ioready-epoll>
-
 namespace tscb {
 	
-	inline ioready_events ioready_dispatcher_epoll::translate_os_to_tscb(int ev) throw()
+	inline ioready_events ioready_dispatcher_epoll::translate_os_to_tscb(int ev) noexcept
 	{
 		ioready_events e = ioready_none;
 		if (ev & EPOLLIN) e |= ioready_input;
@@ -29,7 +27,7 @@ namespace tscb {
 		return e;
 	}
 	
-	inline int ioready_dispatcher_epoll::translate_tscb_to_os(ioready_events ev) throw()
+	inline int ioready_dispatcher_epoll::translate_tscb_to_os(ioready_events ev) noexcept
 	{
 		int e = 0;
 		if (ev & ioready_input) e |= EPOLLIN;
@@ -39,18 +37,22 @@ namespace tscb {
 	
 	ioready_dispatcher_epoll::ioready_dispatcher_epoll(void)
 		/* throw(std::runtime_error) */
-		: wakeup_flag(0)
+		: wakeup_flag_(nullptr)
 	{
 #if defined(HAVE_EPOLL1) && defined(EPOLL_CLOEXEC)
-		epoll_fd = epoll_create1(EPOLL_CLOEXEC);
-		if (epoll_fd >= 0) return;
+		epoll_fd_ = ::epoll_create1(EPOLL_CLOEXEC);
+		if (epoll_fd_ >= 0) {
+			return;
+		}
 #endif
-		epoll_fd = epoll_create(1024);
-		if (epoll_fd < 0) throw std::runtime_error("Unable to create epoll descriptor");
-		fcntl(epoll_fd, F_SETFL, O_CLOEXEC);
+		epoll_fd_ = ::epoll_create(1024);
+		if (epoll_fd_ < 0) {
+			throw std::runtime_error("Unable to create epoll descriptor");
+		}
+		::fcntl(epoll_fd_, F_SETFL, O_CLOEXEC);
 	}
 	
-	ioready_dispatcher_epoll::~ioready_dispatcher_epoll(void) throw()
+	ioready_dispatcher_epoll::~ioready_dispatcher_epoll(void) noexcept
 	{
 		/* we can assume
 		
@@ -61,9 +63,11 @@ namespace tscb {
 		there is no point doing anything about it
 		*/
 		
-		while(lock.read_lock()) synchronize();
-		fdtab.cancel_all();
-		if (lock.read_unlock()) {
+		while(lock_.read_lock()) {
+			synchronize();
+		}
+		fdtab_.cancel_all();
+		if (lock_.read_unlock()) {
 			/* the above cancel operations will cause synchronization
 			to be performed at the next possible point in time; if
 			there is no concurrent cancellation, this is now */
@@ -75,67 +79,75 @@ namespace tscb {
 			the object until we are certain that synchronization has
 			been performed */
 			
-			lock.write_lock_sync();
+			lock_.write_lock_sync();
 			synchronize();
 			
 			/* note that synchronize implicitly calls sync_finished,
 			which is equivalent to write_unlock_sync for deferrable_rwlocks */
 		}
 		
-		close(epoll_fd);
+		::close(epoll_fd_);
 		
-		if (wakeup_flag.load(memory_order_relaxed)) delete wakeup_flag.load(memory_order_relaxed);
+		if (wakeup_flag_.load(std::memory_order_relaxed)) {
+			delete wakeup_flag_.load(std::memory_order_relaxed);
+		}
 	}
 	
 	void ioready_dispatcher_epoll::process_events(epoll_event events[], size_t nevents, uint32_t cookie)
 	{
 		read_guard<ioready_dispatcher_epoll> guard(*this);
 		
-		for(size_t n=0; n<nevents; n++) {
+		for(size_t n = 0; n < nevents; ++n) {
 			int fd = events[n].data.fd;
 			ioready_events ev = translate_os_to_tscb(events[n].events);
 			
-			fdtab.notify(fd, ev, cookie);
+			fdtab_.notify(fd, ev, cookie);
 		}
 	}
 	
-	size_t ioready_dispatcher_epoll::dispatch(const boost::posix_time::time_duration *timeout, size_t max)
+	size_t ioready_dispatcher_epoll::dispatch(const std::chrono::steady_clock::duration * timeout, size_t max)
 	{
-		pipe_eventflag *evflag = wakeup_flag.load(memory_order_consume);
+		pipe_eventflag *evflag = wakeup_flag_.load(std::memory_order_consume);
 		
-		uint32_t cookie = fdtab.get_cookie();
+		uint32_t cookie = fdtab_.get_cookie();
 		
 		int poll_timeout;
 		/* need to round up timeout; alas this is the only good way to do it in boost */
-		if (timeout)
-			poll_timeout = (timeout->total_microseconds() + 999) / 1000;
-		else
+		if (timeout) {
+			poll_timeout = std::chrono::duration_cast<std::chrono::milliseconds>(
+				(*timeout) + std::chrono::milliseconds(1) - std::chrono::steady_clock::duration(1)).count();
+		} else {
 			poll_timeout = -1;
+		}
 		
-		if (max > 16)
+		if (max > 16) {
 			max = 16;
+		}
 		epoll_event events[16];
 		
 		ssize_t nevents;
 		
-		if (__builtin_expect(evflag == 0, 1)) {
-			nevents = epoll_wait(epoll_fd, events, max, poll_timeout);
+		if (__builtin_expect(evflag == nullptr, 1)) {
+			nevents = ::epoll_wait(epoll_fd_, events, max, poll_timeout);
 			
-			if (nevents > 0)
+			if (nevents > 0) {
 				process_events(events, nevents, cookie);
-			else
+			} else {
 				nevents = 0;
+			}
 		} else {
 			evflag->start_waiting();
-			if (evflag->flagged.load(memory_order_relaxed) != 0)
+			if (evflag->flagged_.load(std::memory_order_relaxed) != 0) {
 				poll_timeout = 0;
-			nevents = epoll_wait(epoll_fd, events, max, poll_timeout);
+			}
+			nevents = ::epoll_wait(epoll_fd_, events, max, poll_timeout);
 			evflag->stop_waiting();
 			
-			if (nevents > 0)
+			if (nevents > 0) {
 				process_events(events, nevents, cookie);
-			else
+			} else {
 				nevents = 0;
+			}
 			
 			evflag->clear();
 		}
@@ -144,25 +156,26 @@ namespace tscb {
 	
 	size_t ioready_dispatcher_epoll::dispatch_pending(size_t max)
 	{
-		pipe_eventflag *evflag = wakeup_flag.load(memory_order_consume);
+		pipe_eventflag *evflag = wakeup_flag_.load(std::memory_order_consume);
 		
-		uint32_t cookie = fdtab.get_cookie();
+		uint32_t cookie = fdtab_.get_cookie();
 		
-		if (max > 16)
+		if (max > 16) {
 			max = 16;
+		}
 		epoll_event events[16];
 		
-		ssize_t nevents;
+		ssize_t nevents = epoll_wait(epoll_fd_, events, max, 0);
 		
-		nevents = epoll_wait(epoll_fd, events, max, 0);
-		
-		if (nevents > 0)
+		if (nevents > 0) {
 			process_events(events, nevents, cookie);
-		else
+		} else {
 			nevents = 0;
+		}
 		
-		if (evflag)
+		if (evflag) {
 			evflag->clear();
+		}
 		
 		return nevents;
 	}
@@ -170,44 +183,51 @@ namespace tscb {
 	eventtrigger & ioready_dispatcher_epoll::get_eventtrigger(void)
 		/* throw(std::runtime_error, std::bad_alloc) */
 	{
-		pipe_eventflag * flag = wakeup_flag.load(memory_order_consume);
-		if (flag) return *flag;
-		
-		singleton_mutex.lock();
-		flag = wakeup_flag.load(memory_order_consume);
+		pipe_eventflag * flag = wakeup_flag_.load(std::memory_order_consume);
 		if (flag) {
-			singleton_mutex.unlock();
+			return *flag;
+		}
+		
+		singleton_mutex_.lock();
+		flag = wakeup_flag_.load(std::memory_order_consume);
+		if (flag) {
+			singleton_mutex_.unlock();
 			return *flag;
 		}
 		
 		try {
 			flag = new pipe_eventflag();
-			watch(boost::bind(&ioready_dispatcher_epoll::drain_queue, this), flag->readfd, ioready_input);
+			watch(
+				[this](ioready_events)
+				{
+					drain_queue();
+				},
+				flag->readfd_, ioready_input);
 		}
 		catch (std::bad_alloc) {
 			delete flag;
-			singleton_mutex.unlock();
+			singleton_mutex_.unlock();
 			throw;
 		}
 		catch (std::runtime_error) {
 			delete flag;
-			singleton_mutex.unlock();
+			singleton_mutex_.unlock();
 			throw;
 		}
 		
-		wakeup_flag.store(flag, memory_order_release);
-		singleton_mutex.unlock();
+		wakeup_flag_.store(flag, std::memory_order_release);
+		singleton_mutex_.unlock();
 		
 		return *flag;
 	}
 		
-	void ioready_dispatcher_epoll::synchronize(void) throw()
+	void ioready_dispatcher_epoll::synchronize(void) noexcept
 	{
-		ioready_callback * stale = fdtab.synchronize();
-		lock.sync_finished();
+		ioready_callback * stale = fdtab_.synchronize();
+		lock_.sync_finished();
 		
 		while(stale) {
-			ioready_callback * next = stale->inactive_next;
+			ioready_callback * next = stale->inactive_next_;
 			stale->cancelled();
 			stale->release();
 			stale = next;
@@ -222,37 +242,38 @@ namespace tscb {
 		ioready_events old_mask, new_mask;
 		
 		try {
-			fdtab.insert(link, old_mask, new_mask);
+			fdtab_.insert(link, old_mask, new_mask);
 		}
 		catch (std::bad_alloc) {
 			delete link;
 			throw;
 		}
 		
-		if (new_mask != ioready_none) {
+		if (new_mask != ioready_none && old_mask != new_mask) {
 			epoll_event event;
 			event.events = translate_tscb_to_os(new_mask);
 			event.data.u64 = 0;
-			event.data.fd = link->fd;
+			event.data.fd = link->fd_;
 			
-			if (old_mask)
-				epoll_ctl(epoll_fd, EPOLL_CTL_MOD, link->fd, &event);
-			else
-				epoll_ctl(epoll_fd, EPOLL_CTL_ADD, link->fd, &event);
+			if (old_mask) {
+				::epoll_ctl(epoll_fd_, EPOLL_CTL_MOD, link->fd_, &event);
+			} else {
+				::epoll_ctl(epoll_fd_, EPOLL_CTL_ADD, link->fd_, &event);
+			}
 		}
 		
-		link->service.store(this, memory_order_relaxed);
+		link->service_.store(this, std::memory_order_relaxed);
 	}
 	
 	void ioready_dispatcher_epoll::unregister_ioready_callback(ioready_callback *link)
-		throw()
+		noexcept
 	{
 		async_write_guard<ioready_dispatcher_epoll> guard(*this);
 		
-		if (link->service.load(memory_order_relaxed)) {
-			int fd = link->fd;
+		if (link->service_.load(std::memory_order_relaxed)) {
+			int fd = link->fd_;
 			ioready_events old_mask, new_mask;
-			fdtab.remove(link, old_mask, new_mask);
+			fdtab_.remove(link, old_mask, new_mask);
 			
 			if (old_mask) {
 				epoll_event event;
@@ -266,13 +287,13 @@ namespace tscb {
 					event.events = translate_tscb_to_os(old_mask);
 					op = EPOLL_CTL_DEL;
 				}
-				epoll_ctl(epoll_fd, op, fd, &event);
+				::epoll_ctl(epoll_fd_, op, fd, &event);
 			}
 			
-			link->service.store(0, memory_order_relaxed);
+			link->service_.store(nullptr, std::memory_order_relaxed);
 		}
 		
-		link->cancellation_mutex.unlock();
+		link->cancellation_mutex_.unlock();
 	}
 	
 	void ioready_dispatcher_epoll::modify_ioready_callback(ioready_callback *link, ioready_events event_mask)
@@ -280,14 +301,14 @@ namespace tscb {
 	{
 		async_write_guard<ioready_dispatcher_epoll> guard(*this);
 		
-		ioready_events old_mask = fdtab.compute_mask(link->fd);
-		link->event_mask = event_mask;
-		ioready_events new_mask = fdtab.compute_mask(link->fd);
+		ioready_events old_mask = fdtab_.compute_mask(link->fd_);
+		link->event_mask_ = event_mask;
+		ioready_events new_mask = fdtab_.compute_mask(link->fd_);
 		
 		if (old_mask != new_mask) {
 			epoll_event event;
 			event.data.u64 = 0;
-			event.data.fd = link->fd;
+			event.data.fd = link->fd_;
 			int op;
 			
 			if (old_mask) {
@@ -302,11 +323,11 @@ namespace tscb {
 				event.events = translate_tscb_to_os(new_mask);
 				op = EPOLL_CTL_ADD;
 			}
-			epoll_ctl(epoll_fd, op, link->fd, &event);
+			::epoll_ctl(epoll_fd_, op, link->fd_, &event);
 		}
 	}
 	
-	void ioready_dispatcher_epoll::drain_queue(void) throw()
+	void ioready_dispatcher_epoll::drain_queue(void) noexcept
 	{
 	}
 	

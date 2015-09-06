@@ -1,0 +1,66 @@
+/* -*- C++ -*-
+ * (c) 2015 Helge Bahmann <hcb@chaoticmind.net>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License version 2.1.
+ * Refer to the file "COPYING" for details.
+ */
+#ifndef TSCB_INTRUSIVE_PTR_H
+#define TSCB_INTRUSIVE_PTR_H
+
+namespace tscb {
+
+template<typename T>
+class intrusive_ptr {
+public:
+	inline ~intrusive_ptr() {
+		if (p_) {
+			intrusive_ptr_release(p_);
+		}
+	}
+
+	inline intrusive_ptr() : p_(nullptr) {}
+	inline explicit intrusive_ptr(T * p) : p_(p) {
+		if (p_) {
+			intrusive_ptr_add_ref(p_);
+		}
+	}
+	const intrusive_ptr& operator=(T * p) = delete;
+
+	inline intrusive_ptr(const intrusive_ptr & other) : p_(other.p_) {
+		if (p_) {
+			intrusive_ptr_add_ref(p_);
+		}
+	}
+	const intrusive_ptr& operator=(const intrusive_ptr & other) {
+		intrusive_ptr tmp(other);
+		swap(other);
+	}
+	const intrusive_ptr& operator=(intrusive_ptr && other) {
+		swap(other);
+	}
+
+	inline void reset(T * p) {
+		intrusive_ptr tmp(p);
+		swap(tmp);
+	}
+	inline void swap(intrusive_ptr & other) {
+		using std::swap;
+		swap(p_, other.p_);
+	}
+	inline T * release() {
+		T * tmp = p_;
+		p_ = nullptr;
+		return tmp;
+	}
+	
+	T & operator*() const { return *p_; }
+	T * operator->() const { return p_; }
+
+private:
+	T * p_;
+};
+
+}
+
+#endif

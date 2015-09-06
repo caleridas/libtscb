@@ -6,67 +6,76 @@
  * Refer to the file "COPYING" for details.
  */
 
-#include <boost/bind.hpp>
+#include <tscb/ioready-poll>
 
 #include <sys/fcntl.h>
 #include <string.h>
 
-#include <tscb/ioready-poll>
+#include <memory>
 
 namespace tscb {
 	
-	inline ioready_events ioready_dispatcher_poll::translate_os_to_tscb(int ev) throw()
+	inline ioready_events ioready_dispatcher_poll::translate_os_to_tscb(int ev) noexcept
 	{
 		ioready_events e = ioready_none;
-		if (ev & POLLIN) e |= ioready_input;
-		if (ev & POLLOUT) e |= ioready_output;
+		if (ev & POLLIN) {
+			e |= ioready_input;
+		}
+		if (ev & POLLOUT) {
+			e |= ioready_output;
+		}
 		/* deliver hangup event to input and output handlers as well */
-		if (ev & POLLHUP) e |= (ioready_input|ioready_output|ioready_hangup|ioready_error);
-		if (ev & POLLERR) e |= (ioready_input|ioready_output|ioready_error);
+		if (ev & POLLHUP) {
+			e |= (ioready_input|ioready_output|ioready_hangup|ioready_error);
+		}
+		if (ev & POLLERR) {
+			e |= (ioready_input|ioready_output|ioready_error);
+		}
 		return e;
 	}
 	
-	inline int ioready_dispatcher_poll::translate_tscb_to_os(ioready_events ev) throw()
+	inline int ioready_dispatcher_poll::translate_tscb_to_os(ioready_events ev) noexcept
 	{
-		int e=0;
-		if (ev & ioready_input) e |= POLLIN;
-		if (ev & ioready_output) e |= POLLOUT;
+		int e = 0;
+		if (ev & ioready_input) {
+			e |= POLLIN;
+		}
+		if (ev & ioready_output) {
+			e |= POLLOUT;
+		}
 		return e;
 	}
 	
-	ioready_dispatcher_poll::polltab::polltab(size_t _size)
+	ioready_dispatcher_poll::polltab::polltab(size_t size)
 		throw(std::bad_alloc)
-		: size(_size)
+		: size_(size), pfd_(new pollfd[size]), old_(nullptr), peer_(nullptr)
 	{
-		pfd = new pollfd[size];
-		old = 0;
-		peer = 0;
 	}
 	
 	ioready_dispatcher_poll::polltab::~polltab(void)
-		throw()
+		noexcept
 	{
-		delete []pfd;
+		delete []pfd_;
 	}
 	
 	/* dispatcher_poll */
 	
 	ioready_dispatcher_poll::ioready_dispatcher_poll(void)
 		/*throw(std::bad_alloc, std::runtime_error)*/
-		: master_ptab(new polltab(0))
+		: master_ptab_(nullptr)
 	{
-		try {
-			pipe_callback = watch(
-				boost::bind(&ioready_dispatcher_poll::drain_queue, this),
-				wakeup_flag.readfd, ioready_input);
-		}
-		catch (std::bad_alloc) {
-			delete master_ptab.load(memory_order_relaxed);
-			throw;
-		}
+		std::unique_ptr<polltab> master_ptab(new polltab(0));
+		master_ptab_.store(master_ptab.get(), std::memory_order_relaxed);
+		pipe_callback_ = watch(
+			[this](ioready_events)
+			{
+				drain_queue();
+			},
+			wakeup_flag_.readfd_, ioready_input);
+		master_ptab.release();
 	}
 	
-	ioready_dispatcher_poll::~ioready_dispatcher_poll(void) throw()
+	ioready_dispatcher_poll::~ioready_dispatcher_poll(void) noexcept
 	{
 		/* we can assume
 		
@@ -77,9 +86,11 @@ namespace tscb {
 		there is no point doing anything about it
 		*/
 		
-		while(lock.read_lock()) synchronize();
-		fdtab.cancel_all();
-		if (lock.read_unlock()) {
+		while(lock_.read_lock()) {
+			synchronize();
+		}
+		fdtab_.cancel_all();
+		if (lock_.read_unlock()) {
 			/* the above cancel operations will cause synchronization
 			to be performed at the next possible point in time; if
 			there is no concurrent cancellation, this is now */
@@ -91,7 +102,7 @@ namespace tscb {
 			the object until we are certain that synchronization has
 			been performed */
 			
-			lock.write_lock_sync();
+			lock_.write_lock_sync();
 			synchronize();
 			
 			/* note that synchronize implicitly calls sync_finished,
@@ -99,47 +110,53 @@ namespace tscb {
 		}
 		
 		/* FIXME: all other ptabs */
-		delete master_ptab.load(memory_order_relaxed);
+		delete master_ptab_.load(std::memory_order_relaxed);
 	}
 	
-	eventtrigger & ioready_dispatcher_poll::get_eventtrigger(void) throw()
+	eventtrigger & ioready_dispatcher_poll::get_eventtrigger(void) noexcept
 	{
-		return wakeup_flag;
+		return wakeup_flag_;
 	}
 	
-	size_t ioready_dispatcher_poll::dispatch(const boost::posix_time::time_duration *timeout, size_t max)
+	size_t ioready_dispatcher_poll::dispatch(const std::chrono::steady_clock::duration * timeout, size_t max)
 	{
 		read_guard<ioready_dispatcher_poll> guard(*this);
 		
-		uint32_t cookie = fdtab.get_cookie();
+		uint32_t cookie = fdtab_.get_cookie();
 		
-		polltab * ptab = master_ptab.load(memory_order_consume);
+		polltab * ptab = master_ptab_.load(std::memory_order_consume);
 		
-		int count, handled = 0;
-		
+		/* need to round up timeout */
 		int poll_timeout;
+		if (timeout) {
+			poll_timeout = std::chrono::duration_cast<std::chrono::milliseconds>(
+				(*timeout) + std::chrono::milliseconds(1) - std::chrono::steady_clock::duration(1)).count();
+		} else {
+			poll_timeout = -1;
+		}
 		
-		/* need to round up timeout; alas this is the only good way to do it in boost */
-		if (timeout) poll_timeout = (timeout->total_microseconds() + 999) / 1000;
-		else poll_timeout = -1;
+		wakeup_flag_.start_waiting();
 		
-		wakeup_flag.start_waiting();
-		
-		if (wakeup_flag.flagged.load(memory_order_relaxed) != 0)
+		if (wakeup_flag_.flagged_.load(std::memory_order_relaxed) != 0) {
 			poll_timeout = 0;
+		}
 		
-		count = poll(ptab->pfd, ptab->size, poll_timeout);
+		ssize_t count = ::poll(ptab->pfd_, ptab->size_, poll_timeout);
 		
-		wakeup_flag.stop_waiting();
+		wakeup_flag_.stop_waiting();
 		
-		if (count < 0) count = 0;
-		if ((size_t)count > max) count = max;
-		int n=0;
-		while(count) {
-			if (ptab->pfd[n].revents) {
-				int fd = ptab->pfd[n].fd;
-				ioready_events ev = translate_os_to_tscb(ptab->pfd[n].revents);
-				fdtab.notify(fd, ev, cookie);
+		if (count < 0) {
+			count = 0;
+		}
+		if ((size_t)count > max) {
+			count = max;
+		}
+		size_t n = 0, handled = 0;
+		while (count) {
+			if (ptab->pfd_[n].revents) {
+				int fd = ptab->pfd_[n].fd;
+				ioready_events ev = translate_os_to_tscb(ptab->pfd_[n].revents);
+				fdtab_.notify(fd, ev, cookie);
 				
 				count--;
 				handled++;
@@ -147,9 +164,11 @@ namespace tscb {
 			n++;
 		}
 		
-		wakeup_flag.clear();
+		wakeup_flag_.clear();
 		
-		if (lock.read_unlock()) synchronize();
+		if (lock_.read_unlock()) {
+			synchronize();
+		}
 		
 		return handled;
 	}
@@ -158,24 +177,25 @@ namespace tscb {
 	{
 		read_guard<ioready_dispatcher_poll> guard(*this);
 		
-		polltab * ptab = master_ptab.load(memory_order_consume);
+		polltab * ptab = master_ptab_.load(std::memory_order_consume);
 		
-		ssize_t count;
-		size_t handled = 0;
+		uint32_t cookie = fdtab_.get_cookie();
 		
-		uint32_t cookie = fdtab.get_cookie();
+		ssize_t count = ::poll(ptab->pfd_, ptab->size_, 0);
 		
-		count = poll(ptab->pfd, ptab->size, 0);
+		if (count < 0) {
+			count = 0;
+		}
+		if ((size_t)count > max) {
+			count = max;
+		}
 		
-		if (count < 0) count = 0;
-		if ((size_t)count > max) count = max;
-		
-		size_t n = 0;
-		while(count) {
-			if (ptab->pfd[n].revents) {
-				int fd = ptab->pfd[n].fd;
-				ioready_events ev = translate_os_to_tscb(ptab->pfd[n].revents);
-				fdtab.notify(fd, ev, cookie);
+		size_t n = 0, handled = 0;
+		while (count) {
+			if (ptab->pfd_[n].revents) {
+				int fd = ptab->pfd_[n].fd;
+				ioready_events ev = translate_os_to_tscb(ptab->pfd_[n].revents);
+				fdtab_.notify(fd, ev, cookie);
 				
 				count--;
 				handled++;
@@ -183,32 +203,34 @@ namespace tscb {
 			n++;
 		}
 		
-		wakeup_flag.clear();
+		wakeup_flag_.clear();
 		
-		if (lock.read_unlock()) synchronize();
+		if (lock_.read_unlock()) {
+			synchronize();
+		}
 		
 		return handled;
 	}
 	
-	void ioready_dispatcher_poll::synchronize(void) throw()
+	void ioready_dispatcher_poll::synchronize(void) noexcept
 	{
-		ioready_callback *stale = fdtab.synchronize();
+		ioready_callback * stale = fdtab_.synchronize();
 		
-		polltab * ptab = master_ptab.load(memory_order_relaxed);
-		polltab * discard_ptab = ptab->old;
-		ptab->old = 0;
+		polltab * ptab = master_ptab_.load(std::memory_order_relaxed);
+		polltab * discard_ptab = ptab->old_;
+		ptab->old_ = nullptr;
 		
-		lock.sync_finished();
+		lock_.sync_finished();
 		
-		while(stale) {
-			ioready_callback * next = stale->inactive_next;
+		while (stale) {
+			ioready_callback * next = stale->inactive_next_;
 			stale->cancelled();
 			stale->release();
 			stale = next;
 		}
 		
-		while(discard_ptab) {
-			polltab * next = discard_ptab->old;
+		while (discard_ptab) {
+			polltab * next = discard_ptab->old_;
 			delete discard_ptab;
 			discard_ptab = next;
 		}
@@ -216,56 +238,61 @@ namespace tscb {
 	
 	void ioready_dispatcher_poll::update_polltab_entry(int fd, ioready_events mask) /*throw(std::bad_alloc)*/
 	{
-		polltab * old_ptab = master_ptab.load(memory_order_relaxed);
+		polltab * old_ptab = master_ptab_.load(std::memory_order_relaxed);
 		int index = -1;
 		
-		if ( ((size_t)fd) < polltab_index.size() ) index = polltab_index[fd];
+		if ( ((size_t)fd) < polltab_index_.size() ) {
+			index = polltab_index_[fd];
+		}
 		
 		if (index == -1) {
-			if (!mask) return;
-			
-			/* no entry so far, just create new one */
-			while (polltab_index.size() <= (size_t) fd)
-				polltab_index.push_back(-1);
-			
-			polltab * p = new polltab(old_ptab->size + 1);
-			for (size_t n = 0; n < old_ptab->size; n++) {
-				p->pfd[n].fd = old_ptab->pfd[n].fd;
-				p->pfd[n].events = old_ptab->pfd[n].events;
+			if (!mask) {
+				return;
 			}
 			
-			p->pfd[p->size-1].fd = fd;
-			p->pfd[p->size-1].events = translate_tscb_to_os(mask);
+			/* no entry so far, just create new one */
+			while (polltab_index_.size() <= (size_t) fd) {
+				polltab_index_.push_back(-1);
+			}
 			
-			polltab_index[fd] = p->size - 1;
-			p->old = old_ptab;
+			polltab * p = new polltab(old_ptab->size_ + 1);
+			for (size_t n = 0; n < old_ptab->size_; ++n) {
+				p->pfd_[n].fd = old_ptab->pfd_[n].fd;
+				p->pfd_[n].events = old_ptab->pfd_[n].events;
+			}
 			
-			master_ptab.store(p, memory_order_release);
+			p->pfd_[p->size_-1].fd = fd;
+			p->pfd_[p->size_-1].events = translate_tscb_to_os(mask);
+			
+			polltab_index_[fd] = p->size_ - 1;
+			p->old_ = old_ptab;
+			
+			master_ptab_.store(p, std::memory_order_release);
 			
 			return;
 		}
 		
 		if (mask) {
-			old_ptab->pfd[index].events = translate_tscb_to_os(mask);
+			old_ptab->pfd_[index].events = translate_tscb_to_os(mask);
 			
 			return;
 		}
 		
-		polltab * p = new polltab(old_ptab->size - 1);
-		for(size_t n = 0; n<p->size; n++) {
-			p->pfd[n].fd = old_ptab->pfd[n].fd;
-			p->pfd[n].events = old_ptab->pfd[n].events;
+		polltab * p = new polltab(old_ptab->size_ - 1);
+		for(size_t n = 0; n < p->size_; ++n) {
+			p->pfd_[n].fd = old_ptab->pfd_[n].fd;
+			p->pfd_[n].events = old_ptab->pfd_[n].events;
 		}
 		
-		if (p->size > (size_t) index) {
+		if (p->size_ > (size_t) index) {
 			/* unless deleting last element, move last element into vacant position */
-			p->pfd[index].fd = old_ptab->pfd[old_ptab->size -1].fd;
-			p->pfd[index].events = old_ptab->pfd[old_ptab->size -1].events;
+			p->pfd_[index].fd = old_ptab->pfd_[old_ptab->size_ - 1].fd;
+			p->pfd_[index].events = old_ptab->pfd_[old_ptab->size_ - 1].events;
 		}
 		
-		polltab_index[fd] = -1;
-		p->old = old_ptab;
-		master_ptab.store(p, memory_order_release);
+		polltab_index_[fd] = -1;
+		p->old_ = old_ptab;
+		master_ptab_.store(p, std::memory_order_release);
 	}
 	
 	void ioready_dispatcher_poll::register_ioready_callback(ioready_callback *link)
@@ -276,39 +303,42 @@ namespace tscb {
 			
 			try {
 				ioready_events old_mask, new_mask;
-				fdtab.insert(link, old_mask, new_mask);
-				if (old_mask != new_mask)
-					update_polltab_entry(link->fd, new_mask);
+				fdtab_.insert(link, old_mask, new_mask);
+				if (old_mask != new_mask) {
+					update_polltab_entry(link->fd_, new_mask);
+				}
 			}
 			catch (std::bad_alloc) {
 				delete link;
 				throw;
 			}
 			
-			link->service.store(this, memory_order_relaxed);
+			link->service_.store(this, std::memory_order_relaxed);
 		}
 		
-		wakeup_flag.set();
+		wakeup_flag_.set();
 	}
 	
 	void ioready_dispatcher_poll::unregister_ioready_callback(ioready_callback *link)
-		throw()
+		noexcept
 	{
 		{
 			async_write_guard<ioready_dispatcher_poll> guard(*this);
 			
-			if (link->service.load(memory_order_relaxed)) {
+			if (link->service_.load(std::memory_order_relaxed)) {
 				ioready_events old_mask, new_mask;
-				fdtab.remove(link, old_mask, new_mask);
-				if (old_mask != new_mask) update_polltab_entry(link->fd, new_mask);
+				fdtab_.remove(link, old_mask, new_mask);
+				if (old_mask != new_mask) {
+					update_polltab_entry(link->fd_, new_mask);
+				}
 				
-				link->service.store(0, memory_order_relaxed);
+				link->service_.store(nullptr, std::memory_order_relaxed);
 			}
 			
-			link->cancellation_mutex.unlock();
+			link->cancellation_mutex_.unlock();
 		}
 		
-		wakeup_flag.set();
+		wakeup_flag_.set();
 	}
 	
 	void ioready_dispatcher_poll::modify_ioready_callback(ioready_callback *link, ioready_events event_mask)
@@ -316,22 +346,22 @@ namespace tscb {
 		{
 			async_write_guard<ioready_dispatcher_poll> guard(*this);
 			
-			ioready_events old_mask = link->event_mask;
-			link->event_mask = event_mask;
-			ioready_events new_events = fdtab.compute_mask(link->fd);
+			ioready_events old_mask = link->event_mask_;
+			link->event_mask_ = event_mask;
+			ioready_events new_events = fdtab_.compute_mask(link->fd_);
 			try {
-				update_polltab_entry(link->fd, new_events);
+				update_polltab_entry(link->fd_, new_events);
 			}
 			catch(std::bad_alloc) {
-				link->event_mask = old_mask;
+				link->event_mask_ = old_mask;
 				throw;
 			}
 		}
 		
-		wakeup_flag.set();
+		wakeup_flag_.set();
 	}
 	
-	void ioready_dispatcher_poll::drain_queue(void) throw()
+	void ioready_dispatcher_poll::drain_queue(void) noexcept
 	{
 	}
 	

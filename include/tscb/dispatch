@@ -10,6 +10,8 @@
 #define TSCB_DISPATCH_H
 
 #include <list>
+#include <mutex>
+
 #include <tscb/reactor>
 
 /**
@@ -141,7 +143,7 @@ namespace tscb {
 	class posix_reactor : public posix_reactor_service {
 	public:
 		posix_reactor(void) throw(std::bad_alloc, std::runtime_error);
-		virtual ~posix_reactor(void) throw();
+		virtual ~posix_reactor(void) noexcept;
 		
 		/**
 			\brief Run the dispatcher
@@ -175,15 +177,15 @@ namespace tscb {
 		
 		/* workqueue_service */
 		virtual void
-		post(const boost::function<void(void)> &function) /*throw(std::bad_alloc)*/;
+		post(std::function<void(void)> function) /*throw(std::bad_alloc)*/;
 		
 		/* timer_service */
 		
 		/** \internal \brief Register timer with internal data structure */
-		virtual void register_timer(timer_callback *ptr) throw();
+		virtual void register_timer(timer_callback *ptr) noexcept;
 		
 		/** \internal \brief Unregister timer with internal data structure */
-		virtual void unregister_timer(timer_callback *t) throw();
+		virtual void unregister_timer(timer_callback *t) noexcept;
 		
 		/* ioready_service */
 		
@@ -194,7 +196,7 @@ namespace tscb {
 		/** \internal \brief Unregister callback link */
 		virtual void
 		unregister_ioready_callback(ioready_callback *e)
-			throw();
+			noexcept;
 		/** \internal \brief Update event set */
 		virtual void
 		modify_ioready_callback(ioready_callback *e, ioready_events event_mask)
@@ -202,75 +204,87 @@ namespace tscb {
 		
 		/* async_safe_work_service */
 		virtual async_safe_connection
-		async_procedure(const boost::function<void(void)> & function);
+		async_procedure(std::function<void(void)> function);
 		
 		virtual eventtrigger &
 		get_eventtrigger(void) /*throw(std::bad_alloc)*/;
+		
 	protected:
-		ioready_dispatcher * io;
-		eventtrigger & trigger;
-		timerqueue_dispatcher timer_dispatcher;
+		ioready_dispatcher * io_;
+		eventtrigger & trigger_;
+		timerqueue_dispatcher timer_dispatcher_;
 		
 		class workitem {
 		public:
-			workitem(const boost::function<void(void)> & _function) : function(_function) {}
-			boost::function<void(void)> function;
-			workitem * prev;
-			workitem * next;
+			workitem(std::function<void(void)> function)
+				: function_(std::move(function)) {}
+			
+			std::function<void(void)> function_;
+			workitem * prev_;
+			workitem * next_;
 		};
 		
 		class workitem_list {
 		public:
-			atomic<workitem *> first;
-			workitem * last;
+			std::atomic<workitem *> first_;
+			workitem * last_;
 			
-			inline workitem_list(void) : first(0), last(0) {}
+			inline workitem_list(void) : first_(nullptr), last_(nullptr) {}
 			inline ~workitem_list(void)
 			{
-				workitem * item;
-				while( (item = pop()) != 0) delete item;
+				for (workitem * item = pop(); item; item = pop()) {
+					delete item;
+				}
 			}
 			
-			inline void push_back(workitem * item) throw()
+			inline void push_back(workitem * item) noexcept
 			{
-				item->prev = last;
-				item->next = 0;
-				if (last) last->next = item;
-				else (first.store(item, memory_order_relaxed));
-				last = item;
+				item->prev_ = last_;
+				item->next_ = nullptr;
+				if (last_) {
+					last_->next_ = item;
+				} else {
+					first_.store(item, std::memory_order_relaxed);
+				}
+				last_ = item;
 			}
 			
-			inline workitem * pop(void) throw()
+			inline workitem * pop(void) noexcept
 			{
-				workitem * item = first.load(memory_order_relaxed);
-				if (!item) return 0;
-				if (item->next) item->next->prev = 0;
-				else last = 0;
-				first.store(item->next, memory_order_relaxed);
+				workitem * item = first_.load(std::memory_order_relaxed);
+				if (!item) {
+					return nullptr;
+				}
+				if (item->next_) {
+					item->next_->prev_ = nullptr;
+				} else {
+					last_ = nullptr;
+				}
+				first_.store(item->next_, std::memory_order_relaxed);
 				return item;
 			}
 			
-			inline bool empty(void) throw()
+			inline bool empty(void) noexcept
 			{
-				return first.load(memory_order_relaxed) == 0;
+				return first_.load(std::memory_order_relaxed) == nullptr;
 			}
 			
-			inline void swap(workitem_list & other) throw()
+			inline void swap(workitem_list & other) noexcept
 			{
-				workitem * tmp = first.load(memory_order_relaxed);
-				first.store(other.first.load(memory_order_relaxed), memory_order_relaxed);
-				other.first.store(tmp, memory_order_relaxed);
+				workitem * tmp = first_.load(std::memory_order_relaxed);
+				first_.store(other.first_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+				other.first_.store(tmp, std::memory_order_relaxed);
 				
-				tmp = last;
-				last = other.last;
-				other.last = tmp;
+				tmp = last_;
+				last_ = other.last_;
+				other.last_ = tmp;
 			}
 		};
 		
-		workitem_list workqueue;
-		mutex workqueue_lock;
+		workitem_list workqueue_;
+		std::mutex workqueue_lock_;
 		
-		async_safe_work_dispatcher async_workqueue;
+		async_safe_work_dispatcher async_workqueue_;
 	};
 };
 

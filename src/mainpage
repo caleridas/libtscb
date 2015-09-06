@@ -275,7 +275,7 @@ documentation page; I don't know where else to put it */
 			<TD>not thread-safe</TD>
 		</TR>
 		<TR>
-			<TD>open-coded<BR> (<TT>std::list</TT> of <TT>boost::function</TT> objects)</TD>
+			<TD>open-coded<BR> (<TT>std::list</TT> of <TT>std::function</TT> objects)</TD>
 			<TD>33</TD>
 			<TD>320</TD>
 			<TD>254</TD>
@@ -329,7 +329,7 @@ documentation page; I don't know where else to put it */
 			<TD>not thread-safe</TD>
 		</TR>
 		<TR>
-			<TD>open-coded<BR> (<TT>std::list</TT> of <TT>boost::function</TT> objects)</TD>
+			<TD>open-coded<BR> (<TT>std::list</TT> of <TT>std::function</TT> objects)</TD>
 			<TD>32</TD>
 			<TD>333</TD>
 			<TD>576</TD>

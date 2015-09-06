@@ -19,15 +19,15 @@ using namespace tscb;
 
 class Node {
 public:
-	Node *next, *prev, *parent, *child;
-	int degree;
-	int value;
+	Node * next_, * prev_, * parent_, * child_;
+	int degree_;
+	int value_;
 	
-	inline bool operator>(const Node &x) const {return value>x.value;}
-	inline bool operator<(const Node &x) const {return value<x.value;}
-	inline bool operator<=(const Node &x) const {return value<=x.value;}
+	inline bool operator>(const Node &x) const {return value_ > x.value_;}
+	inline bool operator<(const Node &x) const {return value_ < x.value_;}
+	inline bool operator<=(const Node &x) const {return value_ <= x.value_;}
 	
-	inline Node(int _value) : value(_value) {}
+	inline Node(int value) : value_(value) {}
 };
 
 void assert_fibheap_structure(fibheap<Node> &heap)
@@ -47,14 +47,14 @@ void fibheap_tests(void)
 	heap.insert(&c);
 	assert_fibheap_structure(heap);
 	
-	ASSERT(heap.extract_min()==&a);
+	ASSERT(heap.extract_min() == &a);
 	assert_fibheap_structure(heap);
 	
 	heap.remove(&d);
 	assert_fibheap_structure(heap);
 	
-	ASSERT(heap.extract_min()==&b);
-	ASSERT(heap.extract_min()==&c);
+	ASSERT(heap.extract_min() == &b);
+	ASSERT(heap.extract_min() == &c);
 }
 
 int main()

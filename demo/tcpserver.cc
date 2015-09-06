@@ -6,9 +6,6 @@
  * Refer to the file "COPYING" for details.
  */
 
-#include <boost/bind.hpp>
-#include <boost/intrusive_ptr.hpp>
-
 #include <stdio.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -18,135 +15,139 @@
 #include <arpa/inet.h>
 #include <errno.h>
 
-#include <tscb/atomic>
+#include <atomic>
+
 #include <tscb/ioready>
 
 class echo {
 public:
-	echo(tscb::ioready_service *service, int _fd);
+	echo(tscb::ioready_service * service, int fd);
 	~echo(void);
 	
-	inline void pin(void) {refcount++;}
-	inline void release(void) {if (!--refcount) delete this;}
-	
-	boost::atomic_int refcount;
 private:
 	void data(int event);
 	void destroy(void);
 	
-	int fd;
-	tscb::ioready_connection link;
-	tscb::ioready_service *service;
+	int fd_;
+	tscb::ioready_connection link_;
+	tscb::ioready_service *service_;
+	std::atomic_int refcount_;
+	
+	friend inline void intrusive_ptr_add_ref(echo * e) noexcept
+	{
+		e->refcount_.fetch_add(1, std::memory_order_relaxed);
+	}
+	friend inline void intrusive_ptr_release(echo * e) noexcept
+	{
+		if (e->refcount_.fetch_sub(1, std::memory_order_relaxed) == 1) {
+			std::atomic_thread_fence(std::memory_order_release);
+			delete e;
+		}
+	}
 };
-
-static inline void intrusive_ptr_add_ref(echo *e) throw()
-{
-	e->refcount++;
-}
-static inline void intrusive_ptr_release(echo *e) throw()
-{
-	if (!--e->refcount) delete e;
-}
 
 class acceptor {
 public:
-	acceptor(tscb::ioready_service *service, int _fd);
+	acceptor(tscb::ioready_service * service, int fd);
 	
-	boost::atomic_int refcount;
 private:
 	void connection_request(int event);
 	
-	int fd;
-	tscb::ioready_connection link;
-	tscb::ioready_service *service;
+	int fd_;
+	tscb::ioready_connection link_;
+	tscb::ioready_service * service_;
+	std::atomic_int refcount_;
+	
+	friend inline void intrusive_ptr_add_ref(acceptor * a) noexcept
+	{
+		a->refcount_.fetch_add(1, std::memory_order_relaxed);
+	}
+	friend inline void intrusive_ptr_release(acceptor * a) noexcept
+	{
+		if (a->refcount_.fetch_sub(1, std::memory_order_relaxed) == 1) {
+			std::atomic_thread_fence(std::memory_order_release);
+			delete a;
+		}
+	}
 };
 
-static inline void intrusive_ptr_add_ref(acceptor *a) throw()
+echo::echo(tscb::ioready_service *service, int fd)
+	: fd_(fd), service_(service), refcount_(0)
 {
-	a->refcount++;
-}
-static inline void intrusive_ptr_release(acceptor *a) throw()
-{
-	if (!--a->refcount) delete a;
-}
-
-echo::echo(tscb::ioready_service *_service, int _fd)
-	: fd(_fd), service(_service)
-{
-	int flags=fcntl(fd, F_GETFL);
+	int flags = fcntl(fd, F_GETFL);
 	flags |= O_NONBLOCK;
 	fcntl(fd, F_SETFL, flags);
 	
-	link=service->watch(boost::bind(&echo::data, boost::intrusive_ptr<echo>(this), _1),
+	link_ = service->watch(std::bind(&echo::data, tscb::intrusive_ptr<echo>(this), std::placeholders::_1),
 		fd, tscb::ioready_input);
 }
 
 echo::~echo(void)
 {
 	printf("connection closed\n");
-	close(fd);
+	::close(fd_);
 }
 
 void echo::data(int event)
 {
 	char buffer[16384];
-	int n;
+	ssize_t n;
 	do {
-		n=read(fd, buffer, 16384);
-		if (n<0) {
-			if (errno==EAGAIN) break;
-		}
-		if (n<=0) {
-			printf("connection closed by client\n");
-			link.disconnect();
+		n = ::read(fd_, buffer, 16384);
+		if (n < 0 && errno == EAGAIN) {
 			break;
 		}
-		write(1, buffer, n);
-		write(fd, buffer, n);
-	} while(n==16384);
+		if (n <= 0) {
+			printf("connection closed by client\n");
+			link_.disconnect();
+			break;
+		}
+		::write(1, buffer, n);
+		::write(fd_, buffer, n);
+	} while (n == 16384);
 }
 
-acceptor::acceptor(tscb::ioready_service *_service, int _fd)
-	: fd(_fd), service(_service)
+acceptor::acceptor(tscb::ioready_service *service, int fd)
+	: fd_(fd), service_(service), refcount_(0)
 {
-	int flags=fcntl(fd, F_GETFL);
+	int flags=fcntl(fd_, F_GETFL);
 	flags |= O_NONBLOCK;
-	fcntl(fd, F_SETFL, flags);
+	fcntl(fd_, F_SETFL, flags);
 	
-	link=service->watch(boost::bind(&acceptor::connection_request,
-		boost::intrusive_ptr<acceptor>(this), _1), fd, tscb::ioready_input);
+	link_ = service->watch(std::bind(&acceptor::connection_request,
+		tscb::intrusive_ptr<acceptor>(this), std::placeholders::_1), fd, tscb::ioready_input);
 }
 
 void acceptor::connection_request(int event)
 {
-	int s;
-	s=accept(fd, 0, 0);
-	while(s>=0) {
-		new echo(service, s);
-		s=accept(fd, 0, 0);
+	int s = ::accept(fd_, 0, 0);
+	while (s >= 0) {
+		new echo(service_, s);
+		s = accept(fd_, 0, 0);
 	}
 }
 
 int main(int argc, char **argv)
 {
-	int sock;
-	int reuse_flag=1;
-	struct sockaddr_in addr;
 	
-	sock=socket(PF_INET, SOCK_STREAM, 0);
+	int sock = socket(PF_INET, SOCK_STREAM, 0);
+	
+	struct sockaddr_in addr;
 	addr.sin_family=AF_INET;
 	addr.sin_port=htons(1234);
 	addr.sin_addr.s_addr=inet_addr("0.0.0.0");
+	
+	int reuse_flag = 1;
 	setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse_flag, sizeof(reuse_flag));
 	bind(sock, (struct sockaddr *)&addr, sizeof(addr));
 	setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse_flag, sizeof(reuse_flag));
 	listen(sock, 25);
 	
-	tscb::ioready_dispatcher *dispatcher=tscb::create_ioready_dispatcher();
+	tscb::ioready_dispatcher * dispatcher=tscb::create_ioready_dispatcher();
 	
 	new acceptor(dispatcher, sock);
 	
-	while(true) {
+	for(;;) {
 		dispatcher->dispatch(0);
 	}
 	

@@ -74,7 +74,7 @@ namespace tscb {
 		ioready_callback_table callback_tab;
 		
 		pipe_eventflag *wakeup_flag;
-		mutex singleton_mutex;
+		std::mutex singleton_mutex;
 		
 		deferrable_rwlock guard;
 	};

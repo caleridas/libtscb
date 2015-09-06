@@ -11,8 +11,8 @@
   by passing around a token in a circle of pipes.
  */
 
+#include <thread>
 #include <vector>
-#include <boost/bind.hpp>
 
 #include <unistd.h>
 #include <fcntl.h>
@@ -20,9 +20,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <boost/date_time/posix_time/posix_time_types.hpp>
-
-#include <tscb/thread>
 #include <tscb/ioready>
 #include <tscb/timer>
 
@@ -34,13 +31,15 @@ std::vector<int> read_fds, write_fds;
 
 void create_pipes(void)
 {
-	int filedes[2], error, n=0;
+	int filedes[2], error;
 	std::vector<int> reserved_fds;
 	
-	for(n=0; n<num_reserved_fds; n++) reserved_fds.push_back(open("/dev/null", O_RDONLY));
+	for(int n = 0; n < num_reserved_fds; ++n) {
+		reserved_fds.push_back(open("/dev/null", O_RDONLY));
+	}
 	
-	n=0;
-	while(1) {
+	int n = 0;
+	for(;;) {
 		error=pipe(filedes);
 		if (error) {
 			if ((errno==EMFILE) || (errno==ENFILE)) break;
@@ -77,7 +76,7 @@ public:
 	void count(void);
 	
 	int counter, iterations;
-	boost::posix_time::ptime begin;
+	std::chrono::steady_clock::time_point begin;
 	double loopspersecond;
 	
 	volatile bool finished;
@@ -87,7 +86,7 @@ perfcounter::perfcounter(void)
 {
 	counter=0;
 	iterations=256;
-	begin=boost::posix_time::microsec_clock::universal_time();
+	begin = std::chrono::steady_clock::now();
 	loopspersecond=0;
 	finished=false;
 }
@@ -97,17 +96,17 @@ void perfcounter::count(void)
 	if (!finished) {
 		counter++;
 		if (counter>=iterations) {
-			boost::posix_time::ptime end;
-			end=boost::posix_time::microsec_clock::universal_time();
-			long long d=(end-begin).total_microseconds();
-			if (d/1000000>=second_threshold) {
-				loopspersecond=counter*1000000.0/d;
-				finished=true;
+			std::chrono::steady_clock::time_point end;
+			end = std::chrono::steady_clock::now();
+			long long d = std::chrono::duration_cast<std::chrono::microseconds>(end - begin).count();
+			if (d/1000000 >= second_threshold) {
+				loopspersecond = counter*1000000.0/d;
+				finished = true;
 				return;
 			}
-			iterations=iterations*2;
-			counter=0;
-			begin=end;
+			iterations = iterations*2;
+			counter = 0;
+			begin = end;
 		}
 	}
 }
@@ -117,24 +116,22 @@ class receiver {
 public:
 	receiver(tscb::ioready_service *_io, int _from, int _to, perfcounter &counter);
 	~receiver(void);
-	void pass_token(int fd, int event);
+	void pass_token(tscb::ioready_events events);
 	void release(void);
 	
 	tscb::ioready_connection link;
 private:
-	int from, to;
-	perfcounter &counter;
+	int from_, to_;
+	perfcounter &counter_;
 };
 
 std::vector<receiver *> receivers;
 
-receiver::receiver(tscb::ioready_service *io, int _from, int _to, perfcounter &_counter)
-	: counter(_counter)
+receiver::receiver(tscb::ioready_service *io, int from, int to, perfcounter &counter)
+	: from_(from), to_(to), counter_(counter)
 {
-	link=io->watch(boost::bind(&receiver::pass_token, this, _from, _1),
-		_from, tscb::ioready_input);
-	from=_from;
-	to=_to;
+	link = io->watch(std::bind(&receiver::pass_token, this, std::placeholders::_1),
+		from_, tscb::ioready_input);
 }
 
 void receiver::release(void)
@@ -146,17 +143,17 @@ receiver::~receiver(void)
 	link.disconnect();
 }
 
-void receiver::pass_token(int fd, int event)
+void receiver::pass_token(tscb::ioready_events events)
 {
 	char buffer[1];
-	read(from, buffer, 1);
-	write(to, buffer, 1);
-	counter.count();
+	read(from_, buffer, 1);
+	write(to_, buffer, 1);
+	counter_.count();
 }
 
 void cleanup_receivers(void)
 {
-	for(size_t n=0; n<receivers.size(); n++) {
+	for (size_t n = 0; n<receivers.size(); n++) {
 		delete receivers[n];
 	}
 	receivers.clear();
@@ -168,83 +165,89 @@ tscb::ioready_dispatcher *prepare_ring(int start, int nelements,
 {
 	tscb::ioready_dispatcher *d=tscb::create_ioready_dispatcher();
 	
-	for(int n=0; n<nelements; n++)
+	for(int n = 0; n < nelements; ++n)
 		receivers.push_back(
-			new receiver(d, read_fds[start+n], 
-				write_fds[start+(n+1)%nelements],
+			new receiver(d, read_fds[start + n], 
+				write_fds[start + (n + 1) % nelements],
 				counter)
 		);
 	
 	/* FIXME: inject n tokens */
-	char buffer=0;
+	char buffer = 0;
 	write(write_fds[start], &buffer, 1);
 	
 	return d;
 }
 
-class dispatcher_thread : public tscb::thread {
+class dispatcher_worker {
 public:
-	dispatcher_thread(tscb::ioready_dispatcher *d) : dispatcher(d), cancelled(false), flag(d->get_eventflag())
+	dispatcher_worker(std::unique_ptr<tscb::ioready_dispatcher> dispatcher)
+		: dispatcher_(std::move(dispatcher))
+		, cancelled_(false), flag_(dispatcher_->get_eventflag())
 	{
 	}
 	
-	virtual void *thread_func(void) throw() {
-		while(!cancelled) {
-			dispatcher->dispatch(0);
+	void thread_func(void) noexcept {
+		while (!cancelled_.load()) {
+			dispatcher_->dispatch(nullptr);
 		}
-		return 0;
 	}
 	void cancel(void)
 	{
-		cancelled=true;
-		flag.set();
+		cancelled_.store(true);
+		flag_.set();
 	}
 	
-	tscb::ioready_dispatcher *dispatcher;
-	volatile bool cancelled;
-	tscb::eventflag & flag;
+	std::unique_ptr<tscb::ioready_dispatcher> dispatcher_;
+	std::atomic<bool> cancelled_;
+	tscb::eventflag & flag_;
 };
 
-void run_independent(int nthreads, int nelements)
+void run_independent(size_t nthreads, int nelements)
 {
-	int n;
-	tscb::ioready_dispatcher *d[nthreads];
-	perfcounter counter[nthreads];
-	dispatcher_thread *thread[nthreads];
+	std::vector<perfcounter> counter;
+	std::vector<std::unique_ptr<dispatcher_worker>> dispatchers;
+	std::vector<std::thread> threads;
+	
+	counter.resize(nthreads);
 
-	for(n=0; n<nthreads; n++) d[n]=prepare_ring(nelements*n, nelements, counter[n]);
+	for (size_t n = 0; n < nthreads; ++n) {
+		dispatchers.emplace_back(new dispatcher_worker(
+			std::unique_ptr<tscb::ioready_dispatcher>(prepare_ring(nelements * n, nelements, counter[n]))));
+	}
+	for (size_t n = 0; n < nthreads; ++n) {
+		threads.emplace_back(&dispatcher_worker::thread_func, dispatchers[n].get());
+	}
 	
-	for(n=0; n<nthreads; n++)
-		thread[n]=new dispatcher_thread(d[n]);
-	for(n=0; n<nthreads; n++)
-		thread[n]->start();
-	
-	while(1) {
-		wait_longer: sleep(1);
-		for(n=0; n<nthreads; n++) if (!counter[n].finished) goto wait_longer;
-		break;
+	for (;;) {
+		bool all_finished = true;
+		for (size_t n = 0; n < nthreads; ++n) {
+			all_finished = all_finished && counter[n].finished;
+		}
+		if (all_finished) {
+			break;
+		} else {
+			sleep(1);
+		}
 	}
 
 	
-	for(n=0; n<nthreads; n++) {
-		thread[n]->cancel();
-		thread[n]->join(0);
+	for (size_t n = 0; n < nthreads; ++n) {
+		dispatchers[n]->cancel();
+		threads[n].join();
 	}
 	
-	double sum=0.0;
-	for(n=0; n<nthreads; n++)
-		sum+=counter[n].loopspersecond;
+	double sum = 0.0;
+	for (size_t n = 0; n < nthreads; ++n) {
+		sum += counter[n].loopspersecond;
+	}
 	printf("%g", sum);
-	for(n=0; n<nthreads; n++)
+	for (size_t n = 0; n<nthreads; n++) {
 		printf(" %g", counter[n].loopspersecond);
+	}
 	printf("\n");
 	
 	cleanup_receivers();
-	
-	for(n=0; n<nthreads; n++) {
-		delete thread[n];
-		delete d[n];
-	}
 }
 
 void run_independent(void)

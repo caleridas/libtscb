@@ -29,31 +29,37 @@ namespace tscb {
 	class async_safe_callback : public abstract_callback {
 	public:
 		virtual
-		~async_safe_callback(void) throw();
+		~async_safe_callback(void) noexcept;
 		
 		virtual void
-		disconnect(void) throw();
+		disconnect(void) noexcept;
 		
 		virtual bool
-		connected(void) const throw();
+		connected(void) const noexcept;
 		
 		inline void
-		trigger(void) throw();
+		trigger(void) noexcept;
 	
 	protected:
-		inline async_safe_callback(const boost::function<void(void)> & _function, async_safe_work_dispatcher * _service)
-			: function(_function), activation_flag(false), pending_next(0), prev(0), next(0), service(_service), disconnected(false)
+		inline async_safe_callback(std::function<void(void)> function, async_safe_work_dispatcher * service)
+			: function_(std::move(function))
+			, activation_flag_(false)
+			, pending_next_(nullptr)
+			, prev_(nullptr)
+			, next_(nullptr)
+			, service_(service)
+			, disconnected_(false)
 		{}
 		
 		inline void
-		trigger_bottom(void) throw();
+		trigger_bottom(void) noexcept;
 	
-		boost::function<void(void)> function;
+		std::function<void(void)> function_;
 		
-		atomic_flag activation_flag;
-		async_safe_callback * pending_next;
-		async_safe_callback * prev, * next;
-		async_safe_work_dispatcher * service;
+		std::atomic_flag activation_flag_;
+		async_safe_callback * pending_next_;
+		async_safe_callback * prev_, * next_;
+		async_safe_work_dispatcher * service_;
 		
 		enum state_type {
 			state_connected,
@@ -61,10 +67,10 @@ namespace tscb {
 			state_disconnected
 		};
 		
-		bool disconnected;
+		bool disconnected_;
 		
 		/** \internal \brief Serialize deregistration */
-		mutex registration_mutex;
+		std::mutex registration_mutex_;
 		
 		friend class async_safe_work_dispatcher;
 		friend class async_pending_dequeue_helper;
@@ -78,46 +84,107 @@ namespace tscb {
 	*/
 	class async_safe_connection : public eventtrigger {
 	public:
-		inline async_safe_connection(async_safe_callback *_callback = 0, bool add_ref = true) throw() : callback(_callback)
-		{if (callback && add_ref) callback->pin();}
+		virtual ~async_safe_connection(void) noexcept;
 		
-		virtual ~async_safe_connection(void) throw();
+		inline async_safe_connection() noexcept : callback_(nullptr) {}
 		
-		inline async_safe_connection(const async_safe_connection & conn) throw()
-		{callback=conn.callback; if (callback) callback->pin();}
+		inline async_safe_connection(async_safe_callback * callback = nullptr, bool add_ref = true) noexcept
+			: callback_(callback)
+		{
+			if (callback_ && add_ref) {
+				callback_->pin();
+			}
+		}
 		
-		inline async_safe_connection &operator=(const async_safe_connection & conn) throw()
-		{if (callback) callback->release(); callback=conn.callback; if (callback) callback->pin(); return *this;}
+		inline async_safe_connection(const async_safe_connection & other) noexcept
+			: callback_(other.callback_)
+		{
+			if (callback_) {
+				callback_->pin();
+			}
+		}
 		
-		inline async_safe_connection &operator=(async_safe_callback * _callback) throw()
-		{if (callback) callback->release(); callback=_callback; if (callback) callback->pin(); return *this;}
+		inline async_safe_connection(async_safe_connection && other) noexcept
+			: callback_(other.callback_)
+		{
+			other.callback_ = nullptr;
+		}
 		
-		inline void disconnect(void) throw()
-		{if (callback) {callback->disconnect(); callback->release(); callback=0;}}
+		inline const async_safe_connection & operator=(const async_safe_connection & other) noexcept
+		{
+			if (callback_) {
+				callback_->release();
+			}
+			callback_ = other.callback_;
+			if (callback_) {
+				callback_->pin();
+			}
+			return *this;
+		}
 		
-		inline bool connected(void) const throw()
-		{return callback && callback->connected();}
+		inline const async_safe_connection & operator=(async_safe_callback * callback) noexcept
+		{
+			if (callback_) {
+				callback_->release();
+			}
+			callback_ = callback;
+			if (callback_) {
+				callback_->pin();
+			}
+			return *this;
+		}
 		
-		inline operator connection (void) const throw() {return callback;}
+		inline const async_safe_connection & operator=(async_safe_connection && other) noexcept
+		{
+			if (callback_) {
+				callback_->release();
+			}
+			callback_ = other.callback_;
+			other.callback_ = nullptr;
+			return *this;
+		}
 		
-		inline void set(void) throw()
-		{callback->trigger();}
-		
-		#ifdef __GXX_EXPERIMENTAL_CXX0X__
 		template<typename ConnectionType>
-		inline connection(ConnectionType && conn) throw()
-		{callback=conn.callback; conn.callback=0;}
+		inline const async_safe_connection & operator=(ConnectionType && other) noexcept
+		{
+			if (callback_) {
+				callback_->release();
+			}
+			callback_ = other.callback;
+			other.callback_ = nullptr;
+			return *this;
+		}
 		
-		template<typename ConnectionType>
-		inline connection &operator=(ConnectionType && conn) throw()
-		{callback=conn.callback; conn.callback=0; return *this;}
-		#endif
+		inline void disconnect(void) noexcept
+		{
+			if (callback_) {
+				callback_->disconnect();
+				callback_->release();
+				callback_ = nullptr;
+			}
+		}
 		
-		inline async_safe_callback * get(void) const throw()
-		{return callback;}
+		inline bool connected(void) const noexcept
+		{
+			return callback_ && callback_->connected();
+		}
+		
+		inline operator connection (void) const noexcept {
+			return connection(callback_, true);
+		}
+		
+		inline void set(void) noexcept
+		{
+			callback_->trigger();
+		}
+		
+		inline async_safe_callback * get(void) const noexcept
+		{
+			return callback_;
+		}
 		
 	private:
-		async_safe_callback * callback;
+		async_safe_callback * callback_;
 	};
 	
 	/**
@@ -128,7 +195,7 @@ namespace tscb {
 	*/
 	class async_safe_work_service {
 	public:
-		virtual ~async_safe_work_service(void) throw();
+		virtual ~async_safe_work_service(void) noexcept;
 		
 		/**
 			\brief Register async-safe triggered work procedure
@@ -142,7 +209,7 @@ namespace tscb {
 			safely be triggered from signal handler context.
 		*/
 		virtual async_safe_connection
-		async_procedure(const boost::function<void(void)> & function) = 0;
+		async_procedure(std::function<void(void)> function) = 0;
 	};
 	
 	/**
@@ -151,10 +218,11 @@ namespace tscb {
 	class async_safe_work_dispatcher : public async_safe_work_service {
 	public:
 		async_safe_work_dispatcher(eventtrigger & trigger);
-		virtual ~async_safe_work_dispatcher(void) throw();
+		
+		virtual ~async_safe_work_dispatcher(void) noexcept;
 		
 		virtual async_safe_connection
-		async_procedure(const boost::function<void(void)> & function);
+		async_procedure(std::function<void(void)> function);
 		
 		/**
 			\brief Dispatch pending events
@@ -166,41 +234,42 @@ namespace tscb {
 		
 	protected:
 		/** \internal \brief Singly-linked list of pending async procedures */
-		atomic<async_safe_callback *> pending;
+		std::atomic<async_safe_callback *> pending_;
 		
 		/** \internal \brief Count of procs to be cancelled asynchronously */
-		atomic<int> async_cancel_count;
+		std::atomic<size_t> async_cancel_count_;
 		
 		/** \internal \brief Doubly-linked list of available async procedures */
-		async_safe_callback * first;
-		async_safe_callback * last;
+		async_safe_callback * first_;
+		async_safe_callback * last_;
 		
-		mutex list_mutex;
+		std::mutex list_mutex_;
 		
-		eventtrigger & trigger;
+		eventtrigger & trigger_;
 		
 		friend class async_safe_callback;
 	};
 	
 	inline void
-	async_safe_callback::trigger(void) throw()
+	async_safe_callback::trigger(void) noexcept
 	{
 		/* if triggered already, do nothing */
-		if (activation_flag.test_and_set(memory_order_acquire))
+		if (activation_flag_.test_and_set(std::memory_order_acquire)) {
 			return;
+		}
 		
 		trigger_bottom();
 	}
 	
 	inline void
-	async_safe_callback::trigger_bottom(void) throw()
+	async_safe_callback::trigger_bottom(void) noexcept
 	{
-		async_safe_callback * tmp = service->pending.load(memory_order_relaxed);
+		async_safe_callback * tmp = service_->pending_.load(std::memory_order_relaxed);
 		do {
-			pending_next = tmp;
-		} while(!service->pending.compare_exchange_weak(tmp, this, memory_order_release, memory_order_relaxed));
+			pending_next_ = tmp;
+		} while (!service_->pending_.compare_exchange_weak(tmp, this, std::memory_order_release, std::memory_order_relaxed));
 		/* small(ish) problem: trigger might race with final clean-up */
-		service->trigger.set();
+		service_->trigger_.set();
 	}
 	
 };

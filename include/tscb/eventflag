@@ -9,8 +9,9 @@
 #ifndef TSCB_EVENTFLAG_H
 #define TSCB_EVENTFLAG_H
 
+#include <atomic>
+
 #include <stdexcept>
-#include <tscb/atomic>
 #include <pthread.h>
 
 namespace tscb {
@@ -26,14 +27,14 @@ namespace tscb {
 	*/
 	class eventtrigger {
 	public:
-		virtual ~eventtrigger(void) throw();
+		virtual ~eventtrigger(void) noexcept;
 		
 		/**
 			\brief Trigger the event
 			
 			Trigger the event.
 		*/
-		virtual void set(void) throw()=0;
+		virtual void set(void) noexcept=0;
 	};
 	
 	/**
@@ -64,7 +65,7 @@ namespace tscb {
 	*/
 	class eventflag : public eventtrigger {
 	public:
-		virtual ~eventflag(void) throw();
+		virtual ~eventflag(void) noexcept;
 		
 		/**
 			\brief Set the flag
@@ -72,21 +73,21 @@ namespace tscb {
 			Set the flag, will implicitly wake up all threads waiting
 			for the flag via \ref eventflag::wait
 		*/
-		virtual void set(void) throw()=0;
+		virtual void set(void) noexcept=0;
 		/**
 			\brief Clear the flag
 			
 			Clear the flag, threads calling \ref eventflag::wait will block until
 			the flag is set again via \ref eventflag::set
 		*/
-		virtual void clear(void) throw()=0;
+		virtual void clear(void) noexcept=0;
 		/**
 			\brief Wait until the flag is set
 			
 			Block the current thread until the flag is set; the thread
 			will continue without blocking if the flag is set already.
 		*/
-		virtual void wait(void) throw()=0;
+		virtual void wait(void) noexcept=0;
 	};
 	
 	/**
@@ -101,21 +102,21 @@ namespace tscb {
 	public:
 		/** \brief Instantiate event flag, using a pair of pipes */
 		pipe_eventflag(void) throw(std::runtime_error);
-		virtual ~pipe_eventflag(void) throw();
+		virtual ~pipe_eventflag(void) noexcept;
 		
-		virtual void set(void) throw();
-		virtual void wait(void) throw();
-		virtual void clear(void) throw();
+		virtual void set(void) noexcept;
+		virtual void wait(void) noexcept;
+		virtual void clear(void) noexcept;
 		
 		/** \internal \brief Mark one thread as waiting */
-		void start_waiting(void) throw();
+		void start_waiting(void) noexcept;
 		/** \internal \brief Remove one waiting thread */
-		void stop_waiting(void) throw();
+		void stop_waiting(void) noexcept;
 		
 		/** \internal \brief Read side of the pipe pair */
-		int readfd;
+		int readfd_;
 		/** \internal \brief Write side of the pipe pair */
-		int writefd;
+		int writefd_;
 		/** \internal
 			\brief State of the event flag
 			
@@ -124,24 +125,24 @@ namespace tscb {
 			- 1: flagged, but no wakeup via control pipe 
 			- 2: flagged, wakeup sent via control pipe
 		*/
-		atomic_int flagged;
+		std::atomic_int flagged_;
 		/** \internal \brief Number of threads waiting */
-		atomic_int waiting;
+		std::atomic<size_t> waiting_;
 	};
 	
 	/** \cond NEVER -- ignored by doxygen */
 	class platform_eventflag : public eventflag {
 	public:
-		platform_eventflag(void) throw();
-		virtual ~platform_eventflag(void) throw();
+		platform_eventflag(void) noexcept;
+		virtual ~platform_eventflag(void) noexcept;
 		
-		virtual void set(void) throw();
-		virtual void wait(void) throw();
-		virtual void clear(void) throw();
+		virtual void set(void) noexcept;
+		virtual void wait(void) noexcept;
+		virtual void clear(void) noexcept;
 	private:
-		pthread_mutex_t mutex;
-		pthread_cond_t cond;
-		bool flagged;
+		pthread_mutex_t mutex_;
+		pthread_cond_t cond_;
+		bool flagged_;
 	};
 	/** \endcond */
 

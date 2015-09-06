@@ -14,24 +14,31 @@ namespace tscb {
 	
 	void ioready_callback::disconnect(void) throw()
 	{
-		cancellation_mutex.lock();
-		ioready_service *tmp=service.load(memory_order_relaxed);
-		if (tmp) tmp->unregister_ioready_callback(this);
-		else cancellation_mutex.unlock();
+		cancellation_mutex_.lock();
+		ioready_service * tmp = service_.load(std::memory_order_relaxed);
+		if (tmp) {
+			tmp->unregister_ioready_callback(this);
+		} else {
+			cancellation_mutex_.unlock();
+		}
 	}
 	
 	bool ioready_callback::connected(void) const throw()
 	{
-		return service.load(memory_order_relaxed)!=0;
+		return !!service_.load(std::memory_order_relaxed);
 	}
 	
 	void ioready_callback::modify(ioready_events evmask) throw()
 	{
-		if (evmask != ioready_none) evmask = evmask | ioready_error | ioready_hangup;
-		cancellation_mutex.lock();
-		ioready_service *tmp=service.load(memory_order_relaxed);
-		if (tmp) tmp->modify_ioready_callback(this, evmask);
-		cancellation_mutex.unlock();
+		if (evmask != ioready_none) {
+			evmask = evmask | ioready_error | ioready_hangup;
+		}
+		cancellation_mutex_.lock();
+		ioready_service * tmp = service_.load(std::memory_order_relaxed);
+		if (tmp) {
+			tmp->modify_ioready_callback(this, evmask);
+		}
+		cancellation_mutex_.unlock();
 	}
 	
 	ioready_callback::~ioready_callback(void) throw()

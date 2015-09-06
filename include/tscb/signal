@@ -9,6 +9,8 @@
 #ifndef TSCB_SIGNAL_H
 #define TSCB_SIGNAL_H
 
+#include <mutex>
+
 /**
 	\page signal_descr Signals and slots
 	
@@ -55,7 +57,7 @@
 		class MyClass {
 		public:
 			tscb::signal_proxy<void (int,int)> &
-			onValueChange(void) throw() {return valueChange;}
+			onValueChange(void) noexcept {return valueChange;}
 			// will report old and new value to callbacks
 			
 			void setValue(int newval);
@@ -272,15 +274,15 @@
 			connection conn;
 			
 			// atomic reference count implementation
-			mutable atomic_int refcount;
+			mutable atomic<size_t> refcount;
 			friend void intrusive_ptr_add_ref(const MyObserver * obj)
 			{
-				obj->fetch_add(memory_order_relaxed, 1);
+				obj->fetch_add(std::memory_order_relaxed, 1);
 			}
 			friend void intrusive_ptr_release(const MyObserver * obj)
 			{
-				if (obj->fetch_sub(memory_order_relaxed, 1) == 1) {
-					atomic_thread_fence(memory_order_acquire);
+				if (obj->fetch_sub(std::memory_order_relaxed, 1) == 1) {
+					atomic_thread_fence(std::memory_order_acquire);
 					delete obj;
 				}
 			}
@@ -290,13 +292,11 @@
 */
 
 #include <stdexcept>
+#include <functional>
 
-#include <boost/intrusive_ptr.hpp>
-#include <boost/function.hpp>
-
-#include <tscb/thread>
 #include <tscb/deferred>
 #include <tscb/compiler>
+#include <tscb/intrusive_ptr>
 
 namespace tscb {
 	
@@ -311,8 +311,8 @@ namespace tscb {
 	*/
 	class abstract_callback {
 	public:
-		inline abstract_callback(void) throw() : refcount(1) {}
-		virtual ~abstract_callback(void) throw();
+		inline abstract_callback(void) noexcept : refcount_(1) {}
+		virtual ~abstract_callback(void) noexcept;
 		/**
 			\brief Break the connection
 			
@@ -342,21 +342,23 @@ namespace tscb {
 			is guaranteed to be deadlock free.
 			
 		*/
-		virtual void disconnect(void) throw()=0;
+		virtual void disconnect(void) noexcept = 0;
 		/**
 			\brief Test if connection is alive
 			
 			\return True if connected, false if disconnected
 		*/
-		virtual bool connected(void) const throw()=0;
+		virtual bool connected(void) const noexcept = 0;
 		
 		/** \internal \brief Increase reference count */
-		inline void pin(void) throw() {refcount.fetch_add(1, memory_order_relaxed);}
+		inline void pin(void) noexcept {
+			refcount_.fetch_add(1, std::memory_order_relaxed);
+		}
 		/** \internal \brief Decrease reference count */
-		inline void release(void) throw()
+		inline void release(void) noexcept
 		{
-			if (refcount.fetch_sub(1, memory_order_release) == 1) {
-				atomic_thread_fence(memory_order_acquire);
+			if (refcount_.fetch_sub(1, std::memory_order_release) == 1) {
+				atomic_thread_fence(std::memory_order_acquire);
 				delete this;
 			}
 		}
@@ -365,15 +367,15 @@ namespace tscb {
 #ifdef _LIBTSCB_CALLBACK_UNITTESTS
 	public:
 #endif
-		atomic_int refcount;
+		std::atomic<size_t> refcount_;
 	};
 	
-	static inline void intrusive_ptr_add_ref(abstract_callback *t) throw()
+	static inline void intrusive_ptr_add_ref(abstract_callback *t) noexcept
 	{
 		t->pin();
 	}
 	
-	static inline void intrusive_ptr_release(abstract_callback *t) throw()
+	static inline void intrusive_ptr_release(abstract_callback *t) noexcept
 	{
 		t->release();
 	}
@@ -386,42 +388,93 @@ namespace tscb {
 	*/
 	class connection {
 	public:
-		inline connection(abstract_callback *_callback = 0, bool add_ref = true) throw() : callback(_callback)
-		{if (callback && add_ref) callback->pin();}
+		inline ~connection(void) noexcept
+		{
+			if (callback_) {
+				callback_->release();
+			}
+		}
 		
-		inline ~connection(void) throw()
-		{if (callback) callback->release();}
+		inline connection() : callback_(nullptr) {}
 		
-		inline connection(const connection & conn) throw()
-		{callback=conn.callback; if (callback) callback->pin();}
+		inline connection(abstract_callback * callback, bool add_ref = true) noexcept
+			: callback_(callback)
+		{
+			if (callback_ && add_ref) {
+				callback_->pin();
+			}
+		}
 		
-		inline connection &operator=(const connection & conn) throw()
-		{if (callback) callback->release(); callback=conn.callback; if (callback) callback->pin(); return *this;}
+		inline connection(const connection & other) noexcept : callback_(other.callback_)
+		{
+			if (callback_) {
+				callback_->pin();
+			}
+		}
 		
-		inline connection &operator=(abstract_callback * _callback) throw()
-		{if (callback) callback->release(); callback=_callback; if (callback) callback->pin(); return *this;}
+		inline const connection & operator=(const connection & other) noexcept
+		{
+			if (callback_) {
+				callback_->release();
+			}
+			callback_ = other.callback_;
+			if (callback_) {
+				callback_->pin();
+			}
+			return *this;
+		}
 		
-		inline void disconnect(void) throw()
-		{if (callback) {callback->disconnect(); callback->release(); callback=0;}}
+		inline const connection &operator=(abstract_callback * callback) noexcept
+		{
+			if (callback_) {
+				callback_->release();
+			}
+			callback_ = callback;
+			if (callback_) {
+				callback_->pin();
+			}
+			return *this;
+		}
 		
-		inline bool connected(void) const throw()
-		{return callback && callback->connected();}
+		inline void disconnect(void) noexcept
+		{
+			if (callback_) {
+				callback_->disconnect();
+				callback_->release();
+				callback_ = nullptr;
+			}
+		}
 		
-		#ifdef __GXX_EXPERIMENTAL_CXX0X__
+		inline bool connected(void) const noexcept
+		{
+			return callback_ && callback_->connected();
+		}
+		
 		template<typename ConnectionType>
-		inline connection(ConnectionType && conn) throw()
-		{callback=conn.callback; conn.callback=0;}
+		inline connection(ConnectionType && other) noexcept
+			: callback_(other.callback_)
+		{
+			other.callback_ = nullptr;
+		}
 		
 		template<typename ConnectionType>
-		inline connection &operator=(ConnectionType && conn) throw()
-		{callback=conn.callback; conn.callback=0; return *this;}
-		#endif
+		inline const connection &operator=(ConnectionType && other) noexcept
+		{
+			if (callback_) {
+				callback_->release();
+			}
+			callback_ = other.callback_;
+			other.callback_ = nullptr;
+			return *this;
+		}
 		
-		inline abstract_callback * get(void) const throw()
-		{return callback;}
-		
+		inline abstract_callback * get(void) const noexcept
+		{
+			return callback_;
+		}
+
 	private:
-		abstract_callback *callback;
+		abstract_callback * callback_;
 	};
 	
 	/**
@@ -439,22 +492,22 @@ namespace tscb {
 	*/
 	class scoped_connection {
 	public:
-		inline scoped_connection(void) throw() {}
-		inline ~scoped_connection(void) throw() {disconnect();}
+		inline scoped_connection(void) noexcept {}
+		inline ~scoped_connection(void) noexcept {disconnect();}
 		
-		inline bool connected(void) const throw() {return conn.connected();}
+		inline bool connected(void) const noexcept {return conn.connected();}
 		
-		inline void disconnect(void) throw() {conn.disconnect();}
+		inline void disconnect(void) noexcept {conn.disconnect();}
 		
-		inline scoped_connection(const connection & _conn) throw() : conn(_conn) {}
+		inline scoped_connection(const connection & _conn) noexcept : conn(_conn) {}
 		
-		inline scoped_connection & operator=(const connection & _connection) throw()
+		inline scoped_connection & operator=(const connection & _connection) noexcept
 		{disconnect(); conn = _connection; return *this;}
 		
-		inline scoped_connection(abstract_callback * callback) throw()
+		inline scoped_connection(abstract_callback * callback) noexcept
 		{disconnect(); conn = callback;}
 		
-		inline scoped_connection & operator=(abstract_callback * callback) throw()
+		inline scoped_connection & operator=(abstract_callback * callback) noexcept
 		{disconnect(); conn = callback; return *this;}
 	protected:
 		scoped_connection(const scoped_connection & other); /* deleted */
@@ -479,46 +532,49 @@ namespace tscb {
 	class signal_callback : public abstract_callback {
 	public:
 		/** \internal \brief Instantiate callback link */
-		signal_callback(const boost::function<Signature> &_function) throw(std::bad_alloc)
-			: function(_function), active_next(0), prev(0), next(0), chain(0)
+		signal_callback(std::function<Signature> function) throw(std::bad_alloc)
+			: function_(function), active_next_(nullptr), prev_(nullptr), next_(nullptr), chain_(nullptr)
 		{}
-		virtual ~signal_callback(void) throw()
+		virtual ~signal_callback(void) noexcept
 		{}
-		virtual void disconnect(void) throw()
+		virtual void disconnect(void) noexcept
 		{
-			registration_mutex.lock();
-			if (chain) chain->remove(this);
-			else registration_mutex.unlock();
+			registration_mutex_.lock();
+			if (chain_) {
+				chain_->remove(this);
+			} else {
+				registration_mutex_.unlock();
+			}
 		}
-		virtual bool connected(void) const throw()
+		virtual bool connected(void) const noexcept
 		{
-			return chain!=0;
+			return chain_ != nullptr;
 		}
 		/** \internal \brief Called after cancellation to destroy the function object */
-		void cancelled(void) throw()
+		void cancelled(void) noexcept
 		{
-			function=0;
+			function_ = nullptr;
 		}
 	private:
 		friend class signal<Signature>;
 		
 		/** \internal \brief Functional to be called on activation */
-		boost::function<Signature> function;
+		std::function<Signature> function_;
 		
 		/** \internal \brief Next element in list of active callbacks */
-		atomic<signal_callback *> active_next;
+		std::atomic<signal_callback *> active_next_;
 		/** \internal \brief Previous element in list */
-		signal_callback *prev;
+		signal_callback *prev_;
 		/** \internal \brief Next element in list */
-		signal_callback *next;
+		signal_callback *next_;
 		/** \internal \brief Next element in list of callbacks with pending cancellation */
-		signal_callback *deferred_cancel_next;
+		signal_callback *deferred_cancel_next_;
 		
 		/** \internal \brief Chain to which this object is registered */
-		signal<Signature> *chain;
+		signal<Signature> *chain_;
 		
 		/** \internal \brief Serialize deregistration */
-		mutex registration_mutex;
+		std::mutex registration_mutex_;
 	};
 	
 	/**
@@ -535,7 +591,7 @@ namespace tscb {
 		/** \internal \brief Type of link connection to this chain */
 		typedef signal_callback<Signature> callback_type;
 		
-		virtual ~signal_proxy(void) throw() {}
+		virtual ~signal_proxy(void) noexcept {}
 		
 		/**
 			\brief Add callback to signal
@@ -545,7 +601,7 @@ namespace tscb {
 		*/
 		virtual
 		connection
-		connect(const boost::function<Signature> &function) throw(std::bad_alloc)=0;
+		connect(std::function<Signature> function) throw(std::bad_alloc)=0;
 	};
 	
 	/**
@@ -567,11 +623,11 @@ namespace tscb {
 		
 		virtual
 		connection
-		connect(const boost::function<Signature> &function) throw(std::bad_alloc)
+		connect(std::function<Signature> function) throw(std::bad_alloc)
 		{
-			callback_type *l=new callback_type(function);
+			callback_type * l = new callback_type(std::move(function));
 			push_back(l);
-			return connection((abstract_callback *)l);
+			return connection(l, true);
 		}
 		
 		/**
@@ -580,164 +636,39 @@ namespace tscb {
 			Calls all callback functions registered trough \ref connect
 			with the given arguments.
 		*/
-		inline void operator()(void)
+		template<typename... Args>
+		inline void operator()(Args... args)
 		{
 			read_guard<signal<Signature> > guard(*this);
-			callback_type *l=active.load(memory_order_consume);
+			callback_type * l = active_.load(std::memory_order_consume);
 			while(l) {
-				l->function();
-				l=l->active_next.load(memory_order_consume);
-			}
-		}
-		/**
-			\brief Call all callback functions registered with the chain
-			
-			Calls all callback functions registered trough \ref connect
-			with the given arguments.
-		*/
-		template<typename Arg1>
-		inline void operator()(Arg1 arg1)
-		{
-			read_guard<signal<Signature> > guard(*this);
-			callback_type *l=active.load(memory_order_consume);
-			while(l) {
-				l->function(arg1);
-				l=l->active_next.load(memory_order_consume);
-			}
-		}
-		/**
-			\brief Call all callback functions registered with the chain
-			
-			Calls all callback functions registered trough \ref connect
-			with the given arguments.
-		*/
-		template<typename Arg1, typename Arg2>
-		inline void operator()(Arg1 arg1, Arg2 arg2)
-		{
-			read_guard<signal<Signature> > guard(*this);
-			callback_type *l=active.load(memory_order_consume);
-			while(l) {
-				l->function(arg1, arg2);
-				l=l->active_next.load(memory_order_consume);
-			}
-		}
-		/**
-			\brief Call all callback functions registered with the chain
-			
-			Calls all callback functions registered trough \ref connect
-			with the given arguments.
-		*/
-		template<typename Arg1, typename Arg2, typename Arg3>
-		inline void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3)
-		{
-			read_guard<signal<Signature> > guard(*this);
-			callback_type *l=active.load(memory_order_consume);
-			while(l) {
-				l->function(arg1, arg2, arg3);
-				l=l->active_next.load(memory_order_consume);
-			}
-		}
-		/**
-			\brief Call all callback functions registered with the chain
-			
-			Calls all callback functions registered trough \ref connect
-			with the given arguments.
-		*/
-		template<typename Arg1, typename Arg2, typename Arg3, typename Arg4>
-		inline void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4)
-		{
-			read_guard<signal<Signature> > guard(*this);
-			callback_type *l=active.load(memory_order_consume);
-			while(l) {
-				l->function(arg1, arg2, arg3, arg4);
-				l=l->active_next.load(memory_order_consume);
-			}
-		}
-		/**
-			\brief Call all callback functions registered with the chain
-			
-			Calls all callback functions registered trough \ref connect
-			with the given arguments.
-		*/
-		template<typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5>
-		inline void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5)
-		{
-			read_guard<signal<Signature> > guard(*this);
-			callback_type *l=active.load(memory_order_consume);
-			while(l) {
-				l->function(arg1, arg2, arg3, arg4, arg5);
-				l=l->active_next.load(memory_order_consume);
+				l->function_(args...);
+				l = l->active_next_.load(std::memory_order_consume);
 			}
 		}
 		
-		/**
-			\brief Call all callback functions registered with the chain
-			
-			Calls all callback functions registered trough \ref connect
-			with the given arguments.
-		*/
-		template<typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5, typename Arg6>
-		inline void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5, Arg6 arg6)
-		{
-			read_guard<signal<Signature> > guard(*this);
-			callback_type *l=active.load(memory_order_consume);
-			while(l) {
-				l->function(arg1, arg2, arg3, arg4, arg5, arg6);
-				l=l->active_next.load(memory_order_consume);
-			}
-		}
 		
-		/**
-			\brief Call all callback functions registered with the chain
-			
-			Calls all callback functions registered trough \ref connect
-			with the given arguments.
-		*/
-		template<typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5, typename Arg6, typename Arg7>
-		inline void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5, Arg6 arg6, Arg7 arg7)
-		{
-			read_guard<signal<Signature> > guard(*this);
-			callback_type *l=active.load(memory_order_consume);
-			while(l) {
-				l->function(arg1, arg2, arg3, arg4, arg5, arg6, arg7);
-				l=l->active_next.load(memory_order_consume);
-			}
-		}
-		
-		/**
-			\brief Call all callback functions registered with the chain
-			
-			Calls all callback functions registered trough \ref connect
-			with the given arguments.
-		*/
-		template<typename Arg1, typename Arg2, typename Arg3, typename Arg4, typename Arg5, typename Arg6, typename Arg7, typename Arg8>
-		inline void operator()(Arg1 arg1, Arg2 arg2, Arg3 arg3, Arg4 arg4, Arg5 arg5, Arg6 arg6, Arg7 arg7, Arg8 arg8)
-		{
-			read_guard<signal<Signature> > guard(*this);
-			callback_type *l=active.load(memory_order_consume);
-			while(l) {
-				l->function(arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8);
-				l=l->active_next.load(memory_order_consume);
-			}
-		}
-		
-		signal(void) throw()
-			: active(0), first(0), last(0), deferred_cancel(0)
+		signal(void) noexcept
+			: active_(nullptr), first_(nullptr), last_(nullptr), deferred_cancel_(nullptr)
 		{}
 		
-		~signal(void) throw()
+		~signal(void) noexcept
 		{
 			/* we cannot protect against anyone concurrently adding
 			a new callback, but we must protect against concurrent
 			removal */
 			
-			while(lock.read_lock()) synchronize();
-			for(;;) {
-				callback_type *tmp=active.load(memory_order_relaxed);
-				if (!tmp) break;
+			while (lock_.read_lock()) {
+				synchronize();
+			}
+			for (;;) {
+				callback_type *tmp = active_.load(std::memory_order_relaxed);
+				if (!tmp) {
+					break;
+				}
 				tmp->disconnect();
 			}
-			if (lock.read_unlock()) {
+			if (lock_.read_unlock()) {
 				/* the above cancel operations will cause synchronization
 				to be performed at the next possible point in time; if
 				there is no concurrent cancellation, this is now */
@@ -749,7 +680,7 @@ namespace tscb {
 				the object until we are certain that synchronization has
 				been performed */
 				
-				lock.write_lock_sync();
+				lock_.write_lock_sync();
 				synchronize();
 				
 				/* note that synchronize implicitly calls sync_finished,
@@ -767,16 +698,16 @@ namespace tscb {
 		inline void disconnect_all(void)
 		{
 			read_guard<signal<Signature> > guard(*this);
-			callback_type * l = active.load(memory_order_consume);
+			callback_type * l = active_.load(std::memory_order_consume);
 			while(l) {
 				l->disconnect();
-				l = l->active_next.load(memory_order_consume);
+				l = l->active_next.load(std::memory_order_consume);
 			}
 		}
 		
 	protected:
 		/** \internal \brief Add link to end of chain */
-		void push_back(callback_type *l) throw()
+		void push_back(callback_type *l) noexcept
 		{
 			/* note: object has been fully constructed at this point,
 			but the following lock acquisition only provides "acquire"
@@ -785,125 +716,148 @@ namespace tscb {
 			region. We therefore need an explicit fence here in
 			order to avoid making an uninitialized element visible
 			during traversal of the chain */
-			atomic_thread_fence(memory_order_release);
+			std::atomic_thread_fence(std::memory_order_release);
 			
-			l->registration_mutex.lock();
-			bool sync=lock.write_lock_async();
+			l->registration_mutex_.lock();
+			bool sync = lock_.write_lock_async();
 			
-			l->next=0;
-			l->prev=last;
+			l->next_ = nullptr;
+			l->prev_ = last_;
 			
-			l->active_next.store(0, memory_order_relaxed);
+			l->active_next_.store(nullptr, std::memory_order_relaxed);
 			
 			/* add element to active list; find all elements that have been removed
 			from the full list and thus terminate the active list; point them to
 			the newly-added element */
 			
-			callback_type *tmp=last;
-			while(true) {
+			callback_type *tmp = last_;
+			for (;;) {
 				if (!tmp) {
-					if (!active.load(memory_order_relaxed)) active.store(l, memory_order_release);
+					if (!active_.load(std::memory_order_relaxed)) {
+						active_.store(l, std::memory_order_release);
+					}
 					break;
 				}
-				if (tmp->active_next.load(memory_order_relaxed)) break;
-				tmp->active_next.store(l, memory_order_release);
-				tmp=tmp->prev;
+				if (tmp->active_next_.load(std::memory_order_relaxed)) {
+					break;
+				}
+				tmp->active_next_.store(l, std::memory_order_release);
+				tmp = tmp->prev_;
 			}
 			
 			/* insert into list of all elements*/
-			if (last) last->next=l;
-			else first=l;
-			last=l;
+			if (last_) {
+				last_->next_ = l;
+			} else {
+				first_ = l;
+			}
+			last_  =l;
 			
-			l->chain=this;
+			l->chain_ = this;
 			
-			l->registration_mutex.unlock();
+			l->registration_mutex_.unlock();
 			
-			if (sync) synchronize();
-			else lock.write_unlock_async();
+			if (sync) {
+				synchronize();
+			} else {
+				lock_.write_unlock_async();
+			}
 		}
 		/** \internal \brief Remove link from chain */
-		void remove(callback_type *l) throw()
+		void remove(callback_type *l) noexcept
 		{
-			bool sync=lock.write_lock_async();
-			if (l->chain==this) {
+			bool sync = lock_.write_lock_async();
+			if (l->chain_ == this) {
 				/* remove element from active list; we have to make
 				sure that all elements that pointed to "us" within
 				the active chain now point to the following element,
 				so this element is skipped from within the active chain */
 				
-				callback_type *tmp=l->prev;
-				callback_type *next=l->active_next.load(memory_order_relaxed);
-				while(true) {
+				callback_type * tmp = l->prev_;
+				callback_type * next = l->active_next_.load(std::memory_order_relaxed);
+				for (;;) {
 					if (!tmp) {
-						if (active.load(memory_order_relaxed)==l) active.store(next, memory_order_release);
+						if (active_.load(std::memory_order_relaxed) == l) {
+							active_.store(next, std::memory_order_release);
+						}
 						break;
 					}
-					if (tmp->active_next.load(memory_order_relaxed)!=l) break;
-					tmp->active_next.store(next, memory_order_release);
-					tmp=tmp->prev;
+					if (tmp->active_next_.load(std::memory_order_relaxed) != l) {
+						break;
+					}
+					tmp->active_next_.store(next, std::memory_order_release);
+					tmp = tmp->prev_;
 				}
 				
 				/* put on list of elements marked for deferred cancellation */
-				l->deferred_cancel_next=deferred_cancel;
-				deferred_cancel=l;
+				l->deferred_cancel_next_ = deferred_cancel_;
+				deferred_cancel_ = l;
 				
 				/* remove pointer to chain, so a second call to ->cancel()
 				will do nothing */
-				l->chain=0;
+				l->chain_ = nullptr;
 			}
 			
-			l->registration_mutex.unlock();
+			l->registration_mutex_.unlock();
 			
-			if (sync) synchronize();
-			else lock.write_unlock_async();
+			if (sync) {
+				synchronize();
+			} else {
+				lock_.write_unlock_async();
+			}
 		}
 		/** \internal \brief Synchronize when reaching quiescent state */
-		void synchronize(void) throw()
+		void synchronize(void) noexcept
 		{
-			callback_type *do_cancel=deferred_cancel;
+			callback_type * do_cancel = deferred_cancel_;
 			
 			/* first, "repair" the list structure by "correcting" all prev
 			pointers */
-			while(do_cancel) {
+			while (do_cancel) {
 				/* we can now safely remove the elements from the list */
-				if (do_cancel->prev) do_cancel->prev->next=do_cancel->next;
-				else first=do_cancel->next;
-				if (do_cancel->next) do_cancel->next->prev=do_cancel->prev;
-				else last=do_cancel->prev;
+				if (do_cancel->prev_) {
+					do_cancel->prev_->next_ = do_cancel->next_;
+				} else {
+					first_ = do_cancel->next_;
+				}
+				if (do_cancel->next_) {
+					do_cancel->next_->prev_ = do_cancel->prev_;
+				} else {
+					last_ = do_cancel->prev_;
+				}
 				
-				do_cancel=do_cancel->deferred_cancel_next;
+				do_cancel = do_cancel->deferred_cancel_next_;
 			}
 			
 			/* now swap pointers while still under the lock; this is
 			necessary to make sure that the destructor for each
 			callback link object is called exactly once */
-			do_cancel=deferred_cancel;
-			deferred_cancel=0;
-			lock.sync_finished();
+			do_cancel = deferred_cancel_;
+			deferred_cancel_ = nullptr;
+			lock_.sync_finished();
 			
 			/* now we can release the callbacks, as we are sure that no one
 			can "see" them anymore; the lock is dropped so side-effest
 			of finalizing the links cannot cause deadlocks */
 			
-			while(do_cancel) {
-				callback_type *tmp=do_cancel->deferred_cancel_next;
+			while (do_cancel) {
+				callback_type * tmp = do_cancel->deferred_cancel_next_;
 				do_cancel->cancelled();
 				do_cancel->release();
-				do_cancel=tmp;
+				do_cancel = tmp;
 			}
 		}
 		/** \internal \brief singly-linked list of active elements */
-		atomic<callback_type *> active;
+		std::atomic<callback_type *> active_;
 		
 		/** \internal \brief thread synchronization */
-		deferrable_rwlock lock;
+		deferrable_rwlock lock_;
 		friend class read_guard<signal<Signature> >;
 		
 		/** \internal \brief First element in the chain, whether active or not */
-		callback_type *first;
+		callback_type * first_;
 		/** \internal \brief Last element in the chain, whether active or not */
-		callback_type *last;
+		callback_type * last_;
 		
 		/** \internal \brief List of elements to be cancelled
 		 
@@ -911,7 +865,7 @@ namespace tscb {
 			the active list, but are not yet removed from the full list
 			and have not been discarded yet
 		*/
-		callback_type *deferred_cancel;
+		callback_type * deferred_cancel_;
 	};
 
 }

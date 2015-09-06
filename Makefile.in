@@ -26,7 +26,7 @@ CXX = @CXX@
 YACC = @YACC@
 FLEX = flex
 CPPFLAGS = -Iinclude @CPPFLAGS@ @BOOST_CPPFLAGS@
-CXXFLAGS = -Wall @CXXFLAGS@ @PTHREAD_CFLAGS@
+CXXFLAGS = --std=c++11 -Wall @CXXFLAGS@ @PTHREAD_CFLAGS@
 LDFLAGS = @LDFLAGS@ @PTHREAD_CFLAGS@
 LIBS = @LIBS@ @PTHREAD_LIBS@
 INSTALL = @INSTALL@
@@ -65,7 +65,7 @@ endif
 
 CXXFLAGS+=-Iinclude
 
-LIBTSCB_SOURCES=src/signal.cc src/thread.cc src/eventflag.cc src/timer.cc\
+LIBTSCB_SOURCES=src/signal.cc src/eventflag.cc src/timer.cc\
 	src/ioready.cc src/file-descriptor-table.cc src/deferred.cc src/dispatch.cc\
 	src/workqueue.cc src/async-safe-work.cc src/childproc-monitor.cc src/reactor.cc
 

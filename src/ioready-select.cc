@@ -6,35 +6,31 @@
  * Refer to the file "COPYING" for details.
  */
 
-#include <boost/bind.hpp>
+#include <tscb/ioready-select>
 
 #include <string.h>
-
-#include <tscb/ioready-select>
 
 namespace tscb {
 	
 	ioready_dispatcher_select::ioready_dispatcher_select(void)
 		/* throw(std::bad_alloc, std::runtime_error) */
-		: maxfd(0)
+		: maxfd_(0)
 	{
-		FD_ZERO(&readfds);
-		FD_ZERO(&writefds);
-		FD_ZERO(&exceptfds);
+		FD_ZERO(&readfds_);
+		FD_ZERO(&writefds_);
+		FD_ZERO(&exceptfds_);
 		
-		pthread_mutex_init(&fdset_mtx, NULL);
+		pthread_mutex_init(&fdset_mtx_, NULL);
 		
-		try {
-			watch(boost::bind(&ioready_dispatcher_select::drain_queue, this),
-				wakeup_flag.readfd, ioready_input);
-		}
-		catch (std::bad_alloc) {
-			throw;
-		}
-		
+		watch(
+			[this](ioready_events)
+			{
+				drain_queue();
+			},
+			wakeup_flag_.readfd_, ioready_input);
 	}
 	
-	ioready_dispatcher_select::~ioready_dispatcher_select(void) throw()
+	ioready_dispatcher_select::~ioready_dispatcher_select(void) noexcept
 	{
 		/* we can assume
 		
@@ -45,9 +41,11 @@ namespace tscb {
 		there is no point doing anything about it
 		*/
 		
-		while(lock.read_lock()) synchronize();
-		fdtab.cancel_all();
-		if (lock.read_unlock()) {
+		while (lock_.read_lock()) {
+			synchronize();
+		}
+		fdtab_.cancel_all();
+		if (lock_.read_unlock()) {
 			/* the above cancel operations will cause synchronization
 			to be performed at the next possible point in time; if
 			there is no concurrent cancellation, this is now */
@@ -59,7 +57,7 @@ namespace tscb {
 			the object until we are certain that synchronization has
 			been performed */
 			
-			lock.write_lock_sync();
+			lock_.write_lock_sync();
 			synchronize();
 			
 			/* note that synchronize implicitly calls sync_finished,
@@ -67,9 +65,9 @@ namespace tscb {
 		}
 	}
 	
-	eventtrigger & ioready_dispatcher_select::get_eventtrigger(void) throw()
+	eventtrigger & ioready_dispatcher_select::get_eventtrigger(void) noexcept
 	{
-		return wakeup_flag;
+		return wakeup_flag_;
 	}
 	
 	/* this assumes that fd_set *really* is a bitfield -- which does
@@ -80,64 +78,78 @@ namespace tscb {
 		memcpy(dst, src, copybytes);
 	}
 	
-	size_t ioready_dispatcher_select::dispatch(const boost::posix_time::time_duration *timeout, size_t max)
+	size_t ioready_dispatcher_select::dispatch(const std::chrono::steady_clock::duration *timeout, size_t max)
 	{
 		read_guard<ioready_dispatcher_select> guard(*this);
 		
-		uint32_t cookie = fdtab.get_cookie();
+		uint32_t cookie = fdtab_.get_cookie();
 		
 		fd_set l_readfds, l_writefds, l_exceptfds;
 		int l_maxfd;
 		
-		pthread_mutex_lock(&fdset_mtx);
-		l_maxfd = maxfd;
-		copy_fdset(&l_readfds, &readfds, maxfd);
-		copy_fdset(&l_writefds, &writefds, maxfd);
-		copy_fdset(&l_exceptfds, &exceptfds, maxfd);
-		pthread_mutex_unlock(&fdset_mtx);
+		pthread_mutex_lock(&fdset_mtx_);
+		l_maxfd = maxfd_;
+		copy_fdset(&l_readfds, &readfds_, maxfd_);
+		copy_fdset(&l_writefds, &writefds_, maxfd_);
+		copy_fdset(&l_exceptfds, &exceptfds_, maxfd_);
+		pthread_mutex_unlock(&fdset_mtx_);
 		
-		int count, handled=0;
-		struct timeval tv, *select_timeout;
+		struct timeval tv, * select_timeout;
 		if (timeout) {
-			tv.tv_sec = timeout->total_microseconds()/1000000;
-			tv.tv_usec = timeout->total_microseconds()%1000000;
+			uint64_t usecs = std::chrono::duration_cast<std::chrono::microseconds>(
+				(*timeout) + std::chrono::microseconds(1) - std::chrono::steady_clock::duration(1)).count();
+			tv.tv_sec = usecs/1000000;
+			tv.tv_usec = usecs%1000000;
 			select_timeout = &tv;
-		} else select_timeout = 0;
+		} else {
+			select_timeout = nullptr;
+		}
 		
-		wakeup_flag.start_waiting();
+		wakeup_flag_.start_waiting();
 		
-		if (wakeup_flag.flagged.load(memory_order_relaxed) != 0) {
+		if (wakeup_flag_.flagged_.load(std::memory_order_relaxed) != 0) {
 			tv.tv_sec = 0;
 			tv.tv_usec = 0;
 			select_timeout = &tv;
 		}
 		
-		count = select(l_maxfd, &l_readfds, &l_writefds, &l_exceptfds, select_timeout);
+		int count = select(l_maxfd, &l_readfds, &l_writefds, &l_exceptfds, select_timeout);
 		
-		wakeup_flag.stop_waiting();
+		wakeup_flag_.stop_waiting();
 		
-		if (count < 0) count = 0;
-		if ((size_t)count > max) count = max;
-		size_t n = 0;
+		if (count < 0) {
+			count = 0;
+		}
+		if ((size_t)count > max) {
+			count = max;
+		}
+		
+		size_t n = 0, handled = 0;
 		while(count) {
 			int r = FD_ISSET(n, &l_readfds);
 			int w = FD_ISSET(n, &l_writefds);
 			int e = FD_ISSET(n, &l_exceptfds);
 			if (r | w | e) {
 				ioready_events ev = ioready_none;
-				if (r) ev = ioready_input;
-				if (w) ev |= ioready_output;
+				if (r) {
+					ev = ioready_input;
+				}
+				if (w) {
+					ev |= ioready_output;
+				}
 				/* deliver exception events to everyone */
-				if (e) ev |= ioready_error|ioready_input|ioready_output;
+				if (e) {
+					ev |= ioready_error|ioready_input|ioready_output;
+				}
 				
-				fdtab.notify(n, ev, cookie);
+				fdtab_.notify(n, ev, cookie);
 				count--;
 				handled++;
 			}
 			n++;
 		}
 		
-		wakeup_flag.clear();
+		wakeup_flag_.clear();
 		
 		return handled;
 	}
@@ -146,49 +158,57 @@ namespace tscb {
 	{
 		read_guard<ioready_dispatcher_select> guard(*this);
 		
-		uint32_t cookie = fdtab.get_cookie();
+		uint32_t cookie = fdtab_.get_cookie();
 		
 		fd_set l_readfds, l_writefds, l_exceptfds;
 		int l_maxfd;
 		
-		pthread_mutex_lock(&fdset_mtx);
-		l_maxfd = maxfd;
-		copy_fdset(&l_readfds, &readfds, maxfd);
-		copy_fdset(&l_writefds, &writefds, maxfd);
-		copy_fdset(&l_exceptfds, &exceptfds, maxfd);
-		pthread_mutex_unlock(&fdset_mtx);
+		pthread_mutex_lock(&fdset_mtx_);
+		l_maxfd = maxfd_;
+		copy_fdset(&l_readfds, &readfds_, maxfd_);
+		copy_fdset(&l_writefds, &writefds_, maxfd_);
+		copy_fdset(&l_exceptfds, &exceptfds_, maxfd_);
+		pthread_mutex_unlock(&fdset_mtx_);
 		
 		struct timeval tv;
 		tv.tv_sec = 0;
 		tv.tv_usec = 0;
 		
-		ssize_t count;
-		size_t handled = 0;
-		count = select(l_maxfd, &l_readfds, &l_writefds, &l_exceptfds, &tv);
+		int count = select(l_maxfd, &l_readfds, &l_writefds, &l_exceptfds, &tv);
 		
-		if (count < 0) count = 0;
-		if ((size_t)count > max) count = max;
+		if (count < 0) {
+			count = 0;
+		}
+		if ((size_t)count > max) {
+			count = max;
+		}
 		
-		size_t n = 0;
-		while(count) {
+		size_t n = 0, handled = 0;
+		while (count) {
 			int r = FD_ISSET(n, &l_readfds);
 			int w = FD_ISSET(n, &l_writefds);
 			int e = FD_ISSET(n, &l_exceptfds);
 			if (r | w | e) {
 				ioready_events ev = ioready_none;
-				if (r) ev = ioready_input;
-				if (w) ev |= ioready_output;
+				if (r) {
+					ev = ioready_input;
+				}
+				if (w) {
+					ev |= ioready_output;
+				}
 				/* deliver exception events to everyone */
-				if (e) ev |= ioready_error|ioready_input|ioready_output;
+				if (e) {
+					ev |= ioready_error|ioready_input|ioready_output;
+				}
 				
-				fdtab.notify(n, ev, cookie);
+				fdtab_.notify(n, ev, cookie);
 				count--;
 				handled++;
 			}
 			n++;
 		}
 		
-		wakeup_flag.clear();
+		wakeup_flag_.clear();
 		
 		return handled;
 	}
@@ -196,7 +216,7 @@ namespace tscb {
 	void ioready_dispatcher_select::register_ioready_callback(ioready_callback *link)
 		/*throw(std::bad_alloc)*/
 	{
-		if (link->fd >= (int)FD_SETSIZE) {
+		if (link->fd_ >= (int)FD_SETSIZE) {
 			delete link;
 			throw std::bad_alloc();
 		}
@@ -206,38 +226,38 @@ namespace tscb {
 			
 			ioready_events old_events, new_events;
 			try {
-				fdtab.insert(link, old_events, new_events);
+				fdtab_.insert(link, old_events, new_events);
 			}
 			catch (std::bad_alloc) {
 				delete link;
 				throw;
 			}
-			update_fdsets(link->fd, new_events);
+			update_fdsets(link->fd_, new_events);
 			
-			link->service.store(this, memory_order_relaxed);
+			link->service_.store(this, std::memory_order_relaxed);
 		}
 		
-		wakeup_flag.set();
+		wakeup_flag_.set();
 	}
 	
 	void ioready_dispatcher_select::unregister_ioready_callback(ioready_callback *link)
-		throw()
+		noexcept
 	{
 		{
 			async_write_guard<ioready_dispatcher_select> guard(*this);
 			
-			if (link->service.load(memory_order_relaxed)) {
+			if (link->service_.load(std::memory_order_relaxed)) {
 				ioready_events old_events, new_events;
-				fdtab.remove(link, old_events, new_events);
-				update_fdsets(link->fd, new_events);
+				fdtab_.remove(link, old_events, new_events);
+				update_fdsets(link->fd_, new_events);
 				
-				link->service.store(0, memory_order_relaxed);
+				link->service_.store(nullptr, std::memory_order_relaxed);
 			}
 			
-			link->cancellation_mutex.unlock();
+			link->cancellation_mutex_.unlock();
 		}
 		
-		wakeup_flag.set();
+		wakeup_flag_.set();
 	}
 	
 	void ioready_dispatcher_select::modify_ioready_callback(ioready_callback *link, ioready_events event_mask)
@@ -246,53 +266,64 @@ namespace tscb {
 		{
 			async_write_guard<ioready_dispatcher_select> guard(*this);
 			
-			link->event_mask = event_mask;
-			ioready_events new_events = fdtab.compute_mask(link->fd);
-			update_fdsets(link->fd, new_events);
+			link->event_mask_ = event_mask;
+			ioready_events new_events = fdtab_.compute_mask(link->fd_);
+			update_fdsets(link->fd_, new_events);
 		}
 		
-		wakeup_flag.set();
+		wakeup_flag_.set();
 	}
 	
-	void ioready_dispatcher_select::update_fdsets(int fd, ioready_events mask) throw()
+	void ioready_dispatcher_select::update_fdsets(int fd, ioready_events mask) noexcept
 	{
-		pthread_mutex_lock(&fdset_mtx);
-		if (mask & ioready_input) FD_SET(fd, &readfds);
-		else FD_CLR(fd, &readfds);
-		if (mask & ioready_output) FD_SET(fd, &writefds);
-		else FD_CLR(fd, &writefds);
-		if (mask) FD_SET(fd, &exceptfds);
-		else FD_CLR(fd, &exceptfds);
+		pthread_mutex_lock(&fdset_mtx_);
+		if (mask & ioready_input) {
+			FD_SET(fd, &readfds_);
+		} else {
+			FD_CLR(fd, &readfds_);
+		}
+		if (mask & ioready_output) {
+			FD_SET(fd, &writefds_);
+		} else {
+			FD_CLR(fd, &writefds_);
+		}
+		if (mask) {
+			FD_SET(fd, &exceptfds_);
+		} else {
+			FD_CLR(fd, &exceptfds_);
+		}
 		
 		if (mask) {
-			if (fd >= maxfd) maxfd = fd + 1;
-		} else if (fd == maxfd - 1) {
-			for(;;) {
-				maxfd--;
-				if (!maxfd) break;
-				if (FD_ISSET(maxfd-1, &readfds)) break;
-				if (FD_ISSET(maxfd-1, &writefds)) break;
-				if (FD_ISSET(maxfd-1, &exceptfds)) break;
+			if (fd >= maxfd_) maxfd_ = fd + 1;
+		} else if (fd == maxfd_ - 1) {
+			for (;;) {
+				maxfd_--;
+				if (!maxfd_ ||
+					FD_ISSET(maxfd_ - 1, &readfds_) || 
+					FD_ISSET(maxfd_ - 1, &writefds_) || 
+					FD_ISSET(maxfd_ - 1, &exceptfds_)) {
+					break;
+				}
 			}
 		}
-		pthread_mutex_unlock(&fdset_mtx);
+		pthread_mutex_unlock(&fdset_mtx_);
 	}
 	
-	void ioready_dispatcher_select::synchronize(void) throw()
+	void ioready_dispatcher_select::synchronize(void) noexcept
 	{
-		ioready_callback * stale = fdtab.synchronize();
+		ioready_callback * stale = fdtab_.synchronize();
 		
-		lock.sync_finished();
+		lock_.sync_finished();
 		
-		while(stale) {
-			ioready_callback * next = stale->inactive_next;
+		while (stale) {
+			ioready_callback * next = stale->inactive_next_;
 			stale->cancelled();
 			stale->release();
 			stale = next;
 		}
 	}
 	
-	void ioready_dispatcher_select::drain_queue(void) throw()
+	void ioready_dispatcher_select::drain_queue(void) noexcept
 	{
 	}
 	

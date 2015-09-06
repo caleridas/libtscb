@@ -12,9 +12,9 @@ namespace tscb {
 	
 	bool deferred_rwlock::read_lock_slow(void) throw()
 	{
-		writers.lock();
+		writers_.lock();
 		if (read_acquire()) {
-			writers.unlock();
+			writers_.unlock();
 			return false;
 		}
 		
@@ -23,15 +23,15 @@ namespace tscb {
 		
 	bool deferred_rwlock::read_unlock_slow(void) throw()
 	{
-		writers.lock();
+		writers_.lock();
 		/* note: if another thread obsevers 1->0 transition, it will
 		take the mutex afterwards (and thus serialize with us)
 		
 		conversely, a 0->1 transition can only happen with the
 		mutex held; therefore, the acquire/release implicit in
 		the mutex is sufficient to enforce memory ordering here */
-		if (readers.load(memory_order_relaxed)!=0) {
-			writers.unlock();
+		if (readers_.load(std::memory_order_relaxed) != 0) {
+			writers_.unlock();
 			return false;
 		}
 		
@@ -40,15 +40,15 @@ namespace tscb {
 	
 	bool deferrable_rwlock::read_lock_slow(void) throw()
 	{
-		writers.lock();
-		while (waiting) {
-			waiting=false;
-			writers.unlock();
-			waiting_writers.broadcast();
-			writers.lock();
+		writers_.lock();
+		while (waiting_) {
+			waiting_ = false;
+			waiting_writers_.notify_all();
+			writers_.unlock();
+			writers_.lock();
 		}
 		if (read_acquire()) {
-			writers.unlock();
+			writers_.unlock();
 			return false;
 		}
 		
@@ -57,12 +57,12 @@ namespace tscb {
 		
 	bool deferrable_rwlock::read_unlock_slow(void) throw()
 	{
-		writers.lock();
-		while (waiting) {
-			waiting=false;
-			writers.unlock();
-			waiting_writers.broadcast();
-			writers.lock();
+		writers_.lock();
+		while (waiting_) {
+			waiting_ = false;
+			writers_.unlock();
+			waiting_writers_.notify_all();
+			writers_.lock();
 		}
 		/* note: if another thread obsevers 1->0 transition, it will
 		take the mutex afterwards (and thus serialize with us)
@@ -70,8 +70,8 @@ namespace tscb {
 		conversely, a 0->1 transition can only happen with the
 		mutex held; therefore, the acquire/release implicit in
 		the mutex is sufficient to enforce memory ordering here */
-		if (readers.load(memory_order_relaxed)!=0) {
-			writers.unlock();
+		if (readers_.load(std::memory_order_relaxed)!=0) {
+			writers_.unlock();
 			return false;
 		}
 		

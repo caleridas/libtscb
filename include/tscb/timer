@@ -9,6 +9,8 @@
 #ifndef TSCB_TIMER_H
 #define TSCB_TIMER_H
 
+#include <mutex>
+
 /**
 	\page timer_descr Timer callbacks
 	
@@ -18,7 +20,7 @@
 	represent time values.
 	
 	A specialization of this template, \ref tscb::timer_service "timer_service",
-	uses boost::posix_time::ptime to represent time values, and is thus suitable
+	uses std::chrono::steady_clock::time_point to represent time values, and is thus suitable
 	to cooperate with boost::posix_time::microsec_clock and
 	\ref tscb::ioready_dispatcher "ioready_dispatcher" to dispatch wall clock
 	timer events.
@@ -33,13 +35,13 @@
 	\code
 		class TimerHandler {
 		public:
-			bool onTimer(long time) throw()
+			bool onTimer(long time) noexcept
 			{
 				// perform timer action
 				time+=1000;
 				return true; // rearm timer 1000 units in the future
 			}
-			void finish(void) throw()
+			void finish(void) noexcept
 			{
 				delete this;
 			}
@@ -105,7 +107,7 @@
 		public:
 			long long next_callback_due;
 			
-			bool onTimer(long long time) throw()
+			bool onTimer(long long time) noexcept
 			{
 				// calculate amount of time we are late
 				long long lag=time-next_callback_due;
@@ -115,7 +117,7 @@
 				time=next_callback_due;
 				return true; // rearm timer 1000 usecs in the future
 			}
-			void finish(void) throw()
+			void finish(void) noexcept
 			{
 				delete this;
 			}
@@ -207,11 +209,10 @@
 	\file timer
 */
 
+#include <chrono>
 #include <new>
 
-#include <boost/date_time/posix_time/posix_time_types.hpp>
 #include <tscb/signal>
-#include <tscb/thread>
 #include <tscb/eventflag>
 #include <tscb/fibheap>
 
@@ -239,45 +240,48 @@ namespace tscb {
 	class abstract_timer_callback : public abstract_callback {
 	public:
 		/** \internal \brief instantiate timer callback link */
-		inline abstract_timer_callback(const boost::function<bool (Timeval &time)> &_target,
-			Timeval _expires) throw()
-			: target(_target), when(_expires)
+		inline abstract_timer_callback(std::function<bool (Timeval &time)> target,
+			Timeval expires) noexcept
+			: target_(target), when_(expires)
 		{}
-		virtual ~abstract_timer_callback(void) throw()
+		virtual ~abstract_timer_callback(void) noexcept
 		{}
 		
-		virtual void disconnect(void) throw()
+		virtual void disconnect(void) noexcept
 		{
-			cancellation_mutex.lock();
-			generic_timer_service<Timeval> * svc = service.load(memory_order_relaxed);
-			if (svc) svc->unregister_timer(this);
-			else cancellation_mutex.unlock();
+			cancellation_mutex_.lock();
+			generic_timer_service<Timeval> * svc = service_.load(std::memory_order_relaxed);
+			if (svc) {
+				svc->unregister_timer(this);
+			} else {
+				cancellation_mutex_.unlock();
+			}
 		}
 		
-		virtual bool connected(void) const throw()
+		virtual bool connected(void) const noexcept
 		{
-			return service.load(memory_order_relaxed) != 0;
+			return service_.load(std::memory_order_relaxed) != nullptr;
 		}
 		
 		/** \internal \brief Destroy function object after completing cancellation */
-		inline void cancelled(void) throw()
+		inline void cancelled(void) noexcept
 		{
-			target = 0;
+			target_ = nullptr;
 		}
 		
 		/** \brief return expiry time */
-		inline Timeval expires(void) const throw() {return when;}
+		inline Timeval expires(void) const noexcept {return when_;}
 		
 		/** \internal \brief compare timeout values */
-		inline bool operator>(const abstract_timer_callback &x) const {return when>x.when;}
+		inline bool operator>(const abstract_timer_callback &x) const {return when_ > x.when_;}
 		/** \internal \brief compare timeout values */
-		inline bool operator<(const abstract_timer_callback &x) const {return when<x.when;}
+		inline bool operator<(const abstract_timer_callback &x) const {return when_ < x.when_;}
 		/** \internal \brief compare timeout values */
-		inline bool operator<=(const abstract_timer_callback &x) const {return when<=x.when;}
+		inline bool operator<=(const abstract_timer_callback &x) const {return when_ <= x.when_;}
 		/** \internal \brief assign new timeout value */
 		inline const abstract_timer_callback &operator=(const Timeval newval)
 		{
-			when = newval;
+			when_ = newval;
 			return *this;
 		}
 		
@@ -285,27 +289,27 @@ namespace tscb {
 		except by timer_service implementations */
 		
 		/** \internal \brief function to be called when timer expires */
-		boost::function<bool (Timeval &time)> target;
+		std::function<bool (Timeval &time)> target_;
 		
 		/** \internal \brief when is the timer about to expire? */
-		Timeval when;
+		Timeval when_;
 		
 		/** \internal \brief protect against concurrent cancellation from multiple sides */
-		mutex cancellation_mutex;
+		std::mutex cancellation_mutex_;
 		
 		/** \internal \brief Timer service provider we are registered with */
-		atomic<generic_timer_service<Timeval> *> service;
+		std::atomic<generic_timer_service<Timeval> *> service_;
 		
 		/** \internal \brief Fields required for fibonacci heap structure */
-		abstract_timer_callback *next;
+		abstract_timer_callback *next_;
 		/** \internal \brief Fields required for fibonacci heap structure */
-		abstract_timer_callback *prev;
+		abstract_timer_callback *prev_;
 		/** \internal \brief Fields required for fibonacci heap structure */
-		abstract_timer_callback *parent;
+		abstract_timer_callback *parent_;
 		/** \internal \brief Fields required for fibonacci heap structure */
-		abstract_timer_callback *child;
+		abstract_timer_callback *child_;
 		/** \internal \brief Fields required for fibonacci heap structure */
-		int degree;
+		int degree_;
 		
 		/*
 			locking rules:
@@ -336,44 +340,97 @@ namespace tscb {
 	public:
 		typedef abstract_timer_callback<Timeval> callback_type;
 		
-		inline abstract_timer_connection(callback_type *_callback=0, bool add_ref=true) throw() : callback(_callback)
-		{if (callback && add_ref) callback->pin();}
+		inline abstract_timer_connection(callback_type * callback=nullptr, bool add_ref=true) noexcept
+			: callback_(callback)
+		{
+			if (callback_ && add_ref) {
+				callback->pin();
+			}
+		}
 		
-		inline ~abstract_timer_connection(void) throw()
-		{if (callback) callback->release();}
+		inline ~abstract_timer_connection(void) noexcept
+		{
+			if (callback_) {
+				callback_->release();
+			}
+		}
 		
-		inline abstract_timer_connection(const abstract_timer_connection &conn) throw()
-		{callback=conn.callback; if (callback) callback->pin();}
+		inline abstract_timer_connection(const abstract_timer_connection & other) noexcept
+			: callback_(other.callback_)
+		{
+			if (callback_) {
+				callback_->pin();
+			}
+		}
 		
-		inline abstract_timer_connection &operator=(const abstract_timer_connection &conn) throw()
-		{if (callback) callback->release(); callback=conn.callback; if (callback) callback->pin(); return *this;}
+		inline const abstract_timer_connection &operator=(const abstract_timer_connection & other) noexcept
+		{
+			if (callback_) {
+				callback_->release();
+			}
+			callback_ = other.callback_;
+			if (callback_) {
+				callback_->pin();
+			}
+			return *this;
+		}
 		
-		inline abstract_timer_connection &operator=(const callback_type *_callback) throw()
-		{if (callback) callback->release(); callback=_callback; if (callback) callback->pin(); return *this;}
+		inline const abstract_timer_connection &operator=(const callback_type * callback) noexcept
+		{
+			if (callback_) {
+				callback_->release();
+			}
+			callback_ = callback;
+			if (callback_) {
+				callback_->pin();
+			}
+			return *this;
+		}
 		
-		inline void disconnect(void) throw()
-		{if (callback) {callback->disconnect(); callback->release(); callback=0;}}
+		inline void disconnect(void) noexcept
+		{
+			if (callback_) {
+				callback_->disconnect();
+				callback_->release();
+				callback_ = nullptr;
+			}
+		}
 		
-		inline bool connected(void) const throw()
-		{return callback && callback->connected();}
+		inline bool connected(void) const noexcept
+		{
+			return callback_ && callback_->connected();
+		}
 		
-		inline operator connection (void) const throw() {return callback;}
+		inline operator connection (void) const noexcept
+		{
+			return callback_;
+		}
 		
-		#ifdef __GXX_EXPERIMENTAL_CXX0X__
 		template<typename ConnectionType>
-		inline abstract_timer_connection(ConnectionType && conn) throw()
-		{callback=conn.callback; conn.callback=0;}
+		inline abstract_timer_connection(ConnectionType && other) noexcept
+			: callback_(other.callback_)
+		{
+			other.callback_ = nullptr;
+		}
 		
 		template<typename ConnectionType>
-		inline abstract_timer_connection<Timeval> &operator=(ConnectionType && conn) throw()
-		{callback=conn.callback; conn.callback=0; return *this;}
-		#endif
+		inline const abstract_timer_connection<Timeval> &operator=(ConnectionType && other) noexcept
+		{
+			if (callback_) {
+				callback_->release();
+			}
+			callback_ = other.callback_;
+			other.callback_ = nullptr;
+			return *this;
+		}
 		
-		inline callback_type * get(void) const throw()
-		{return callback;}
+		inline callback_type * get(void) const noexcept
+		{
+			return callback_;
+		}
 		
 	private:
-		callback_type *callback;
+		callback_type * callback_;
 	};
 	
 	/**
@@ -393,22 +450,22 @@ namespace tscb {
 	template<typename Timeval>
 	class scoped_abstract_timer_connection {
 	public:
-		inline scoped_abstract_timer_connection(void) throw() {}
-		inline ~scoped_abstract_timer_connection(void) throw() {disconnect();}
+		inline scoped_abstract_timer_connection(void) noexcept {}
+		inline ~scoped_abstract_timer_connection(void) noexcept {disconnect();}
 		
-		inline bool connected(void) const throw() {return conn.connected();}
+		inline bool connected(void) const noexcept {return conn.connected();}
 		
-		inline void disconnect(void) throw() {conn.disconnect();}
+		inline void disconnect(void) noexcept {conn.disconnect();}
 		
-		inline scoped_abstract_timer_connection(const abstract_timer_connection<Timeval> & _conn) throw() : conn(_conn) {}
+		inline scoped_abstract_timer_connection(const abstract_timer_connection<Timeval> & _conn) noexcept : conn(_conn) {}
 		
-		inline scoped_abstract_timer_connection & operator=(const abstract_timer_connection<Timeval> & _connection) throw()
+		inline scoped_abstract_timer_connection & operator=(const abstract_timer_connection<Timeval> & _connection) noexcept
 		{disconnect(); conn = _connection; return *this;}
 		
-		inline scoped_abstract_timer_connection(abstract_timer_callback<Timeval> * callback) throw()
+		inline scoped_abstract_timer_connection(abstract_timer_callback<Timeval> * callback) noexcept
 		{disconnect(); conn = callback;}
 		
-		inline scoped_abstract_timer_connection & operator=(abstract_timer_callback<Timeval> * callback) throw()
+		inline scoped_abstract_timer_connection & operator=(abstract_timer_callback<Timeval> * callback) noexcept
 		{disconnect(); conn = callback; return *this;}
 	protected:
 		scoped_abstract_timer_connection(const scoped_connection & other); /* deleted */
@@ -441,7 +498,7 @@ namespace tscb {
 	template<typename Timeval>
 	class generic_timer_service {
 	public:
-		virtual ~generic_timer_service(void) throw()
+		virtual ~generic_timer_service(void) noexcept
 		{}
 		
 		/**
@@ -474,18 +531,18 @@ namespace tscb {
 			will be called again at the new point in time.
 		*/
 		abstract_timer_connection<Timeval>
-		timer(const boost::function<bool (Timeval &)> & function, Timeval expires) throw(std::bad_alloc)
+		timer(std::function<bool (Timeval &)> function, Timeval expires) throw(std::bad_alloc)
 		{
 			abstract_timer_callback<Timeval> * link;
-			link= new abstract_timer_callback<Timeval>(function, expires);
+			link = new abstract_timer_callback<Timeval>(std::move(function), expires);
 			register_timer(link);
 			return abstract_timer_connection<Timeval>(link);
 		}
 		
 		/** \internal \brief Register timer with internal data structure */
-		virtual void register_timer(abstract_timer_callback<Timeval> * ptr) throw()=0;
+		virtual void register_timer(abstract_timer_callback<Timeval> * ptr) noexcept=0;
 		/** \internal \brief Unregister timer with internal data structure */
-		virtual void unregister_timer(abstract_timer_callback<Timeval> * t) throw()=0;
+		virtual void unregister_timer(abstract_timer_callback<Timeval> * t) noexcept=0;
 	};
 	
 	/**
@@ -518,32 +575,32 @@ namespace tscb {
 			case, the given event flag is signalled and \ref run_queue should
 			be called again as soon as possible.
 		*/
-		generic_timerqueue_dispatcher(eventtrigger & trigger) throw()
+		generic_timerqueue_dispatcher(eventtrigger & trigger) noexcept
 			: timer_queue_running(false), timer_added(trigger)
 		{
 		}
 		
-		virtual ~generic_timerqueue_dispatcher(void) throw()
+		virtual ~generic_timerqueue_dispatcher(void) noexcept
 		{
-			mutex::guard guard(queue_mutex);
+			std::unique_lock<std::mutex> guard(queue_mutex);
 			
 			abstract_timer_callback<Timeval> *link = timer_queue.extract_min();
 			while (link) {
 				/* mark item as "unqueued" */
-				link->next = 0;
+				link->next_ = nullptr;
 				guard.unlock();
 				
 				/* since the item has been marked "unqueued", concurrent cancel operations
 				will simply do nothing (and, especially, not drop the reference that
 				was held by the queue) */
 				
-				link->cancellation_mutex.lock();
+				link->cancellation_mutex_.lock();
 				/* it is permissible to omit taking queue_mutex around zeroing out "service"
 				because the only place we ever care about "service" being unmodified under
 				queue_mutex is run_queue; however the member function run_queue may
 				never be active at the same time as the destructor of the object */
-				link->service.store(0, memory_order_relaxed);
-				link->cancellation_mutex.unlock();
+				link->service_.store(nullptr, std::memory_order_relaxed);
+				link->cancellation_mutex_.unlock();
 				
 				link->cancelled();
 				link->release();
@@ -579,7 +636,7 @@ namespace tscb {
 			This function is more light-weight than its
 			cousin \ref next_timer.
 		*/
-		inline bool timers_pending(void) const throw()
+		inline bool timers_pending(void) const noexcept
 		{
 			/* FIXME: race semantics are unclear */
 			
@@ -605,13 +662,13 @@ namespace tscb {
 			information than \ref timers_pending and is
 			more heavy-weight.
 		*/
-		inline bool next_timer(Timeval &tv) const throw()
+		inline bool next_timer(Timeval &tv) const noexcept
 		{
-			mutex::guard guard(queue_mutex);
+			std::unique_lock<std::mutex> guard(queue_mutex);
 			
-			abstract_timer_callback<Timeval> *t = timer_queue.peek_min();
+			abstract_timer_callback<Timeval> * t = timer_queue.peek_min();
 			if (t) {
-				tv = t->when;
+				tv = t->when_;
 				return true;
 			}
 			return false;
@@ -636,37 +693,43 @@ namespace tscb {
 		*/
 		bool run_queue(Timeval &time)
 		{
-			mutex::guard guard(queue_mutex);
+			std::unique_lock<std::mutex> guard(queue_mutex);
 			
 			abstract_timer_callback<Timeval> *t = timer_queue.peek_min();
 			
-			if (!t) return false;
+			if (!t) {
+				return false;
+			}
 			
 			timer_queue_running = true;
 			
-			while(t) {
-				if (!t) break;
-				if (t->when>time) break;
+			while (t) {
+				if (!t) {
+					break;
+				}
+				if (t->when_ > time) {
+					break;
+				}
 				
 				t = timer_queue.extract_min();
 				/* mark item as "unqueued" */
-				t->next = 0;
+				t->next_ = nullptr;
 				guard.unlock();
 				
 				Timeval expires = time;
 				/* FIXME: what is supposed to happen if this throws? */
-				bool rearm = t->target(expires);
+				bool rearm = t->target_(expires);
 				
 				if (!rearm) {
-					t->cancellation_mutex.lock();
+					t->cancellation_mutex_.lock();
 					/* we can modify t->service here without holding queue_mutex
 					because the only place we care about t->service being constant
 					under queue_mutex is this function(run_queue) itself. However
 					no other thread that has entered run_queue can access t
 					because we removed it from the queue under queue_mutex
 					already */
-					t->service.store(0, memory_order_relaxed);
-					t->cancellation_mutex.unlock();
+					t->service_.store(nullptr, std::memory_order_relaxed);
+					t->cancellation_mutex_.unlock();
 					
 					t->cancelled();
 					t->release();
@@ -713,7 +776,7 @@ namespace tscb {
 					goto nexttimer;
 				}
 				
-				t->when = expires;
+				t->when_ = expires;
 				/* whew, we are certain now that the timer has to be rearmed */
 				timer_queue.insert(t);
 				
@@ -724,7 +787,7 @@ namespace tscb {
 			timer_queue_running = false;
 			
 			if (t) {
-				time = t->when;
+				time = t->when_;
 				return true;
 			} else {
 				return false;
@@ -732,30 +795,34 @@ namespace tscb {
 		}
 		
 		/** \internal \brief Register timer with internal data structure */
-		virtual void register_timer(abstract_timer_callback<Timeval> * ptr) throw()
+		virtual void register_timer(abstract_timer_callback<Timeval> * ptr) noexcept
 		{
 			queue_mutex.lock();
 			
 			timer_queue.insert(ptr);
 			bool needWakeup = (timer_queue.peek_min() == ptr) && !timer_queue_running;
-			ptr->service.store(this, memory_order_relaxed);
+			ptr->service_.store(this, std::memory_order_relaxed);
 			queue_mutex.unlock();
 			
 			if (needWakeup) timer_added.set();
 		}
 		/** \internal \brief Unregister timer with internal data structure */
-		virtual void unregister_timer(abstract_timer_callback<Timeval> *t) throw()
+		virtual void unregister_timer(abstract_timer_callback<Timeval> *t) noexcept
 		{
 			queue_mutex.lock();
-			t->service.store(0, memory_order_relaxed);
+			t->service_.store(nullptr, std::memory_order_relaxed);
 			bool needWakeup = (timer_queue.peek_min() == t) && !timer_queue_running;
-			bool queued = (t->next != 0);
-			if (queued) timer_queue.remove(t);
-			t->next = 0;
+			bool queued = (t->next_ != nullptr);
+			if (queued) {
+				timer_queue.remove(t);
+			}
+			t->next_ = nullptr;
 			queue_mutex.unlock();
-			t->cancellation_mutex.unlock();
+			t->cancellation_mutex_.unlock();
 			
-			if (needWakeup) timer_added.set();
+			if (needWakeup) {
+				timer_added.set();
+			}
 			if (queued) {
 				t->cancelled();
 				t->release();
@@ -766,41 +833,41 @@ namespace tscb {
 		/** \internal \brief Fibonacci heap of pending timers */
 		fibheap<abstract_timer_callback<Timeval> > timer_queue;
 		/** \internal \brief Protect timer queue data structure */
-		mutable mutex queue_mutex;
+		mutable std::mutex queue_mutex;
 		/** \internal \brief Set to true while timers are being processed */
 		bool timer_queue_running;
 		/** \internal \brief Event flag signalled when timer has been added */
 		eventtrigger & timer_added;
 	};
 	
-	/** \brief Timer callback link using posix_time::ptime to represent time values */
-	typedef abstract_timer_callback<boost::posix_time::ptime> timer_callback;
+	/** \brief Timer callback link using steady clock time points to represent time values */
+	typedef abstract_timer_callback<std::chrono::steady_clock::time_point> timer_callback;
 	
-	/** \brief Reference to timer callback link using posix_time::ptime to represent time values */
-	typedef abstract_timer_connection<boost::posix_time::ptime> timer_connection;
+	/** \brief Reference to timer callback link using steady clock time points to represent time values */
+	typedef abstract_timer_connection<std::chrono::steady_clock::time_point> timer_connection;
 	
-	/** \brief Scoped reference to timer callback link using posix_time::ptime to represent time values */
-	typedef scoped_abstract_timer_connection<boost::posix_time::ptime> scoped_timer_connection;
+	/** \brief Scoped reference to timer callback link using steady clock time points to represent time values */
+	typedef scoped_abstract_timer_connection<std::chrono::steady_clock::time_point> scoped_timer_connection;
 	
 	/**
 		\typedef tscb::timer_service
-		\brief Timer service using posix_time::ptime to represent time values
+		\brief Timer service using steady clock time points to represent time values
 		
-		Typedef for \ref tscb::generic_timer_service "generic_timer_service&lt;boost::posix_time::ptime&gt;"
+		Typedef for \ref tscb::generic_timer_service "generic_timer_service&lt;std::chrono::steady_clock::time_point&gt;"
 	*/
-	typedef generic_timer_service<boost::posix_time::ptime> timer_service;
+	typedef generic_timer_service<std::chrono::steady_clock::time_point> timer_service;
 	
 	/**
-		\brief Timer dispatcher using posix_time::ptime to represent time values
+		\brief Timer dispatcher using steady clock time points to represent time values
 		
-		Typedef for \ref tscb::generic_timerqueue_dispatcher "generic_timerqueue_dispatcher&lt;boost::posix_time::ptime&gt;"
+		Typedef for \ref tscb::generic_timerqueue_dispatcher "generic_timerqueue_dispatcher&lt;std::chrono::steady_clock::time_point&gt;"
 	*/
-	typedef generic_timerqueue_dispatcher<boost::posix_time::ptime> timerqueue_dispatcher;
+	typedef generic_timerqueue_dispatcher<std::chrono::steady_clock::time_point> timerqueue_dispatcher;
 	
 	/**
 		\brief Return monotonic time
 	*/
-	extern boost::posix_time::ptime monotonic_time(void) throw();
+	extern std::chrono::steady_clock::time_point monotonic_time(void) noexcept;
 	
 }
 

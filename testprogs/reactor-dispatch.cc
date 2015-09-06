@@ -6,14 +6,15 @@
  * Refer to the file "COPYING" for details.
  */
 
-#include <boost/bind.hpp>
-
 #define private public
 #define protected public
 
+#include <assert.h>
+#include <unistd.h>
+
 #include <tscb/dispatch>
 
-static bool dummy_timer(int * what, boost::posix_time::ptime & now)
+static bool dummy_timer(int * what, std::chrono::steady_clock::time_point & now)
 {
 	(*what) ++;
 	return false;
@@ -37,7 +38,7 @@ void test_basic_operation(void)
 	
 	{
 		int timer_called = 0;
-		tscb::connection c = reactor.timer(boost::bind(dummy_timer, &timer_called, _1), tscb::monotonic_time());
+		tscb::connection c = reactor.timer(std::bind(dummy_timer, &timer_called, std::placeholders::_1), std::chrono::steady_clock::now());
 		reactor.dispatch();
 		
 		assert(timer_called);
@@ -49,7 +50,7 @@ void test_basic_operation(void)
 		int fds[2];
 		int reader_called = 0;
 		pipe(fds);
-		tscb::connection c = reactor.watch(boost::bind(dummy_reader, &reader_called, fds[0], _1), fds[0], tscb::ioready_input);
+		tscb::connection c = reactor.watch(std::bind(dummy_reader, &reader_called, fds[0], std::placeholders::_1), fds[0], tscb::ioready_input);
 		reactor.get_eventtrigger().set();
 		reactor.dispatch();
 		assert(!reader_called);
@@ -67,7 +68,7 @@ void test_basic_operation(void)
 	
 	{
 		int worker_called = 0;
-		reactor.post(boost::bind(dummy_work, &worker_called));
+		reactor.post(std::bind(dummy_work, &worker_called));
 		reactor.dispatch();
 		
 		assert(worker_called);
@@ -77,7 +78,7 @@ void test_basic_operation(void)
 static void perpetual_work(tscb::posix_reactor_service & reactor, int * what)
 {
 	(*what) ++;
-	reactor.post(boost::bind(perpetual_work, boost::ref(reactor), what));
+	reactor.post(std::bind(perpetual_work, std::ref(reactor), what));
 }
 
 void test_workqueue_monopolization(void)
@@ -100,17 +101,18 @@ void test_pending(void)
 	/* timers pending */
 	{
 		int timer_called = 0;
-		boost::posix_time::ptime due = tscb::monotonic_time() + boost::posix_time::milliseconds(10);
-		tscb::connection c = reactor.timer(boost::bind(dummy_timer, &timer_called, _1), due);
+		std::chrono::steady_clock::time_point due = std::chrono::steady_clock::now() + std::chrono::milliseconds(10);
+		tscb::connection c = reactor.timer(std::bind(dummy_timer, &timer_called, std::placeholders::_1), due);
 		
 		/* registering a new event source may as a side effect cause
 		a spurious wakeup, so clear this first */
-		while(reactor.dispatch_pending()) { /* nothing */ }
+		while (reactor.dispatch_pending()) { /* nothing */ }
 		
 		assert(!timer_called);
 		
-		while(tscb::monotonic_time() < due)
+		while (std::chrono::steady_clock::now() < due) {
 			usleep(1000);
+		}
 		
 		assert(reactor.dispatch_pending());
 		
@@ -126,7 +128,7 @@ void test_pending(void)
 		int fds[2];
 		int reader_called = 0;
 		pipe(fds);
-		tscb::connection c = reactor.watch(boost::bind(dummy_reader, &reader_called, fds[0], _1), fds[0], tscb::ioready_input);
+		tscb::connection c = reactor.watch(std::bind(dummy_reader, &reader_called, fds[0], std::placeholders::_1), fds[0], tscb::ioready_input);
 		
 		/* registering a new event source may as a side effect cause
 		a spurious wakeup, so clear this first */
@@ -151,7 +153,7 @@ void test_pending(void)
 	/* pending work items */
 	{
 		int worker_called = 0;
-		reactor.post(boost::bind(dummy_work, &worker_called));
+		reactor.post(std::bind(dummy_work, &worker_called));
 		
 		assert(reactor.dispatch_pending());
 		

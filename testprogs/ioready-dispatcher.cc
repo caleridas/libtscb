@@ -6,24 +6,24 @@
  * Refer to the file "COPYING" for details.
  */
 
-#include <boost/bind.hpp>
-
 #define private public
 #define protected public
 
 #include "tests.h"
 
-#include <tscb/ioready>
-#include <pthread.h>
 #include <fcntl.h>
+#include <pthread.h>
+#include <unistd.h>
+
+#include <tscb/ioready>
 
 using namespace tscb;
 
 void function(int *closure, int fd, int event)
 {
 	char c;
-	read(fd, &c, 1);
-	*closure=1;
+	::read(fd, &c, 1);
+	*closure = 1;
 }
 
 class Target {
@@ -31,7 +31,7 @@ public:
 	Target(void) : called(false) {}
 	void function(int event)
 	{
-		called=true;
+		called = true;
 	}
 	bool called;
 };
@@ -46,17 +46,17 @@ public:
 	Target2(ioready_service *srv, int fd)
 		: called(false), refcount(1)
 	{
-		link=srv->watch(boost::bind(&Target2::input, boost::intrusive_ptr<Target2>(this), fd, _1), fd, ioready_input);
-		ASSERT(refcount==2);
+		link=srv->watch(std::bind(&Target2::input, tscb::intrusive_ptr<Target2>(this), fd, std::placeholders::_1), fd, ioready_input);
+		ASSERT(refcount == 2);
 	}
 	
 	void input(int fd, int event)
 	{
 		char c;
 		read(fd, &c, 1);
-		called=true;
+		called = true;
 		link.disconnect();
-		ASSERT(refcount==2);
+		ASSERT(refcount == 2);
 	}
 	
 	void pin(void)
@@ -86,11 +86,11 @@ static inline void intrusive_ptr_release(Target2 *t) throw()
 
 void test_dispatcher(ioready_dispatcher *d)
 {
-	boost::posix_time::time_duration t(0);
+	std::chrono::steady_clock::duration t = std::chrono::milliseconds(0);
 	/* verify that an empty dispatcher in fact does nothing */
 	{
 		int count=d->dispatch(&t);
-		ASSERT(count==0);
+		ASSERT(count == 0);
 	}
 	/* verify that basic dispatching and cancellation works */
 	{
@@ -99,43 +99,43 @@ void test_dispatcher(ioready_dispatcher *d)
 		int oserror=pipe(pipefd);
 		ASSERT(oserror==0);
 		
-		int called=0;
+		int called = 0;
 		
-		tscb::ioready_connection link=d->watch(boost::bind(function, &called, pipefd[0], _1),
+		tscb::ioready_connection link = d->watch(std::bind(function, &called, pipefd[0], std::placeholders::_1),
 			pipefd[0], ioready_input);
 		
-		ASSERT(link.callback->refcount==2);
+		ASSERT(link.callback_->refcount_ == 2);
 		
 		int count=d->dispatch(&t);
-		ASSERT(count==0);
+		ASSERT(count == 0);
 		
 		write(pipefd[1], &count, 1);
 		count=d->dispatch(&t);
-		ASSERT(count==1);
-		ASSERT(called==1);
+		ASSERT(count == 1);
+		ASSERT(called == 1);
 		
-		called=0;
+		called = 0;
 		link.modify(ioready_none);
 		write(pipefd[1], &count, 1);
 		count=d->dispatch(&t);
-		ASSERT(count==0);
-		ASSERT(called==0);
+		ASSERT(count == 0);
+		ASSERT(called == 0);
 		
-		called=0;
+		called = 0;
 		link.modify(ioready_input);
 		count=d->dispatch(&t);
-		ASSERT(count==1);
-		ASSERT(called==1);
+		ASSERT(count == 1);
+		ASSERT(called == 1);
 		
 		write(pipefd[1], &count, 1);
-		called=0;
-		boost::intrusive_ptr<ioready_callback> cb=link.callback;
+		called = 0;
+		tscb::intrusive_ptr<ioready_callback> cb(link.callback_);
 		link.disconnect();
 		count=d->dispatch(&t);
-		ASSERT(count==0);
-		ASSERT(called==0);
+		ASSERT(count == 0);
+		ASSERT(called == 0);
 		
-		ASSERT(cb->refcount==1);
+		ASSERT(cb->refcount_==1);
 		
 		close(pipefd[0]);
 		close(pipefd[1]);
@@ -148,18 +148,18 @@ void test_dispatcher(ioready_dispatcher *d)
 		
 		Target target;
 		
-		tscb::connection link=d->watch(boost::bind(&Target::function, &target, _1),
+		tscb::connection link=d->watch(std::bind(&Target::function, &target, std::placeholders::_1),
 			pipefd[0], ioready_input);
 		
 		int count;
 		write(pipefd[1], &count, 1);
 		count=d->dispatch(&t);
-		ASSERT(count==1);
-		ASSERT(target.called==1);
+		ASSERT(count == 1);
+		ASSERT(target.called == 1);
 		
 		link.disconnect();
 		count=d->dispatch(&t);
-		ASSERT(count==0);
+		ASSERT(count == 0);
 		
 		close(pipefd[0]);
 		close(pipefd[1]);
@@ -177,13 +177,13 @@ void test_dispatcher(ioready_dispatcher *d)
 		int count;
 		write(pipefd[1], &count, 1);
 		count=d->dispatch(&t);
-		ASSERT(count==1);
-		ASSERT(target.called==1);
-		ASSERT(target.refcount==1);
+		ASSERT(count == 1);
+		ASSERT(target.called == 1);
+		ASSERT(target.refcount == 1);
 		
 		write(pipefd[1], &count, 1);
 		count=d->dispatch(&t);
-		ASSERT(count==0);
+		ASSERT(count == 0);
 		
 		close(pipefd[0]);
 		close(pipefd[1]);
@@ -196,24 +196,26 @@ public:
 	{
 		char c;
 		ssize_t count = read(pipe1[0], &c, 1);
-		if (count == 0)
+		if (count == 0) {
 			events |= ioready_hangup;
-		assert((events & ioready_hangup) != 0);
+		}
+		ASSERT((events & ioready_hangup) != 0);
 		conn.disconnect();
 		close(pipe1[0]);
 		dup2(pipe2[0], pipe1[0]);
-		conn = d->watch(boost::bind(&pipe_swapper::handle_pipe2, this, _1), pipe1[0], ioready_input);
+		conn = d->watch(std::bind(&pipe_swapper::handle_pipe2, this, std::placeholders::_1), pipe1[0], ioready_input);
 	}
 	
 	void handle_pipe2(ioready_events events)
 	{
 		char c;
 		ssize_t count = read(pipe1[0], &c, 1);
-		if (count == 0)
+		if (count == 0) {
 			events |= ioready_hangup;
-		assert(count == 1);
-		assert( !(events & ioready_hangup) );
-		assert(events & ioready_input);
+		}
+		ASSERT(count == 1);
+		ASSERT( !(events & ioready_hangup) );
+		ASSERT(events & ioready_input);
 		conn.disconnect();
 		finished = true;
 	}
@@ -233,7 +235,7 @@ void test_dispatcher_sync_disconnect(ioready_dispatcher * d)
 	pipe(sw.pipe2);
 	fcntl(sw.pipe2[0], F_SETFL, O_NONBLOCK);
 	sw.d = d;
-	sw.conn = d->watch(boost::bind(&pipe_swapper::handle_pipe1, &sw, _1), sw.pipe1[0], ioready_input);
+	sw.conn = d->watch(std::bind(&pipe_swapper::handle_pipe1, &sw, std::placeholders::_1), sw.pipe1[0], ioready_input);
 	sw.finished = false;
 	
 	char c = 0;
@@ -241,7 +243,7 @@ void test_dispatcher_sync_disconnect(ioready_dispatcher * d)
 	close(sw.pipe1[1]);
 	
 	while (!sw.finished) {
-		boost::posix_time::time_duration t(0);
+		std::chrono::steady_clock::duration t = std::chrono::milliseconds(0);
 		d->dispatch(&t);
 	}
 	
@@ -263,10 +265,10 @@ static void *run_dispatcher(void *arg)
 	return 0;
 }
 
-void test_dispatcher_threading(ioready_dispatcher *d)
+void test_dispatcher_threading(ioready_dispatcher * d)
 {
 	{
-		cancel_dispatching=0;
+		cancel_dispatching = 0;
 		
 		eventflag & evflag = d->get_eventflag();
 		
@@ -277,21 +279,21 @@ void test_dispatcher_threading(ioready_dispatcher *d)
 		usleep(10*1000);
 		
 		int pipefd[2];
-		int oserror=pipe(pipefd);
-		ASSERT(oserror==0);
+		int oserror = ::pipe(pipefd);
+		ASSERT(oserror == 0);
 		
-		int called=0;
+		int called = 0;
 		
-		tscb::ioready_connection link=d->watch(boost::bind(function, &called, pipefd[0], _1),
+		tscb::ioready_connection link = d->watch(std::bind(function, &called, pipefd[0], std::placeholders::_1),
 			pipefd[0], ioready_input);
 		
 		write(pipefd[1], &called, 1);
 		
 		usleep(10*1000);
 		
-		ASSERT(called==1);
+		ASSERT(called == 1);
 		
-		cancel_dispatching=1;
+		cancel_dispatching = 1;
 		
 		evflag.set();
 		
