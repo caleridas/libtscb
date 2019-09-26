@@ -11,3 +11,5 @@ config.status
 configure
 doc
 libtscb.pc
+libtscb.so
+libtscb.so.*
