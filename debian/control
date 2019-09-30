@@ -1,0 +1,23 @@
+Source: libtscb
+Priority: optional
+Maintainer: Helge Bahmann <hcb@chaoticmind.net>
+Build-Depends: debhelper (>= 9), g++(>= 4:6.3.0-4)
+Standards-Version: 3.9.8
+Section: libs
+
+Package: libtscb-dev
+Section: libdevel
+Architecture: any
+Depends: libtscb0 (= ${binary:Version}), ${misc:Depends}
+Description: Thread safe callback library
+ Thread safe callbacks and I/O reactors.
+ .
+ This package provides development headers and libraries for libtscb.
+
+Package: libtscb0
+Architecture: any
+Depends: ${misc:Depends}
+Description: Thread safe callback library
+ Thread safe callbacks and I/O reactors.
+ .
+ This package provides the main library.

@@ -4,6 +4,7 @@
 *.a
 *.so
 include/tscb/config
+include/tscb/config.in
 Makefile
 autom4te.cache
 config.log
@@ -13,3 +14,12 @@ doc
 libtscb.pc
 libtscb.so
 libtscb.so.*
+debian/.debhelper
+debian/debhelper-build-stamp
+debian/autoreconf.*
+debian/*.substvars
+debian/libtscb-dev/*
+debian/libtscb0/*
+debian/libtscb0-dbg/*
+debian/tmp
+debian/*.debhelper.log

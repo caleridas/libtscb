@@ -130,25 +130,27 @@ maintainerclean: distclean
 install: install-headers install-pkgconfig install-static install-shared
 
 install-headers:
-	mkdir -p $(includedir)/tscb
-	$(INSTALL) -m 644 -v include/tscb/* $(includedir)/tscb
+	mkdir -p $(DESTDIR)$(includedir)/tscb/
+	$(INSTALL) -m 644 -v include/tscb/* $(DESTDIR)$(includedir)/tscb
 
 install-pkgconfig:
-	mkdir -p $(libdir)/pkgconfig/
-	$(INSTALL) -m 644 -v libtscb.pc $(libdir)/pkgconfig/
+	mkdir -p $(DESTDIR)$(libdir)/pkgconfig/
+	$(INSTALL) -m 644 -v libtscb.pc $(DESTDIR)$(libdir)/pkgconfig/
 
 install-static: $(LIBRARIES)
+	mkdir -p $(DESTDIR)$(libdir)/
 	for file in $(filter %.a,$(LIBRARIES)) ; do\
-		$(INSTALL) -m 644 -v $$file $(libdir)/ ; \
+		$(INSTALL) -m 644 -v $$file $(DESTDIR)$(libdir)/ ; \
 	done
 
 install-shared: $(patsubst %.so,install-shared-%,$(SHARED_LIBRARIES))
 install-shared-%: BASENAME=$(patsubst install-shared-%,%,$@)
 install-shared-%:
-	$(INSTALL) -m 755 -v $(BASENAME).so.$($(BASENAME)_VERSION) $(libdir)/
-	$(RM) -rf $(libdir)/$(BASENAME).so $(libdir)/$(BASENAME).so.$($(BASENAME)_SOVERSION)
-	ln -sf $(BASENAME).so.$($(BASENAME)_VERSION) $(libdir)/$(BASENAME).so
-	ln -sf $(BASENAME).so.$($(BASENAME)_VERSION) $(libdir)/$(BASENAME).so.$($(BASENAME)_SOVERSION)
+	mkdir -p $(DESTDIR)$(libdir)/
+	$(INSTALL) -m 755 -v $(BASENAME).so.$($(BASENAME)_VERSION) $(DESTDIR)$(libdir)/
+	$(RM) -rf $(DESTDIR)$(libdir)/$(BASENAME).so $(DESTDIR)$(libdir)/$(BASENAME).so.$($(BASENAME)_SOVERSION)
+	ln -sf $(BASENAME).so.$($(BASENAME)_VERSION) $(DESTDIR)$(libdir)/$(BASENAME).so
+	ln -sf $(BASENAME).so.$($(BASENAME)_VERSION) $(DESTDIR)$(libdir)/$(BASENAME).so.$($(BASENAME)_SOVERSION)
 
 # rules for generating various file types
 
