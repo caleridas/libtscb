@@ -1,0 +1,130 @@
+CXXFLAGS += -O2 -fPIC -Wall
+
+TEST_EXECUTABLES += $(TESTS)
+
+EXECUTABLES += $(TARGET_EXECUTABLES) $(TEST_EXECUTABLES)
+
+all: $(SHARED_LIBRARIES) $(STATIC_LIBRARIES) $(TARGET_EXECUTABLES)
+
+# commands for generating various types of targets
+
+EXECUTABLE_LINK = $(CXX)
+DYNAMIC_MODULE_LINK = $(CXX) -shared
+STATIC_MODULE_LINK =$(AR) r
+
+################################################################################
+# Object build rules
+
+%.lo: %.cc
+	$(CXX) -c -fPIC $(CXXFLAGS) $(CPPFLAGS) -o $@ $<
+
+%.la: %.cc
+	$(CXX) -c $(CXXFLAGS) $(CPPFLAGS) -o $@ $<
+
+# static libraries
+%.a: BASENAME=$(patsubst %.a,%,$@)
+%.a: $(patsubst %cc, %.la, $($(BASENAME)_SOURCES))
+%.a:
+	rm -f $@
+	ar clqv $@ $^
+	ranlib $@
+
+# dynamic libraries
+%.so: BASENAME=$(patsubst %.so,%,$@)
+%.so: $(patsubst %cc, %.lo, $($(BASENAME)_SOURCES))
+%.so:
+	rm -rf $@ $@.$($(BASENAME)_VERSION) $@.$($(BASENAME)_SOVERSION)
+	$(DYNAMIC_MODULE_LINK) -o $@.$($(BASENAME)_VERSION) $^ -Wl,-soname -Wl,$@.$($(BASENAME)_SOVERSION) $(LIBS)
+	strip $@.$($(BASENAME)_VERSION)
+	ln -sf $@.$($(BASENAME)_VERSION) $@.$($(BASENAME)_SOVERSION)
+	ln -sf $@.$($(BASENAME)_VERSION) $@
+
+# binaries
+$(EXECUTABLES):
+	$(EXECUTABLE_LINK) -o $@ $(filter %.la, $^) $(filter %.lo, $^) $(LDFLAGS) $(LIBS)
+
+################################################################################
+# Installation rules
+
+install: install-headers install-pkgconfig install-static install-shared
+
+install-headers:
+	for file in $(HEADERS) ; do \
+		$(INSTALL) -m 644 -v -D $$file $(DESTDIR)$(includedir)/$$file ; \
+	done
+
+install-pkgconfig:
+	mkdir -p -p $(DESTDIR)$(libdir)/pkgconfig/
+	for file in $(PKGCONFIG_FILES) ; do \
+		$(INSTALL) -m 644 -v -D $$file $(DESTDIR)$(libdir)/pkgconfig/ ; \
+	done
+
+install-static: $(STATIC_LIBRARIES)
+	mkdir -p $(DESTDIR)$(libdir)/
+	for file in $(filter %.a,$(STATIC_LIBRARIES)) ; do\
+		$(INSTALL) -m 644 -v $$file $(DESTDIR)$(libdir)/ ; \
+	done
+
+install-shared: $(patsubst %.so,install-shared-%,$(SHARED_LIBRARIES))
+install-shared-%: BASENAME=$(patsubst install-shared-%,%,$@)
+install-shared-%:
+	mkdir -p $(DESTDIR)$(libdir)/
+	$(INSTALL) -m 755 -v $(BASENAME).so.$($(BASENAME)_VERSION) $(DESTDIR)$(libdir)/
+	$(RM) -rf $(DESTDIR)$(libdir)/$(BASENAME).so $(DESTDIR)$(libdir)/$(BASENAME).so.$($(BASENAME)_SOVERSION)
+	ln -sf $(BASENAME).so.$($(BASENAME)_VERSION) $(DESTDIR)$(libdir)/$(BASENAME).so
+	ln -sf $(BASENAME).so.$($(BASENAME)_VERSION) $(DESTDIR)$(libdir)/$(BASENAME).so.$($(BASENAME)_SOVERSION)
+
+################################################################################
+# Pseudo-rules for maintaining development build tree
+
+clean:
+	find . -name "*.[ao]" -o -name "*.l[ao]" -o -name "*.so" -o -name "*.so.*" | xargs rm -f
+	rm -f $(EXECUTABLES)
+
+distclean: clean depclean
+	rm -rf config.log config.status include/tscb/config Makefile .depend autom4te.cache $(PKGCONFIG_FILES)
+
+maintainerclean: distclean
+	rm -f configure
+
+# dependency rules
+
+.dep/%.la.d: %.cc
+	@mkdir -p $(dir $@)
+	@$(CXX) -MM $(CXXFLAGS) $(CPPFLAGS) -MT $(<:.cc=.la) -MP -MF $@ $<
+	@echo MAKEDEP $<
+
+.dep/%.lo.d: %.cc
+	@mkdir -p $(dir $@)
+	@$(CXX) -MM -DPIC -fPIC $(CXXFLAGS) $(CPPFLAGS) -MT $(<:.cc=.lo) -MP -MF $@ $<
+
+depclean:
+	rm -rf .dep
+
+DEPEND = $(patsubst %.cc, .dep/%.la.d, $(SOURCES)) $(patsubst %.cc, .dep/%.lo.d, $(SOURCES))
+depend: $(DEPEND)
+ifeq ($(shell if [ -e .dep ] ; then echo yes ; fi),yes)
+-include $(DEPEND)
+endif
+
+################################################################################
+# Unit testing rules
+
+SOURCES+=$(patsubst %, %.cc, $(TESTS))
+RUNTESTS=$(patsubst %, run-%, $(TESTS))
+VALGRINDTESTS=$(patsubst %, valgrind-%, $(TESTS))
+
+$(TESTS): % : %.la
+$(TESTS): LDFLAGS += -lgmock -pthread
+
+$(RUNTESTS): run-% : %
+	$^
+
+$(VALGRINDTESTS): valgrind-% : %
+	valgrind --leak-check=full --error-exitcode=1 $^
+
+check: $(RUNTESTS)
+
+valgrind-check: $(VALGRINDTESTS)
+
+.PHONY:

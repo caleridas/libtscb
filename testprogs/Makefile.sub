@@ -4,33 +4,6 @@
 # it under the terms of the GNU Lesser General Public License version 2.
 # Refer to the file "COPYING" for details.
 
-TESTS = \
-	deferred \
-	signal \
-	fibheap \
-	timer \
-	eventflag \
-	connections \
-	reactor-dispatch \
-	async-work \
-	childproc \
-
-ifeq ($(DISPATCHER_POLL), yes)
-  TESTS+=ioready-poll
-endif
-
-ifeq ($(DISPATCHER_SELECT), yes)
-  TESTS+=ioready-select
-endif
-
-ifeq ($(DISPATCHER_EPOLL), yes)
-  TESTS+=ioready-epoll
-endif
-
-ifeq ($(DISPATCHER_KQUEUE), yes)
-  TESTS+=ioready-kqueue
-endif
-
 testprogs/ioready-poll: testprogs/ioready-poll.o testprogs/ioready-dispatcher.o
 
 testprogs/ioready-epoll: testprogs/ioready-epoll.o testprogs/ioready-dispatcher.o

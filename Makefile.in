@@ -25,8 +25,8 @@ CC = @CC@
 CXX = @CXX@
 YACC = @YACC@
 FLEX = flex
-CPPFLAGS = -Iinclude @CPPFLAGS@
-CXXFLAGS = --std=c++11 -Wall @CXXFLAGS@ @PTHREAD_CFLAGS@
+CPPFLAGS = -I. @CPPFLAGS@
+CXXFLAGS = --std=c++14 -Wall @CXXFLAGS@ @PTHREAD_CFLAGS@
 LDFLAGS = @LDFLAGS@ @PTHREAD_CFLAGS@
 LIBS = @LIBS@ @PTHREAD_LIBS@
 INSTALL = @INSTALL@
@@ -35,155 +35,109 @@ DISPATCHER_POLL = @DISPATCHER_POLL@
 DISPATCHER_SELECT = @DISPATCHER_SELECT@
 DISPATCHER_EPOLL = @DISPATCHER_EPOLL@
 DISPATCHER_KQUEUE = @DISPATCHER_KQUEUE@
-SELECT_FD_SETSIZE = @SELECT_FD_SETSIZE@
-AIO_LINUX = @AIO_LINUX@
 ENABLE_SHARED = @ENABLE_SHARED@
 VERSION = @VERSION@
 
-# commands for generating various types of targets
+libtscb_HEADERS = \
+	tscb/async-safe-work.h \
+	tscb/childproc-monitor.h \
+	tscb/connection.h \
+	tscb/deferred.h \
+	tscb/dispatch.h \
+	tscb/eventflag.h \
+	tscb/fd-handler-table.h \
+	tscb/ioready.h \
+	tscb/ioready-epoll.h \
+	tscb/ioready-kqueue.h \
+	tscb/ioready-poll.h \
+	tscb/ioready-select.h \
+	tscb/reactor.h \
+	tscb/signal.h \
+	tscb/timer.h \
+	tscb/workqueue.h \
 
-EXECUTABLE_LINK = $(CXX)
-DYNAMIC_MODULE_LINK = $(CXX) -shared
-STATIC_MODULE_LINK =$(AR) r
+libtscb_SOURCES = \
+	tscb/async-safe-work.cc \
+	tscb/childproc-monitor.cc \
+	tscb/connection.cc \
+	tscb/deferred.cc \
+	tscb/dispatch.cc \
+	tscb/eventflag.cc \
+	tscb/fd-handler-table.cc \
+	tscb/ioready.cc \
+	tscb/reactor.cc \
+	tscb/signal.cc \
+	tscb/timer.cc \
+	tscb/workqueue.cc \
 
-# override general options by port-specific options
+libtscb_TESTS = \
+	tscb/async-work_test \
+	tscb/childproc-monitor_test \
+	tscb/connection_test \
+	tscb/deferred_test \
+	tscb/eventflag_test \
+	tscb/fd-handler-table_test \
+	tscb/reactor-dispatch_test \
+	tscb/signal_test \
+	tscb/timer_test \
 
-ifeq ($(PORTNAME), darwin)
-  DYNAMIC_MODULE_LINK = $(CXX) -undefined suppress -flat_namespace -bundle
-  # I would gladly receive some kind of explanation for the following...
-  CPPFLAGS += -DBROKEN_DLOPEN_PREPENDS_UNDERSCORE_BEFORE_SYMBOLNAME
-endif
-
-ifeq ($(PORTNAME), freebsd)
-  EXECUTABLE_LINK += -rdynamic
-endif
-
-ifeq ($(PORTNAME), linux)
-  EXECUTABLE_LINK += -rdynamic
-  CPPFLAGS += -D_GNU_SOURCE -D_PTHREAD # make STL thread-safe
-endif
-
-CXXFLAGS+=-Iinclude
-
-LIBTSCB_SOURCES=src/signal.cc src/eventflag.cc src/timer.cc\
-	src/ioready.cc src/file-descriptor-table.cc src/deferred.cc src/dispatch.cc\
-	src/workqueue.cc src/async-safe-work.cc src/childproc-monitor.cc src/reactor.cc
-
-# include dispatcher implementations depending on configuration
+PKGCONFIG_FILES = \
+	libtscb.pc
 
 ifeq ($(DISPATCHER_POLL), yes)
-  LIBTSCB_SOURCES+=src/ioready-poll.cc
+libtscb_SOURCES += tscb/ioready-poll.cc
+libtscb_HEADERS += tscb/ioready-poll.h
+libtscb_TESTS += tscb/ioready-poll_test
 endif
 
 ifeq ($(DISPATCHER_SELECT), yes)
-  LIBTSCB_SOURCES+=src/ioready-select.cc
+libtscb_SOURCES += tscb/ioready-select.cc
+libtscb_HEADERS += tscb/ioready-select.h
+libtscb_TESTS += tscb/ioready-select_test
 endif
 
 ifeq ($(DISPATCHER_EPOLL), yes)
-  LIBTSCB_SOURCES+=src/ioready-epoll.cc
+libtscb_SOURCES += tscb/ioready-epoll.cc
+libtscb_HEADERS += tscb/ioready-epoll.h
+libtscb_TESTS += tscb/ioready-epoll_test
 endif
 
 ifeq ($(DISPATCHER_KQUEUE), yes)
-  LIBTSCB_SOURCES+=src/ioready-kqueue.cc
+libtscb_SOURCES += tscb/ioready-kqueue.cc
+libtscb_HEADERS += tscb/ioready-kqueue.h
+libtscb_TESTS += tscb/ioready-kqueue_test
 endif
 
-ifneq ($(SELECT_FD_SETSIZE), )
-  CPPFLAGS+=-DFD_SETSIZE=$(SELECT_FD_SETSIZE)
+default: all
+
+libtscb.so: $(patsubst %.cc, %.lo, $(libtscb_SOURCES))
+libtscb.a: $(patsubst %.cc, %.la, $(libtscb_SOURCES))
+SOURCES += $(libtscb_SOURCES)
+HEADERS += $(libtscb_HEADERS)
+STATIC_LIBRARIES += libtscb.a
+libtscb_VERSION=$(VERSION)
+libtscb_SOVERSION=$(basename $(basename $(VERSION)))
+ifeq ($(ENABLE_SHARED), yes)
+SHARED_LIBRARIES+=libtscb.so
 endif
+TESTS += $(libtscb_TESTS)
+$(libtscb_TESTS): libtscb.a
+$(libtscb_TESTS): LDFLAGS+=libtscb.a
+SOURCES += $(patsubst %, %.cc, $(libtscb_TESTS))
+
+$(TESTS): test_main.la
+
+include Makefile.rules
 
 # default target
 
-LIBRARIES=libtscb.a
-
-ifeq ($(ENABLE_SHARED), yes)
-libtscb_VERSION=$(VERSION)
-libtscb_SOVERSION=$(basename $(basename $(VERSION)))
-SHARED_LIBRARIES+=libtscb.so
-endif
-
-all: $(LIBRARIES) $(SHARED_LIBRARIES)
-
-libtscb.a: $(patsubst %.cc, %.la, $(LIBTSCB_SOURCES))
-libtscb.so: $(patsubst %.cc, %.lo, $(LIBTSCB_SOURCES))
-
 # some demo programs
-include demo/Makefile.sub
+# include demo/Makefile.sub
 # unit tests
-include testprogs/Makefile.sub
-
-# pseudo-rules for cleaning the build tree
-
-clean:
-	find . -name "*.[ao]" -o -name "*.l[ao]" -o -name "*.so" -o -name "*.so.*" | xargs rm -f
-	rm -f $(EXECUTABLES)
+# include testprogs/Makefile.sub
 
 docclean:
 	rm -rf doc
-
-distclean: clean docclean
-	rm -rf config.log config.status include/tscb/config Makefile .depend autom4te.cache libtscb.pc
-
-maintainerclean: distclean
-	rm -f configure
-
-# installation rules
-install: install-headers install-pkgconfig install-static install-shared
-
-install-headers:
-	mkdir -p $(DESTDIR)$(includedir)/tscb/
-	$(INSTALL) -m 644 -v include/tscb/* $(DESTDIR)$(includedir)/tscb
-
-install-pkgconfig:
-	mkdir -p $(DESTDIR)$(libdir)/pkgconfig/
-	$(INSTALL) -m 644 -v libtscb.pc $(DESTDIR)$(libdir)/pkgconfig/
-
-install-static: $(LIBRARIES)
-	mkdir -p $(DESTDIR)$(libdir)/
-	for file in $(filter %.a,$(LIBRARIES)) ; do\
-		$(INSTALL) -m 644 -v $$file $(DESTDIR)$(libdir)/ ; \
-	done
-
-install-shared: $(patsubst %.so,install-shared-%,$(SHARED_LIBRARIES))
-install-shared-%: BASENAME=$(patsubst install-shared-%,%,$@)
-install-shared-%:
-	mkdir -p $(DESTDIR)$(libdir)/
-	$(INSTALL) -m 755 -v $(BASENAME).so.$($(BASENAME)_VERSION) $(DESTDIR)$(libdir)/
-	$(RM) -rf $(DESTDIR)$(libdir)/$(BASENAME).so $(DESTDIR)$(libdir)/$(BASENAME).so.$($(BASENAME)_SOVERSION)
-	ln -sf $(BASENAME).so.$($(BASENAME)_VERSION) $(DESTDIR)$(libdir)/$(BASENAME).so
-	ln -sf $(BASENAME).so.$($(BASENAME)_VERSION) $(DESTDIR)$(libdir)/$(BASENAME).so.$($(BASENAME)_SOVERSION)
-
-# rules for generating various file types
-
-%.lo: %.cc
-	$(CXX) -c -fPIC $(CXXFLAGS) $(CPPFLAGS) -o $@ $^
-
-%.la: %.cc
-	$(CXX) -c $(CXXFLAGS) $(CPPFLAGS) -o $@ $^
-
-EXECUTABLE_LINK=$(CXX)
-DYNAMIC_MODULE_LINK=$(CXX) -shared
-ifeq ($(PORTNAME), darwin)
-  DYNAMIC_MODULE_LINK = $(CXX) -undefined suppress -flat_namespace -bundle
-endif
-
-# executables
-$(EXECUTABLES):
-	$(EXECUTABLE_LINK) -o $@ $^ $(LDFLAGS) $(LIBS)
-
-# static libraries
-%.a:
-	rm -f $@
-	ar clqv $@ $^
-	ranlib $@
-
-# dynamic libraries
-%.so: BASENAME=$(patsubst %.so,%,$@)
-%.so:
-	rm -rf $@ $@.$($(BASENAME)_VERSION) $@.$($(BASENAME)_SOVERSION)
-	$(DYNAMIC_MODULE_LINK) -o $@.$($(BASENAME)_VERSION) $^ -Wl,-soname -Wl,$@.$($(BASENAME)_SOVERSION) $(LIBS)
-	strip $@.$($(BASENAME)_VERSION)
-	ln -sf $@.$($(BASENAME)_VERSION) $@.$($(BASENAME)_SOVERSION)
-	ln -sf $@.$($(BASENAME)_VERSION) $@
 
 doc: .PHONY
 	mkdir -p doc
