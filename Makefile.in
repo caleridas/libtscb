@@ -133,8 +133,6 @@ include Makefile.rules
 
 # some demo programs
 # include demo/Makefile.sub
-# unit tests
-# include testprogs/Makefile.sub
 
 docclean:
 	rm -rf doc
