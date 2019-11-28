@@ -60,23 +60,23 @@ ioready_dispatcher::~ioready_dispatcher() noexcept
 }
 
 static ioready_dispatcher *
-create_ioready_dispatcher_probe() throw(std::bad_alloc, std::runtime_error);
+create_ioready_dispatcher_probe() /*throw(std::bad_alloc, std::runtime_error)*/;
 
 #ifdef HAVE_KQUEUE
 ioready_dispatcher *
-create_ioready_dispatcher_kqueue() throw(std::bad_alloc, std::runtime_error);
+create_ioready_dispatcher_kqueue() /*throw(std::bad_alloc, std::runtime_error)*/;
 #endif
 #ifdef HAVE_EPOLL
 ioready_dispatcher *
-create_ioready_dispatcher_epoll() throw(std::bad_alloc, std::runtime_error);
+create_ioready_dispatcher_epoll() /*throw(std::bad_alloc, std::runtime_error)*/;
 #endif
 #ifdef HAVE_POLL
 ioready_dispatcher *
-create_ioready_dispatcher_poll() throw(std::bad_alloc, std::runtime_error);
+create_ioready_dispatcher_poll() /*throw(std::bad_alloc, std::runtime_error)*/;
 #endif
 #ifdef HAVE_SELECT
 ioready_dispatcher *
-create_ioready_dispatcher_select() throw(std::bad_alloc, std::runtime_error);
+create_ioready_dispatcher_select() /*throw(std::bad_alloc, std::runtime_error)*/;
 #endif
 
 typedef ioready_dispatcher *(*ioready_dispatcher_creator_func_t)();
@@ -101,7 +101,7 @@ static ioready_dispatcher_creator_func_t probe_functions[]={
 };
 
 ioready_dispatcher *
-create_ioready_dispatcher_probe() throw(std::bad_alloc, std::runtime_error)
+create_ioready_dispatcher_probe() /*throw(std::bad_alloc, std::runtime_error)*/
 {
 	size_t n=0;
 	while(true) {
@@ -110,7 +110,7 @@ create_ioready_dispatcher_probe() throw(std::bad_alloc, std::runtime_error)
 		try {
 			dispatcher=(*func)();
 		}
-		catch(std::runtime_error) {
+		catch (std::runtime_error &) {
 			n++;
 			continue;
 		}
@@ -120,13 +120,13 @@ create_ioready_dispatcher_probe() throw(std::bad_alloc, std::runtime_error)
 }
 
 ioready_dispatcher *
-create_ioready_dispatcher() /* throw(std::bad_alloc, std::runtime_error) */
+create_ioready_dispatcher() /*throw(std::bad_alloc, std::runtime_error)*/
 {
 	return (*ioready_dispatcher_creator_func)();
 }
 
 ioready_dispatcher *
-ioready_dispatcher::create() /* throw(std::bad_alloc, std::runtime_error) */
+ioready_dispatcher::create() /*throw(std::bad_alloc, std::runtime_error)*/
 {
 	return create_ioready_dispatcher();
 }

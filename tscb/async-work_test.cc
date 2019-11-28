@@ -96,7 +96,7 @@ TEST_F(AsyncWorkTest, dispatch_throw)
 		async_.dispatch();
 		EXPECT_TRUE(false);
 	}
-	catch (std::runtime_error) {
+	catch (std::runtime_error &) {
 	}
 
 	/* first must have been processed, other must remain pending;
@@ -111,7 +111,7 @@ TEST_F(AsyncWorkTest, dispatch_throw)
 		async_.dispatch();
 		EXPECT_TRUE(false);
 	}
-	catch(std::runtime_error) {
+	catch(std::runtime_error &) {
 	}
 
 	/* second must have been processed; nothing pending anymore */

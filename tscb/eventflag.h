@@ -104,7 +104,7 @@ public:
 	~pipe_eventflag() noexcept override;
 
 	/** \brief Instantiate event flag, using a pair of pipes */
-	pipe_eventflag() throw(std::runtime_error);
+	pipe_eventflag() /*throws(std::runtime_error)*/ ;
 
 	void set() noexcept override;
 	void wait() noexcept override;

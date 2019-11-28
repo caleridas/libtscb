@@ -133,6 +133,7 @@ childproc_monitor::watch_childproc(
 		lock_.write_unlock_async();
 	}
 
+	// XXX: need to check whether the specified child has exited already.
 	return connection(std::move(link));
 }
 

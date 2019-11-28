@@ -115,7 +115,7 @@ RUNTESTS=$(patsubst %, run-%, $(TESTS))
 VALGRINDTESTS=$(patsubst %, valgrind-%, $(TESTS))
 
 $(TESTS): % : %.la
-$(TESTS): LDFLAGS += -lgmock -pthread
+$(TESTS): LDFLAGS += -lgtest -lgtest_main -lgmock -lgmock_main -pthread
 
 $(RUNTESTS): run-% : %
 	$^

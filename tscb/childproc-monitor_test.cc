@@ -165,7 +165,7 @@ TEST_F(ChildprocMonitorTest, throwing_handler)
 		monitor_.dispatch();
 		EXPECT_TRUE(false);
 	}
-	catch(std::runtime_error) {
+	catch(std::runtime_error &) {
 	}
 
 	EXPECT_EQ(1, called_count());
@@ -174,7 +174,7 @@ TEST_F(ChildprocMonitorTest, throwing_handler)
 		monitor_.dispatch();
 		EXPECT_TRUE(false);
 	}
-	catch(std::runtime_error) {
+	catch(std::runtime_error &) {
 	}
 
 	EXPECT_EQ(2, called_count());

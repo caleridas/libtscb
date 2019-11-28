@@ -143,7 +143,7 @@ void dispatch(
 */
 class posix_reactor : public posix_reactor_service {
 public:
-	posix_reactor() throw(std::bad_alloc, std::runtime_error);
+	posix_reactor() /*throw(std::bad_alloc, std::runtime_error)*/;
 	virtual ~posix_reactor() noexcept;
 
 	/**

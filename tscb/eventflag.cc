@@ -28,7 +28,7 @@ eventflag::~eventflag() noexcept
 }
 
 
-pipe_eventflag::pipe_eventflag() throw(std::runtime_error)
+pipe_eventflag::pipe_eventflag() /*throw(std::runtime_error)*/
 	: flagged_(0), waiting_(0)
 {
 	int filedes[2];
