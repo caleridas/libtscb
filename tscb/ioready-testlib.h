@@ -14,6 +14,7 @@
 
 #include <thread>
 
+#include <tscb/detail/eventflag.h>
 #include <tscb/ioready.h>
 
 #include <gtest/gtest.h>
@@ -43,7 +44,7 @@ protected:
 			link = srv->watch(
 				std::bind(
 					&Target2::input,
-					boost::intrusive_ptr<Target2>(this),
+					detail::intrusive_ptr<Target2>(this),
 					fd, std::placeholders::_1),
 				fd, ioready_input);
 			EXPECT_EQ(2, refcount);
@@ -131,7 +132,7 @@ IoreadyTests::run_simple(ioready_dispatcher *d)
 
 		EXPECT_EQ(1, ::write(pipefd[1], &count, 1));
 		called = 0;
-		boost::intrusive_ptr<ioready_connection::link_type> cb(link.get());
+		detail::intrusive_ptr<ioready_connection::link_type> cb(link.get());
 		link.disconnect();
 		count = d->dispatch(&t);
 		EXPECT_EQ(0, count);
@@ -258,8 +259,6 @@ IoreadyTests::run_threads(ioready_dispatcher * d)
 {
 	std::atomic<bool> stop_dispatcher(false);
 
-	eventtrigger & evtrigger = d->get_eventtrigger();
-
 	std::thread t([d, &stop_dispatcher]()
 		{
 			while (!stop_dispatcher.load(std::memory_order_relaxed)) {
@@ -271,7 +270,7 @@ IoreadyTests::run_threads(ioready_dispatcher * d)
 	int pipefd[2];
 	EXPECT_EQ(0, ::pipe(pipefd));
 
-	platform_eventflag ev;
+	detail::atomic_eventflag ev;
 
 	tscb::ioready_connection link = d->watch(
 		[&ev, &pipefd](ioready_events event)
@@ -288,7 +287,7 @@ IoreadyTests::run_threads(ioready_dispatcher * d)
 	ev.wait();
 
 	stop_dispatcher.store(true, std::memory_order_relaxed);
-	evtrigger.set();
+	d->wake_up();
 
 	t.join();
 

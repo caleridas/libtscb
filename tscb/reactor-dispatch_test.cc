@@ -8,7 +8,7 @@
 
 #include <unistd.h>
 
-#include <tscb/dispatch.h>
+#include <tscb/reactor.h>
 
 #include <gtest/gtest.h>
 
@@ -16,7 +16,7 @@ namespace tscb {
 
 TEST(ReactorTests, basic_operation)
 {
-	posix_reactor reactor;
+	reactor reactor;
 
 	{
 		int timer_called = 0;
@@ -41,12 +41,12 @@ TEST(ReactorTests, basic_operation)
 				char tmp;
 				EXPECT_EQ(1, ::read(fds[0], &tmp, 1));
 			}, fds[0], ioready_input);
-		reactor.get_eventtrigger().set();
+		reactor.wake_up();
 		reactor.dispatch();
 		EXPECT_TRUE(!reader_called);
 
 		EXPECT_TRUE(::write(fds[1], "x", 1) == 1);
-		reactor.get_eventtrigger().set();
+		reactor.wake_up();
 		reactor.dispatch();
 		EXPECT_TRUE(reader_called);
 
@@ -58,7 +58,7 @@ TEST(ReactorTests, basic_operation)
 
 	{
 		int worker_called = 0;
-		reactor.post([&worker_called](){++worker_called;});
+		reactor.queue_procedure([&worker_called](){++worker_called;});
 		reactor.dispatch();
 
 		EXPECT_TRUE(worker_called);
@@ -66,15 +66,15 @@ TEST(ReactorTests, basic_operation)
 }
 
 static void
-perpetual_work(posix_reactor_service & reactor, int * what)
+perpetual_work(reactor_service & reactor, int * what)
 {
 	(*what) ++;
-	reactor.post(std::bind(perpetual_work, std::ref(reactor), what));
+	reactor.queue_procedure(std::bind(perpetual_work, std::ref(reactor), what));
 }
 
 TEST(ReactorTests, workqueue_monopolization)
 {
-	posix_reactor reactor;
+	reactor reactor;
 
 	int count = 0;
 	perpetual_work(reactor, &count);
@@ -86,7 +86,7 @@ TEST(ReactorTests, workqueue_monopolization)
 
 TEST(ReactorTests, pending)
 {
-	posix_reactor reactor;
+	reactor reactor;
 
 	EXPECT_FALSE(reactor.dispatch_pending());
 
@@ -151,7 +151,7 @@ TEST(ReactorTests, pending)
 	/* pending work items */
 	{
 		int worker_called = 0;
-		reactor.post([&worker_called](){ ++worker_called; });
+		reactor.queue_procedure([&worker_called](){ ++worker_called; });
 
 		EXPECT_TRUE(reactor.dispatch_pending());
 

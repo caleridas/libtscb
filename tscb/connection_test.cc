@@ -16,7 +16,7 @@ namespace tscb {
 
 TEST(ConnectionsTests, ioready_casts)
 {
-	ioready_service * ioready = ioready_dispatcher::create();
+	std::unique_ptr<ioready_service> ioready = ioready_dispatcher::create();
 
 	/* no casts, assignment/construction to/from same type */
 	{
@@ -45,14 +45,11 @@ TEST(ConnectionsTests, ioready_casts)
 		scoped_connection assign;
 		assign = ioready->watch([](ioready_events){}, 0, ioready_input);
 	}
-
-	delete ioready;
 }
 
 TEST(ConnectionsTests, timer_casts)
 {
-	platform_eventflag ev;
-	timer_dispatcher timer(ev);
+	timer_dispatcher timer([](){});
 
 	/* no casts, assignment/construction to/from same type */
 	{

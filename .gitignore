@@ -3,8 +3,13 @@
 *.la
 *.a
 *.so
+*.gcda
+*.gcno
 tscb/config.h
 tscb/*_test
+tscb/detail/*_test
+tscb/*_test.coverage
+tscb/detail/*_test.coverage
 Makefile
 autom4te.cache
 config.log

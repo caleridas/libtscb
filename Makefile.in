@@ -28,6 +28,7 @@ FLEX = flex
 CPPFLAGS = -I. @CPPFLAGS@
 CXXFLAGS = --std=c++17 -Wall @CXXFLAGS@ @PTHREAD_CFLAGS@
 LDFLAGS = @LDFLAGS@ @PTHREAD_CFLAGS@
+COVERAGEFLAGS = -fprofile-arcs -ftest-coverage
 LIBS = @LIBS@ @PTHREAD_LIBS@
 INSTALL = @INSTALL@
 PORTNAME = @PORTNAME@
@@ -36,110 +37,15 @@ DISPATCHER_SELECT = @DISPATCHER_SELECT@
 DISPATCHER_EPOLL = @DISPATCHER_EPOLL@
 DISPATCHER_KQUEUE = @DISPATCHER_KQUEUE@
 ENABLE_SHARED = @ENABLE_SHARED@
+ENABLE_COVERAGE = @ENABLE_COVERAGE@
 VERSION = @VERSION@
 
-libtscb_HEADERS = \
-	tscb/async-safe-work.h \
-	tscb/childproc-monitor.h \
-	tscb/connection.h \
-	tscb/deferred.h \
-	tscb/dispatch.h \
-	tscb/eventflag.h \
-	tscb/fd-handler-table.h \
-	tscb/ioready.h \
-	tscb/ioready-epoll.h \
-	tscb/ioready-kqueue.h \
-	tscb/ioready-poll.h \
-	tscb/ioready-select.h \
-	tscb/reactor.h \
-	tscb/signal.h \
-	tscb/timer.h \
-	tscb/workqueue.h \
+# What to build -- may be parameterized by variables above, but
+# otherwise this is configuration-independent.
+include Makefile.targets
 
-libtscb_SOURCES = \
-	tscb/async-safe-work.cc \
-	tscb/childproc-monitor.cc \
-	tscb/connection.cc \
-	tscb/deferred.cc \
-	tscb/dispatch.cc \
-	tscb/eventflag.cc \
-	tscb/fd-handler-table.cc \
-	tscb/ioready.cc \
-	tscb/reactor.cc \
-	tscb/signal.cc \
-	tscb/timer.cc \
-	tscb/workqueue.cc \
-
-libtscb_TESTS = \
-	tscb/async-work_test \
-	tscb/childproc-monitor_test \
-	tscb/connection_test \
-	tscb/deferred_test \
-	tscb/eventflag_test \
-	tscb/fd-handler-table_test \
-	tscb/reactor-dispatch_test \
-	tscb/signal_test \
-	tscb/timer_test \
-
-PKGCONFIG_FILES = \
-	libtscb.pc
-
-ifeq ($(DISPATCHER_POLL), yes)
-libtscb_SOURCES += tscb/ioready-poll.cc
-libtscb_HEADERS += tscb/ioready-poll.h
-libtscb_TESTS += tscb/ioready-poll_test
-endif
-
-ifeq ($(DISPATCHER_SELECT), yes)
-libtscb_SOURCES += tscb/ioready-select.cc
-libtscb_HEADERS += tscb/ioready-select.h
-libtscb_TESTS += tscb/ioready-select_test
-endif
-
-ifeq ($(DISPATCHER_EPOLL), yes)
-libtscb_SOURCES += tscb/ioready-epoll.cc
-libtscb_HEADERS += tscb/ioready-epoll.h
-libtscb_TESTS += tscb/ioready-epoll_test
-endif
-
-ifeq ($(DISPATCHER_KQUEUE), yes)
-libtscb_SOURCES += tscb/ioready-kqueue.cc
-libtscb_HEADERS += tscb/ioready-kqueue.h
-libtscb_TESTS += tscb/ioready-kqueue_test
-endif
-
-default: all
-
-libtscb.so: $(patsubst %.cc, %.lo, $(libtscb_SOURCES))
-libtscb.a: $(patsubst %.cc, %.la, $(libtscb_SOURCES))
-SOURCES += $(libtscb_SOURCES)
-HEADERS += $(libtscb_HEADERS)
-STATIC_LIBRARIES += libtscb.a
-libtscb_VERSION=$(VERSION)
-libtscb_SOVERSION=$(basename $(basename $(VERSION)))
-ifeq ($(ENABLE_SHARED), yes)
-SHARED_LIBRARIES+=libtscb.so
-endif
-TESTS += $(libtscb_TESTS)
-$(libtscb_TESTS): libtscb.a
-$(libtscb_TESTS): LDFLAGS+=libtscb.a
-SOURCES += $(patsubst %, %.cc, $(libtscb_TESTS))
-
-$(TESTS): test_main.la
-
+# How to build -- independent of targets, may be partially parameterized
+# by vars above.
 include Makefile.rules
 
-# default target
-
-# some demo programs
-# include demo/Makefile.sub
-
-docclean:
-	rm -rf doc
-
-doc: .PHONY
-	mkdir -p doc
-	doxygen doxygen.conf
-
 .PHONY:
-

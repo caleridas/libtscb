@@ -6,7 +6,7 @@
  * Refer to the file "COPYING" for details.
  */
 
-#include <tscb/deferred.h>
+#include <tscb/detail/deferred-locks.h>
 
 #include <condition_variable>
 #include <thread>
@@ -14,6 +14,7 @@
 #include <gtest/gtest.h>
 
 namespace tscb {
+namespace detail {
 
 TEST(DeferredLockTests, simple_read_locking)
 {
@@ -101,22 +102,4 @@ TEST(DeferredLockTests, concurrent_read_write_locking)
 }
 
 }
-
-#if 0
-	// hm... need real threads here, otherwise it wil deadlock
-	// I mean... it is *supposed* to deadlock :)
-	// test "interleawed" read/write locking
-	sync=lock.read_lock();
-	ASSERT(sync==false);
-
-			// think thread 2
-			sync=lock.write_lock_async();
-			ASSERT(sync==false);
-
-	sync=lock.read_unlock();
-	ASSERT(sync==true);
-	lock.sync_finished();
-
-			// think thread 2
-			lock.write_unlock_async();
-#endif
+}

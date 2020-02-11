@@ -1,45 +1,92 @@
 /* -*- C++ -*-
- * (c) 2010 Helge Bahmann <hcb@chaoticmind.net>
+ * (c) 2006 Helge Bahmann <hcb@chaoticmind.net>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License version 2.1.
- * Refer to the file_event "COPYING" for details.
+ * Refer to the file "COPYING" for details.
  */
 
 #ifndef TSCB_REACTOR_H
 #define TSCB_REACTOR_H
 
-#include <tscb/timer.h>
-#include <tscb/ioready.h>
-#include <tscb/workqueue.h>
-#include <tscb/async-safe-work.h>
+#include <list>
+#include <mutex>
 
-/**
-	\page reactor_descr Reactor interface
+#include <tscb/reactor-service.h>
 
-	The \ref tscb::posix_reactor_service interface combines the
-	\ref tscb::timer_service, \ref tscb::ioready_service and
-	\ref tscb::workqueue_service interfaces. It is suitable
-	for being used as the basis for event-driven applications
-	that perform actions in reaction to external events.
-
-*/
 
 namespace tscb {
 
 /**
-	\brief Posix reactor service
+	\brief Posix reactor service provider
 
-	Combines the interfaces \ref tscb::workqueue_service "workqueue_service",
-	\ref tscb::timer_service "timer_service" and \ref tscb::ioready_service "ioready_service"
+	This class implements the \ref reactor_service interface
+	and is capable of running stand-alone to provide the requested
+	notifications.
 */
-class posix_reactor_service : public workqueue_service, public timer_service, public ioready_service, public async_safe_work_service {
+class reactor final : public reactor_service {
 public:
-	virtual ~posix_reactor_service() noexcept;
+	reactor();
+	virtual ~reactor() noexcept;
 
-	virtual eventtrigger & get_eventtrigger() = 0;
+	void dispatch();
+
+	bool dispatch_pending();
+
+	void dispatch_pending_all();
+
+	/* workqueue_service */
+
+	std::pair<connection, std::function<void()>>
+	register_deferred_procedure(std::function<void()> function) override;
+
+	std::pair<connection, std::function<void()>>
+	register_async_deferred_procedure(std::function<void()> function) override;
+
+	void
+	queue_procedure(std::function<void()> function) override;
+
+	/* timer_service */
+
+	timer_connection
+	timer(
+		std::function<void(std::chrono::steady_clock::time_point)> function,
+		std::chrono::steady_clock::time_point when)
+		override;
+
+	timer_connection
+	one_shot_timer(
+		std::function<void(std::chrono::steady_clock::time_point)> function,
+		std::chrono::steady_clock::time_point when)
+		override;
+
+	timer_connection
+	suspended_timer(
+		std::function<void(std::chrono::steady_clock::time_point)> function)
+		override;
+
+	timer_connection
+	one_shot_suspended_timer(
+		std::function<void(std::chrono::steady_clock::time_point)> function)
+		override;
+
+	/* ioready_service */
+
+	ioready_connection
+	watch(
+		std::function<void(tscb::ioready_events)> function,
+		int fd, tscb::ioready_events event_mask) /* throw(std::bad_alloc) */
+			override;
+
+	void
+	wake_up() noexcept;
+
+private:
+	std::unique_ptr<ioready_dispatcher> io_;
+	timer_dispatcher timer_;
+	workqueue workqueue_;
 };
 
-};
+}
 
 #endif

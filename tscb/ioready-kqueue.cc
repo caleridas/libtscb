@@ -8,15 +8,113 @@
 
 #include <tscb/ioready-kqueue.h>
 
+#include <unistd.h>
+
 namespace tscb {
 
-ioready_dispatcher_kqueue::ioready_dispatcher_kqueue()
-	throw(std::runtime_error)
-	: wakeup_flag(0)
-{
-	kqueue_fd=kqueue();
-	if (kqueue_fd<0) throw std::runtime_error("Unable to create kqueue descriptor");
-}
+/**
+	\class ioready_dispatcher_kqueue
+	\headerfile tscb/ioready-kqueue.h <tscb/ioready-kqueue.h>
+	\brief Dispatcher for IO readiness events using the
+	\p kqueue system call mechanism.
+
+	This class supports collecting the IO readiness state of a set of
+	file descriptors using the \p kevent system call, and dispatching
+	callbacks to receivers that have registered themselves for events
+	on specific file descriptors.
+
+	The \p kevent system call provides the fastest possible way to
+	observe the state of a set of file descriptors on BSD-derived
+	systems; additionally other event notifications can be routed
+	through \p kqueue< as well. Like \ref
+	tscb::ioready_dispatcher_epoll "ioready_dispatcher_epoll" all
+	relevant operations are O(1), that is: independent from the number
+	of descriptors being watched.
+
+	The \ref dispatch method can usefully be called by multiple
+	threads: It will result in separate events to be dispatched in
+	parallel.
+*/
+
+/* exclude private nested class from doxygen */
+/** \cond false */
+
+class ioready_dispatcher_kqueue::link_type final
+	: public detail::fd_handler_table::link_type {
+public:
+	using pointer = detail::intrusive_ptr<link_type>;
+
+	using read_guard = detail::read_guard<
+		ioready_dispatcher_kqueue,
+		&ioready_dispatcher_kqueue::lock_,
+		&ioready_dispatcher_kqueue::synchronize
+	>;
+
+	using write_guard = detail::async_write_guard<
+		ioready_dispatcher_kqueue,
+		&ioready_dispatcher_kqueue::lock_,
+		&ioready_dispatcher_kqueue::synchronize
+	>;
+
+	link_type(
+		ioready_dispatcher_kqueue * master,
+		std::function<void(ioready_events)> fn,
+		int fd,
+		ioready_events event_mask) noexcept
+		: detail::fd_handler_table::link_type(std::move(fn), fd, event_mask)
+		, master_(master)
+	{
+	}
+
+	~link_type() noexcept override
+	{
+	}
+
+	void
+	disconnect() noexcept override
+	{
+		std::unique_lock<std::mutex> rguard(registration_mutex_);
+
+		ioready_dispatcher_kqueue * master = master_.load(std::memory_order_relaxed);
+
+		if (master) {
+			write_guard guard(*master);
+			ioready_events old_mask, new_mask;
+			master->fdtab_.remove(this, old_mask, new_mask);
+			master->update_evmask(fd(), old_mask, new_mask);
+
+			master_.store(nullptr, std::memory_order_relaxed);
+			rguard.unlock();
+		}
+	}
+
+	bool
+	is_connected() const noexcept override
+	{
+		return master_.load(std::memory_order_relaxed) != nullptr;
+	}
+
+	void
+	modify(ioready_events new_event_mask) noexcept
+	{
+		std::unique_lock<std::mutex> guard(registration_mutex_);
+
+		ioready_dispatcher_kqueue * master = master_.load(std::memory_order_relaxed);
+
+		if (master) {
+			write_guard guard(*master);
+			ioready_events old_mask, new_mask;
+			master->fdtab_.modify(this, new_event_mask, old_mask, new_mask);
+			master->update_evmask(fd(), old_mask, new_mask);
+		}
+	}
+
+private:
+	std::mutex registration_mutex_;
+	std::atomic<ioready_dispatcher_kqueue *> master_;
+};
+
+/** \endcond */
 
 ioready_dispatcher_kqueue::~ioready_dispatcher_kqueue() noexcept
 {
@@ -29,268 +127,204 @@ ioready_dispatcher_kqueue::~ioready_dispatcher_kqueue() noexcept
 	there is no point doing anything about it
 	*/
 
-	while(guard.read_lock()) synchronize();
-	callback_tab.cancel_all();
-	if (guard.read_unlock()) {
+	while(lock_.read_lock()) {
+		synchronize();
+	}
+	bool any_disconnected = fdtab_.disconnect_all();
+	if (lock_.read_unlock()) {
 		/* the above cancel operations will cause synchronization
 		to be performed at the next possible point in time; if
 		there is no concurrent cancellation, this is now */
 		synchronize();
-	} else {
+	} else if (any_disconnected) {
 		/* this can only happen if some callback link was
 		cancelled while this object is being destroyed; in
 		that case we have to suspend the thread that is destroying
 		the object until we are certain that synchronization has
 		been performed */
 
-		guard.write_lock_sync();
+		lock_.write_lock_sync();
 		synchronize();
 
 		/* note that synchronize implicitly calls sync_finished,
 		which is equivalent to write_unlock_sync for deferrable_rwlocks */
 	}
 
-	close(kqueue_fd);
-
-	if (wakeup_flag) delete wakeup_flag;
+	::close(kqueue_fd_);
 }
 
-void ioready_dispatcher_kqueue::process_events(struct kevent events[], size_t nevents)
-	noexcept
+ioready_dispatcher_kqueue::ioready_dispatcher_kqueue()
 {
-	while(guard.read_lock()) synchronize();
-
-	for(size_t n=0; n<nevents; n++) {
-		int fd=events[n].ident;
-		ioready_events ev=ioready_events::none;
-		if (events[n].filter==EVFILT_READ) ev=ioready_input;
-		else if (events[n].filter==EVFILT_WRITE) ev=ioready_output;
-
-		ioready_callback *link=atomics::dereference_dependent(
-			callback_tab.lookup_first_callback(fd)
-		);
-		while(link) {
-			if (ev&link->event_mask) {
-				link->target(ev&link->event_mask);
-			}
-			link=atomics::dereference_dependent(link->active_next);
-		}
+	kqueue_fd_ = ::kqueue();
+	if (kqueue_fd_ < 0) {
+		throw std::runtime_error("Unable to create kqueue descriptor");
 	}
-
-	if (guard.read_unlock()) synchronize();
+	watch([this](ioready_events){}, wakeup_flag_.readfd(), ioready_input);
 }
 
-size_t ioready_dispatcher_kqueue::dispatch(const boost::posix_time::time_duration *timeout, size_t max)
+void ioready_dispatcher_kqueue::process_events(
+	const struct kevent events[], size_t nevents,
+	uint32_t cookie)
 {
-	pipe_eventflag *evflag = wakeup_flag;
+	link_type::read_guard guard(*this);
 
-	struct timespec tv, *t;
+	for (std::size_t n = 0; n < nevents; ++n) {
+		int fd = events[n].ident;
+		ioready_events ev;
+		if (events[n].filter == EVFILT_READ) {
+			ev = ioready_input;
+		} else if (events[n].filter == EVFILT_WRITE) {
+			ev = ioready_output;
+		} else {
+			ev = ioready_none;
+		}
+
+		fdtab_.notify(fd, ev, cookie);
+	}
+}
+
+size_t ioready_dispatcher_kqueue::dispatch(
+	const std::chrono::steady_clock::duration * timeout, std::size_t limit)
+{
+	uint32_t cookie = fdtab_.cookie();
+
+	struct timespec ts;
+	struct timespec* kevent_timeout = nullptr;
 	if (timeout) {
-		tv.tv_sec = timeout->total_seconds();
-		tv.tv_nsec = timeout->total_nanoseconds() % 1000000000;
-		t = &tv;
-	} else t = 0;
-
-	if (max>16) max = 16;
-	struct kevent events[max];
-
-	ssize_t nevents;
-
-	if (evflag == 0) {
-		nevents=kevent(kqueue_fd, NULL, 0, events, max, t);
-
-		if (nevents>0) process_events(events, nevents);
-		else nevents=0;
-	} else {
-		atomics::fence();
-		evflag->start_waiting();
-		if (evflag->flagged!=0) {
-			tv.tv_sec=0;
-			tv.tv_nsec=0;
-			t=&tv;
-		}
-		nevents=kevent(kqueue_fd, NULL, 0, events, max, t);
-		evflag->stop_waiting();
-
-		if (nevents>0) process_events(events, nevents);
-		else nevents=0;
-
-		evflag->clear();
+		uint64_t nsecs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+			(*timeout) + std::chrono::nanoseconds(1) - std::chrono::steady_clock::duration(1)).count();
+		ts.tv_sec = nsecs / 1000000000;
+		ts.tv_nsec = nsecs % 1000000000;
+		kevent_timeout = &ts;
 	}
-	return nevents;
-}
 
-size_t ioready_dispatcher_kqueue::dispatch_pending(size_t max)
-{
-	pipe_eventflag *evflag=wakeup_flag;
-
-	struct timespec tv;
-	tv.tv_sec = 0;
-	tv.tv_nsec = 0;
-
-	if (max>16) max = 16;
+	if (limit > 16) {
+		limit = 16;
+	}
 	struct kevent events[16];
 
-	ssize_t nevents;
+	wakeup_flag_.start_waiting();
+	if (wakeup_flag_.flagged()) {
+		kevent_timeout = nullptr;
+	}
+	ssize_t nevents = ::kevent(
+		kqueue_fd_,
+		/* modlist */ nullptr, /* modcount */ 0,
+		events, limit,
+		kevent_timeout);
+	wakeup_flag_.stop_waiting();
 
-	nevents = kevent(kqueue_fd, NULL, 0, events, max, &tv);
+	if (nevents > 0) {
+		process_events(events, nevents, cookie);
+	} else {
+		nevents = 0;
+	}
 
-	if (nevents>0) process_events(events, nevents);
-	else nevents=0;
-
-	evflag->clear();
+	wakeup_flag_.clear();
 
 	return nevents;
 }
 
-eventflag *ioready_dispatcher_kqueue::get_eventflag()
-	throw(std::runtime_error, std::bad_alloc)
+size_t ioready_dispatcher_kqueue::dispatch_pending(std::size_t limit)
 {
-	/* singleton pattern, even safe on Alpha */
+	uint32_t cookie = fdtab_.cookie();
 
-	if (wakeup_flag)
-		return atomics::dereference_dependent(wakeup_flag);
-
-	singleton_mutex.lock();
-
-	if (wakeup_flag) {
-		atomics::fence();
-		singleton_mutex.unlock();
-		/* note: dereference_dependent not required as lock/unlock
-		implies an acquire/release fence */
-		return wakeup_flag;
+	if (limit > 16) {
+		limit = 16;
 	}
+	struct kevent events[16];
 
-	pipe_eventflag *tmp=0;
-	try {
-		tmp=new pipe_eventflag();
-		watch(boost::bind(&ioready_dispatcher_kqueue::drain_queue, this),
-			tmp->readfd, EVMASK_INPUT);
-	}
-	catch (std::bad_alloc) {
-		delete tmp;
-		singleton_mutex.unlock();
-		throw;
-	}
-	catch (std::runtime_error) {
-		delete tmp;
-		singleton_mutex.unlock();
-		throw;
-	}
-
-	/* make sure object is initialized fully before publishing */
-	atomics::fence();
-	wakeup_flag=tmp;
-	singleton_mutex.unlock();
-
-	return wakeup_flag;
-
-}
-
-void ioready_dispatcher_kqueue::synchronize() noexcept
-{
-	ioready_callback *stale=callback_tab.synchronize();
-	guard.sync_finished();
-
-	while(stale) {
-		ioready_callback *next=stale->inactive_next;
-		stale->cancelled();
-		stale->release();
-		stale=next;
-	}
-}
-
-void ioready_dispatcher_kqueue::update_evmask(int fd) noexcept
-{
-	ioready_events oldevmask=(ioready_events)(long)callback_tab.get_closure(fd);
-	ioready_callback *tmp=callback_tab.lookup_first_callback(fd);
-	ioready_events newevmask=ioready_events::none;
-	while(tmp) {
-		newevmask|=tmp->event_mask;
-		tmp=tmp->active_next;
-	}
-	struct kevent modlist[2];
-	int nmods=0;
-	if ((oldevmask^newevmask)&ioready_output) {
-		EV_SET(&modlist[nmods], fd, EVFILT_WRITE, (newevmask&ioready_output)?EV_ADD:EV_DELETE, 0, 0, (void *)EVFILT_WRITE);
-		nmods++;
-	}
-	if ((oldevmask^newevmask)&ioready_input) {
-		EV_SET(&modlist[nmods], fd, EVFILT_READ, (newevmask&ioready_input)?EV_ADD:EV_DELETE, 0, 0, (void *)EVFILT_READ);
-		nmods++;
-	}
 	struct timespec timeout;
-	timeout.tv_sec=0;
-	timeout.tv_nsec=0;
-	if (nmods>0)
-		kevent(kqueue_fd, modlist, nmods, NULL, 0, &timeout);
-	callback_tab.set_closure(fd, (void *)newevmask);
-}
+	timeout.tv_sec = 0;
+	timeout.tv_nsec = 0;
 
-void ioready_dispatcher_kqueue::register_ioready_callback(ioready_callback *link)
-	throw(std::bad_alloc)
-{
-	bool sync=guard.write_lock_async();
+	ssize_t nevents = ::kevent(
+		kqueue_fd_,
+		/* modlist */ nullptr, /* modcount */ 0,
+		events, limit,
+		&timeout);
 
-	try {
-		callback_tab.insert(link);
-	}
-	catch (std::bad_alloc) {
-		if (sync) synchronize();
-		else guard.write_unlock_async();
-		delete link;
-		throw;
+	if (nevents > 0) {
+		process_events(events, nevents, cookie);
+	} else {
+		nevents = 0;
 	}
 
-	update_evmask(link->fd);
+	wakeup_flag_.clear();
 
-	link->service=this;
-
-	if (sync) synchronize();
-	else guard.write_unlock_async();
+	return nevents;
 }
 
-void ioready_dispatcher_kqueue::unregister_ioready_callback(ioready_callback *link)
-	noexcept
+void
+ioready_dispatcher_kqueue::wake_up() noexcept
 {
-	bool sync=guard.write_lock_async();
+	wakeup_flag_.set();
+}
 
-	if (link->service) {
-		callback_tab.remove(link);
+void
+ioready_dispatcher_kqueue::synchronize() noexcept
+{
+	detail::fd_handler_table::delayed_handler_release rel = fdtab_.synchronize();
 
-		update_evmask(link->fd);
+	lock_.sync_finished();
 
-		link->service=0;
+	rel.clear();
+}
+
+void
+ioready_dispatcher_kqueue::update_evmask(
+	int fd,
+	ioready_events old_mask,
+	ioready_events new_mask) const noexcept
+{
+	struct kevent modlist[2];
+	std::size_t nmods = 0;
+	if ((old_mask & ioready_output) != (new_mask & ioready_output)) {
+		EV_SET(
+			&modlist[nmods], fd, EVFILT_WRITE,
+			(new_mask & ioready_output) ? EV_ADD : EV_DELETE,
+			0, 0, (void *)EVFILT_WRITE);
+		++nmods;
 	}
-
-	link->cancellation_mutex.unlock();
-
-	if (sync) synchronize();
-	else guard.write_unlock_async();
-
+	if ((old_mask & ioready_input) != (new_mask & ioready_input)) {
+		EV_SET(&modlist[nmods], fd, EVFILT_READ,
+			(new_mask & ioready_input) ? EV_ADD : EV_DELETE,
+			0, 0, (void *)EVFILT_READ);
+		++nmods;
+	}
+	if (nmods) {
+		struct timespec timeout;
+		timeout.tv_sec = 0;
+		timeout.tv_nsec = 0;
+		::kevent(kqueue_fd_,
+			modlist, nmods,
+			/* eventlist */ nullptr, /* eventcount */ 0,
+			&timeout);
+	}
 }
 
-void ioready_dispatcher_kqueue::modify_ioready_callback(ioready_callback *link, ioready_events event_mask)
-	noexcept
+ioready_connection
+ioready_dispatcher_kqueue::watch(
+	std::function<void(tscb::ioready_events)> function,
+	int fd, tscb::ioready_events event_mask)
 {
-	bool sync=guard.write_lock_async();
+	link_type::pointer link(new link_type(this, std::move(function), fd, event_mask));
+	ioready_events old_mask, new_mask;
 
-	link->event_mask=event_mask;
+	fdtab_.insert(link.get(), old_mask, new_mask);
+	update_evmask(link->fd(), old_mask, new_mask);
 
-	update_evmask(link->fd);
-
-	if (sync) synchronize();
-	else guard.write_unlock_async();
+	return ioready_connection(std::move(link));
 }
 
-void ioready_dispatcher_kqueue::drain_queue() noexcept
-{
-}
+/** \cond false */
 
 ioready_dispatcher *
-create_ioready_dispatcher_kqueue() throw(std::bad_alloc, std::runtime_error)
+create_ioready_dispatcher_kqueue()
 {
 	return new ioready_dispatcher_kqueue();
 }
+
+/** \endcond */
 
 }

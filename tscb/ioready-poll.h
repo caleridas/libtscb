@@ -3,7 +3,7 @@
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU Lesser General Public License version 2.1.
- * Refer to the file_event "COPYING" for details.
+ * Refer to the file "COPYING" for details.
  */
 
 #ifndef TSCB_IOREADY_POLL_H
@@ -13,30 +13,17 @@
 
 #include <sys/poll.h>
 
+#include <tscb/detail/eventflag.h>
 #include <tscb/ioready.h>
-#include <tscb/deferred.h>
-#include <tscb/fd-handler-table.h>
+#include <tscb/detail/deferred-locks.h>
+#include <tscb/detail/fd-handler-table.h>
 
 namespace tscb {
 
-/**
-	\brief Dispatcher for IO readiness events using the
-	<TT>poll</TT> system call
-
-	This class supports collecting the IO readiness state of
-	a set of file descriptors using the <TT>poll</TT> system
-	call, and dispatching callbacks to receivers that have
-	registered themselves for events on specific file descriptors.
-
-	The <TT>poll</TT> system call usually performs considerably
-	better than <TT>select</TT>, though it has the same
-	asymptotic behaviour (and is thus not very well-suited for
-	watching large numbers of mostly idle descriptors).
-*/
-class ioready_dispatcher_poll : public ioready_dispatcher {
+class ioready_dispatcher_poll final : public ioready_dispatcher {
 public:
 	~ioready_dispatcher_poll() noexcept override;
-	ioready_dispatcher_poll() /*throw(std::bad_alloc, std::runtime_error)*/;
+	ioready_dispatcher_poll();
 
 	size_t
 	dispatch(
@@ -47,8 +34,8 @@ public:
 	dispatch_pending(
 		std::size_t limit) override;
 
-	eventtrigger &
-	get_eventtrigger() noexcept override;
+	virtual void
+	wake_up() noexcept override;
 
 	ioready_connection
 	watch(
@@ -107,15 +94,10 @@ private:
 	std::mutex polltab_mutex_;
 	std::vector<struct pollfd> polltab_;
 	std::vector<polltab_index_entry> polltab_index_;
-	fd_handler_table fdtab_;
 
-	deferrable_rwlock lock_;
-	friend class read_guard<ioready_dispatcher_poll>;
-	friend class async_write_guard<ioready_dispatcher_poll>;
-
-	pipe_eventflag wakeup_flag_;
-
-	ioready_connection pipe_callback_;
+	detail::fd_handler_table fdtab_;
+	detail::deferrable_rwlock lock_;
+	detail::pipe_eventflag wakeup_flag_;
 };
 
 }

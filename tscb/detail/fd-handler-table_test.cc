@@ -6,17 +6,18 @@
  * Refer to the file "COPYING" for details.
  */
 
-#include <tscb/fd-handler-table.h>
+#include <tscb/detail/fd-handler-table.h>
 
 #include <gtest/gtest.h>
 
 namespace tscb {
+namespace detail {
 
 class FdHandlerTableTests : public ::testing::Test {
 public:
 	class link_type final : public fd_handler_table::link_type {
 	public:
-		using pointer = boost::intrusive_ptr<link_type>;
+		using pointer = detail::intrusive_ptr<link_type>;
 
 		link_type(
 			std::function<void(ioready_events)> fn,
@@ -67,4 +68,5 @@ TEST_F(FdHandlerTableTests, empty)
 	fd_handler_table tab;
 }
 
+}
 }

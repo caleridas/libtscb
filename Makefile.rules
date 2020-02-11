@@ -1,8 +1,9 @@
 CXXFLAGS += -O2 -fPIC -Wall
 
 TEST_EXECUTABLES += $(TESTS)
+COVERAGE_EXECUTABLES += $(COVERAGE_TESTS)
 
-EXECUTABLES += $(TARGET_EXECUTABLES) $(TEST_EXECUTABLES)
+EXECUTABLES += $(TARGET_EXECUTABLES) $(TEST_EXECUTABLES) $(COVERAGE_EXECUTABLES)
 
 all: $(SHARED_LIBRARIES) $(STATIC_LIBRARIES) $(TARGET_EXECUTABLES)
 
@@ -22,8 +23,7 @@ STATIC_MODULE_LINK =$(AR) r
 	$(CXX) -c $(CXXFLAGS) $(CPPFLAGS) -o $@ $<
 
 # static libraries
-%.a: BASENAME=$(patsubst %.a,%,$@)
-%.a: $(patsubst %cc, %.la, $($(BASENAME)_SOURCES))
+%.a: BASENAME=$(patsubst %.a, %, $@)
 %.a:
 	rm -f $@
 	ar clqv $@ $^
@@ -31,11 +31,9 @@ STATIC_MODULE_LINK =$(AR) r
 
 # dynamic libraries
 %.so: BASENAME=$(patsubst %.so,%,$@)
-%.so: $(patsubst %cc, %.lo, $($(BASENAME)_SOURCES))
 %.so:
 	rm -rf $@ $@.$($(BASENAME)_VERSION) $@.$($(BASENAME)_SOVERSION)
 	$(DYNAMIC_MODULE_LINK) -o $@.$($(BASENAME)_VERSION) $^ -Wl,-soname -Wl,$@.$($(BASENAME)_SOVERSION) $(LIBS)
-	strip $@.$($(BASENAME)_VERSION)
 	ln -sf $@.$($(BASENAME)_VERSION) $@.$($(BASENAME)_SOVERSION)
 	ln -sf $@.$($(BASENAME)_VERSION) $@
 
@@ -78,7 +76,7 @@ install-shared-%:
 # Pseudo-rules for maintaining development build tree
 
 clean:
-	find . -name "*.[ao]" -o -name "*.l[ao]" -o -name "*.so" -o -name "*.so.*" | xargs rm -f
+	find . -name "*.[ao]" -o -name "*.l[ao]" -o -name "*.so" -o -name "*.so.*" -o -name "*.gcda" -o -name "*.gcno" | xargs rm -f
 	rm -f $(EXECUTABLES)
 
 distclean: clean depclean
@@ -127,4 +125,29 @@ check: $(RUNTESTS)
 
 valgrind-check: $(VALGRINDTESTS)
 
+################################################################################
+# Unit test coverage rules
+
+%.coverage.la: %.cc
+	$(CXX) -c $(CXXFLAGS) $(CPPFLAGS) $(COVERAGEFLAGS) -o $@ $<
+
+$(COVERAGE_TESTS): %_test.coverage : %_test.coverage.la
+$(COVERAGE_TESTS): LDFLAGS += -lgtest -lgtest_main -lgmock -lgmock_main -pthread $(COVERAGEFLAGS)
+
+coverage: $(COVERAGE_TESTS) .PHONY
+	for CTEST in $(COVERAGE_TESTS) ; do $$CTEST ; done
+	mkdir -p doc
+	gcovr . --html-details -o doc/coverage.html
+
+################################################################################
+# Documentation rules
+
+docclean:
+	rm -rf doc
+
+doc: .PHONY
+	mkdir -p doc
+	doxygen doxygen.conf
+
 .PHONY:
+

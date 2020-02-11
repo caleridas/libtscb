@@ -1,0 +1,98 @@
+libtscb_HEADERS = \
+	tscb/childproc-monitor.h \
+	tscb/connection.h \
+	tscb/ioready.h \
+	tscb/ioready-epoll.h \
+	tscb/ioready-kqueue.h \
+	tscb/ioready-poll.h \
+	tscb/ioready-select.h \
+	tscb/reactor-service.h \
+	tscb/reactor.h \
+	tscb/signal.h \
+	tscb/timer.h \
+	tscb/workqueue.h \
+	tscb/detail/deferred-locks.h \
+	tscb/detail/eventflag.h \
+	tscb/detail/fd-handler-table.h \
+	tscb/detail/intrusive-list.h \
+	tscb/detail/intrusive-ptr.h \
+
+libtscb_SOURCES = \
+	tscb/childproc-monitor.cc \
+	tscb/connection.cc \
+	tscb/ioready.cc \
+	tscb/reactor-service.cc \
+	tscb/reactor.cc \
+	tscb/signal.cc \
+	tscb/timer.cc \
+	tscb/workqueue.cc \
+	tscb/detail/deferred-locks.cc \
+	tscb/detail/eventflag.cc \
+	tscb/detail/fd-handler-table.cc \
+
+libtscb_TESTS = \
+	tscb/childproc-monitor_test \
+	tscb/connection_test \
+	tscb/reactor-dispatch_test \
+	tscb/signal_test \
+	tscb/timer_test \
+	tscb/workqueue_test \
+	tscb/detail/deferred-locks_test \
+	tscb/detail/eventflag_test \
+	tscb/detail/fd-handler-table_test \
+	tscb/detail/intrusive-list_test \
+
+PKGCONFIG_FILES = \
+	libtscb.pc
+
+ifeq ($(DISPATCHER_POLL), yes)
+libtscb_SOURCES += tscb/ioready-poll.cc
+libtscb_HEADERS += tscb/ioready-poll.h
+libtscb_TESTS += tscb/ioready-poll_test
+endif
+
+ifeq ($(DISPATCHER_SELECT), yes)
+libtscb_SOURCES += tscb/ioready-select.cc
+libtscb_HEADERS += tscb/ioready-select.h
+libtscb_TESTS += tscb/ioready-select_test
+endif
+
+ifeq ($(DISPATCHER_EPOLL), yes)
+libtscb_SOURCES += tscb/ioready-epoll.cc
+libtscb_HEADERS += tscb/ioready-epoll.h
+libtscb_TESTS += tscb/ioready-epoll_test
+endif
+
+ifeq ($(DISPATCHER_KQUEUE), yes)
+libtscb_SOURCES += tscb/ioready-kqueue.cc
+libtscb_HEADERS += tscb/ioready-kqueue.h
+libtscb_TESTS += tscb/ioready-kqueue_test
+endif
+
+default: all
+
+libtscb.so: $(patsubst %.cc, %.lo, $(libtscb_SOURCES))
+libtscb.a: $(patsubst %.cc, %.la, $(libtscb_SOURCES))
+SOURCES += $(libtscb_SOURCES)
+HEADERS += $(libtscb_HEADERS)
+STATIC_LIBRARIES += libtscb.a
+libtscb_VERSION=$(VERSION)
+libtscb_SOVERSION=$(basename $(basename $(VERSION)))
+ifeq ($(ENABLE_SHARED), yes)
+SHARED_LIBRARIES+=libtscb.so
+endif
+
+TESTS += $(libtscb_TESTS)
+$(libtscb_TESTS): libtscb.a
+$(libtscb_TESTS): LDFLAGS+=libtscb.a
+
+SOURCES += $(patsubst %, %.cc, $(libtscb_TESTS))
+
+ifeq ($(ENABLE_COVERAGE), yes)
+libtscb_COVERAGE = $(patsubst %_test, %_test.coverage, $(libtscb_TESTS))
+libtscb.coverage.a: $(patsubst %.cc, %.coverage.la, $(libtscb_SOURCES))
+COVERAGE_LIBRARIES += libtscb.coverage.a
+COVERAGE_TESTS += $(libtscb_COVERAGE)
+$(libtscb_COVERAGE): libtscb.coverage.a
+$(libtscb_COVERAGE): LDFLAGS+=libtscb.coverage.a
+endif

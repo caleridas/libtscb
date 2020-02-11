@@ -15,16 +15,51 @@
 
 namespace tscb {
 
-class ioready_dispatcher_poll::link_type final : public fd_handler_table::link_type {
+/**
+	\class ioready_dispatcher_poll
+	\brief
+		Dispatcher for IO readiness events using the
+		\p poll system call
+	\headerfile tscb/ioready-poll.h <tscb/ioready-poll.h>
+
+	This class supports collecting the IO readiness state of
+	a set of file descriptors using the <TT>poll</TT> system
+	call, and dispatching callbacks to receivers that have
+	registered themselves for events on specific file descriptors.
+
+	The <TT>poll</TT> system call usually performs considerably
+	better than <TT>select</TT>, though it has the same
+	asymptotic behaviour (and is thus not very well-suited for
+	watching large numbers of mostly idle descriptors).
+*/
+
+
+/* exclude private nested class from doxygen */
+/** \cond false */
+
+class ioready_dispatcher_poll::link_type final
+	: public detail::fd_handler_table::link_type {
 public:
-	using pointer = boost::intrusive_ptr<link_type>;
+	using pointer = detail::intrusive_ptr<link_type>;
+
+	using read_guard = detail::read_guard<
+		ioready_dispatcher_poll,
+		&ioready_dispatcher_poll::lock_,
+		&ioready_dispatcher_poll::synchronize
+	>;
+
+	using write_guard = detail::async_write_guard<
+		ioready_dispatcher_poll,
+		&ioready_dispatcher_poll::lock_,
+		&ioready_dispatcher_poll::synchronize
+	>;
 
 	link_type(
 		ioready_dispatcher_poll * master,
 		std::function<void(ioready_events)> fn,
 		int fd,
 		ioready_events event_mask) noexcept
-		: fd_handler_table::link_type(std::move(fn), fd, event_mask)
+		: detail::fd_handler_table::link_type(std::move(fn), fd, event_mask)
 		, master_(master)
 	{
 	}
@@ -41,7 +76,7 @@ public:
 		ioready_dispatcher_poll * master = master_.load(std::memory_order_relaxed);
 
 		if (master) {
-			async_write_guard<ioready_dispatcher_poll> guard(*master);
+			write_guard guard(*master);
 			ioready_events old_mask, new_mask;
 			master->fdtab_.remove(this, old_mask, new_mask);
 			{
@@ -69,7 +104,7 @@ public:
 		ioready_dispatcher_poll * master = master_.load(std::memory_order_relaxed);
 
 		if (master) {
-			async_write_guard<ioready_dispatcher_poll> guard(*master);
+			write_guard guard(*master);
 			ioready_events old_mask, new_mask;
 			master->fdtab_.modify(this, new_event_mask, old_mask, new_mask);
 			{
@@ -117,6 +152,8 @@ private:
 	bool committed_ = true;
 };
 
+/** \endcond */
+
 ioready_events
 ioready_dispatcher_poll::translate_os_to_tscb(int ev) noexcept
 {
@@ -153,11 +190,10 @@ ioready_dispatcher_poll::translate_tscb_to_os(ioready_events ev) noexcept
 /* ioready_dispatcher_poll */
 
 ioready_dispatcher_poll::ioready_dispatcher_poll()
-	/*throw(std::bad_alloc, std::runtime_error)*/
 {
-	pipe_callback_ = watch(
+	watch(
 		[this](ioready_events) {},
-		wakeup_flag_.readfd_, ioready_input);
+		wakeup_flag_.readfd(), ioready_input);
 }
 
 ioready_dispatcher_poll::~ioready_dispatcher_poll() noexcept
@@ -195,16 +231,16 @@ ioready_dispatcher_poll::~ioready_dispatcher_poll() noexcept
 	}
 }
 
-eventtrigger &
-ioready_dispatcher_poll::get_eventtrigger() noexcept
+void
+ioready_dispatcher_poll::wake_up() noexcept
 {
-	return wakeup_flag_;
+	wakeup_flag_.set();
 }
 
 size_t
 ioready_dispatcher_poll::dispatch(const std::chrono::steady_clock::duration * timeout, std::size_t limit)
 {
-	read_guard<ioready_dispatcher_poll> guard(*this);
+	link_type::read_guard guard(*this);
 
 	uint32_t cookie = fdtab_.cookie();
 	auto ptab = get_polltab();
@@ -220,7 +256,7 @@ ioready_dispatcher_poll::dispatch(const std::chrono::steady_clock::duration * ti
 
 	wakeup_flag_.start_waiting();
 
-	if (wakeup_flag_.flagged_.load(std::memory_order_relaxed) != 0) {
+	if (wakeup_flag_.flagged()) {
 		poll_timeout = 0;
 	}
 
@@ -241,7 +277,7 @@ ioready_dispatcher_poll::dispatch(const std::chrono::steady_clock::duration * ti
 size_t
 ioready_dispatcher_poll::dispatch_pending(std::size_t limit)
 {
-	read_guard<ioready_dispatcher_poll> guard(*this);
+	link_type::read_guard guard(*this);
 
 	uint32_t cookie = fdtab_.cookie();
 	auto ptab = get_polltab();
@@ -263,7 +299,7 @@ ioready_dispatcher_poll::watch(
 {
 	link_type::pointer link(new link_type(this, std::move(function), fd, event_mask));
 	{
-		async_write_guard<ioready_dispatcher_poll> wguard(*this);
+		link_type::write_guard wguard(*this);
 		polltab_index_alloc_guard pguard(*this, fd);
 
 		ioready_events old_mask, new_mask;
@@ -280,7 +316,7 @@ ioready_dispatcher_poll::watch(
 void
 ioready_dispatcher_poll::synchronize() noexcept
 {
-	fd_handler_table::delayed_handler_release rel = fdtab_.synchronize();
+	detail::fd_handler_table::delayed_handler_release rel = fdtab_.synchronize();
 
 	lock_.sync_finished();
 
@@ -353,8 +389,6 @@ ioready_dispatcher_poll::get_polltab()
 std::size_t
 ioready_dispatcher_poll::handle_events(struct pollfd * ptab, std::size_t ptab_size, std::size_t limit, uint32_t cookie)
 {
-	read_guard<ioready_dispatcher_poll> guard(*this);
-
 	std::size_t count = 0;
 	for (std::size_t n = 0; n < ptab_size; ++n) {
 		if (count >= limit) {
@@ -371,10 +405,13 @@ ioready_dispatcher_poll::handle_events(struct pollfd * ptab, std::size_t ptab_si
 	return count;
 }
 
+/** \cond false */
+
 ioready_dispatcher *
 create_ioready_dispatcher_poll() /* throw(std::bad_alloc, std::runtime_error) */
 {
 	return new ioready_dispatcher_poll();
 }
+/** \endcond */
 
 }

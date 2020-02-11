@@ -8,19 +8,57 @@
 
 #include <tscb/ioready-select.h>
 
-
 namespace tscb {
 
-class ioready_dispatcher_select::link_type final : public fd_handler_table::link_type {
+/**
+	\class ioready_dispatcher_select
+	\brief Dispatcher for IO readiness events using the \p select
+	system call
+	\headerfile tscb/ioready-select.h <tscb/ioready-select.h>
+
+	This class supports collecting the IO readiness state of a set of
+	file descriptors using the \p select system call, and dispatching
+	callbacks to receivers that have registered themselves for events
+	on specific file descriptors.
+
+	\p select< is the most portable system call to determine the IO
+	readiness state of a set of descriptors, but also by far the
+	slowest. It has a hard (compile-time) limitation on the number of
+	permissible descriptors, and is O(n) in the number of descriptors
+	watched.
+
+	Use of this dispatcher should be avoided if possible, choose one of
+	the better performing alternatives instead and fall back to \ref
+	tscb::ioready_dispatcher_select "ioready_dispatcher_select" only if
+	nothing else is available.
+*/
+
+/* exclude private nested class from doxygen */
+/** \cond false */
+
+class ioready_dispatcher_select::link_type final
+	: public detail::fd_handler_table::link_type {
 public:
-	using pointer = boost::intrusive_ptr<link_type>;
+	using pointer = detail::intrusive_ptr<link_type>;
+
+	using read_guard = detail::read_guard<
+		ioready_dispatcher_select,
+		&ioready_dispatcher_select::lock_,
+		&ioready_dispatcher_select::synchronize
+	>;
+
+	using write_guard = detail::async_write_guard<
+		ioready_dispatcher_select,
+		&ioready_dispatcher_select::lock_,
+		&ioready_dispatcher_select::synchronize
+	>;
 
 	link_type(
 		ioready_dispatcher_select * master,
 		std::function<void(ioready_events)> fn,
 		int fd,
 		ioready_events event_mask) noexcept
-		: fd_handler_table::link_type(std::move(fn), fd, event_mask)
+		: detail::fd_handler_table::link_type(std::move(fn), fd, event_mask)
 		, master_(master)
 	{
 	}
@@ -37,7 +75,7 @@ public:
 		ioready_dispatcher_select * master = master_.load(std::memory_order_relaxed);
 
 		if (master) {
-			async_write_guard<ioready_dispatcher_select> guard(*master);
+			write_guard guard(*master);
 			ioready_events old_mask, new_mask;
 			master->fdtab_.remove(this, old_mask, new_mask);
 			{
@@ -65,7 +103,7 @@ public:
 		ioready_dispatcher_select * master = master_.load(std::memory_order_relaxed);
 
 		if (master) {
-			async_write_guard<ioready_dispatcher_select> guard(*master);
+			write_guard guard(*master);
 			ioready_events old_mask, new_mask;
 			master->fdtab_.modify(this, new_event_mask, old_mask, new_mask);
 			{
@@ -82,6 +120,8 @@ private:
 	std::atomic<ioready_dispatcher_select *> master_;
 };
 
+/** \endcond */
+
 ioready_dispatcher_select::ioready_dispatcher_select()
 	/* throw(std::bad_alloc, std::runtime_error) */
 	: maxfd_(0)
@@ -92,7 +132,7 @@ ioready_dispatcher_select::ioready_dispatcher_select()
 
 	watch(
 		[this](ioready_events) {},
-		wakeup_flag_.readfd_, ioready_input);
+		wakeup_flag_.readfd(), ioready_input);
 }
 
 ioready_dispatcher_select::~ioready_dispatcher_select() noexcept
@@ -130,10 +170,10 @@ ioready_dispatcher_select::~ioready_dispatcher_select() noexcept
 	}
 }
 
-eventtrigger &
-ioready_dispatcher_select::get_eventtrigger() noexcept
+void
+ioready_dispatcher_select::wake_up() noexcept
 {
-	return wakeup_flag_;
+	wakeup_flag_.set();
 }
 
 std::size_t
@@ -143,8 +183,6 @@ ioready_dispatcher_select::handle_events(
 	std::size_t limit,
 	uint32_t cookie)
 {
-	read_guard<ioready_dispatcher_select> guard(*this);
-
 	std::size_t count = 0;
 	for (int fd = 0; fd < maxfd; ++fd) {
 		if (count >= limit) {
@@ -179,7 +217,7 @@ ioready_dispatcher_select::dispatch(
 	const std::chrono::steady_clock::duration *timeout,
 	std::size_t limit)
 {
-	read_guard<ioready_dispatcher_select> guard(*this);
+	link_type::read_guard guard(*this);
 
 	uint32_t cookie = fdtab_.cookie();
 
@@ -197,8 +235,8 @@ ioready_dispatcher_select::dispatch(
 	if (timeout) {
 		uint64_t usecs = std::chrono::duration_cast<std::chrono::microseconds>(
 			(*timeout) + std::chrono::microseconds(1) - std::chrono::steady_clock::duration(1)).count();
-		tv.tv_sec = usecs/1000000;
-		tv.tv_usec = usecs%1000000;
+		tv.tv_sec = usecs / 1000000;
+		tv.tv_usec = usecs % 1000000;
 		select_timeout = &tv;
 	} else {
 		select_timeout = nullptr;
@@ -206,7 +244,7 @@ ioready_dispatcher_select::dispatch(
 
 	wakeup_flag_.start_waiting();
 
-	if (wakeup_flag_.flagged_.load(std::memory_order_relaxed) != 0) {
+	if (wakeup_flag_.flagged()) {
 		tv.tv_sec = 0;
 		tv.tv_usec = 0;
 		select_timeout = &tv;
@@ -230,7 +268,7 @@ std::size_t
 ioready_dispatcher_select::dispatch_pending(
 	std::size_t limit)
 {
-	read_guard<ioready_dispatcher_select> guard(*this);
+	link_type::read_guard guard(*this);
 
 	uint32_t cookie = fdtab_.cookie();
 
@@ -267,7 +305,7 @@ ioready_dispatcher_select::watch(
 {
 	link_type::pointer link(new link_type(this, std::move(function), fd, event_mask));
 	{
-		async_write_guard<ioready_dispatcher_select> guard(*this);
+		link_type::write_guard guard(*this);
 
 		ioready_events old_mask, new_mask;
 		fdtab_.insert(link.get(), old_mask, new_mask);
@@ -320,17 +358,19 @@ ioready_dispatcher_select::update_fdsets(int fd, ioready_events mask) noexcept
 void
 ioready_dispatcher_select::synchronize() noexcept
 {
-	fd_handler_table::delayed_handler_release rel = fdtab_.synchronize();
+	detail::fd_handler_table::delayed_handler_release rel = fdtab_.synchronize();
 
 	lock_.sync_finished();
 
 	rel.clear();
 }
 
+/** \cond false */
 ioready_dispatcher *
 create_ioready_dispatcher_select() /* throw(std::bad_alloc, std::runtime_error) */
 {
 	return new ioready_dispatcher_select();
 }
+/** \endcond */
 
 }

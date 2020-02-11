@@ -9,77 +9,23 @@
 #ifndef TSCB_CONNECTION_H
 #define TSCB_CONNECTION_H
 
+#include <atomic>
+#include <cstddef>
 
-#include <mutex>
-#include <stdexcept>
-#include <functional>
-
-#include <boost/intrusive_ptr.hpp>
-
-#include <tscb/deferred.h>
+#include <tscb/detail/intrusive-ptr.h>
 
 namespace tscb {
 
-
-/**
-	\brief Connection between signal and receiver
-
-	Every other connection implemented in this library can be
-	downcast to this type.
-*/
-class connection {
+class connection final {
 public:
-	/**
-		\brief Abstract base of all callback objects
-
-		This object represents the link between a sender/caller, from
-		which notification is requested, to a reciever/callee, to which
-		notification is to be delivered. It is an abstract base class
-		for all different kinds of links established through the various
-		notification interfaces (callback_chains, file or timer events).
-	*/
 	class link_type {
 	public:
-		using pointer = boost::intrusive_ptr<link_type>;
+		using pointer = detail::intrusive_ptr<link_type>;
 
 		inline link_type() noexcept : refcount_(0) {}
 		virtual ~link_type() noexcept;
-		/**
-			\brief Break the connection
-
-			Calling this function will break the notification connection. It will
-			usually cease notifications to be delivered some time after this
-			function has returned. The exact semantic guarantee is:
-
-			<UL>
-				<LI>
-					no notification will be delivered within the same thread
-					that has called \ref disconnect after \ref disconnect has
-					returned (i.e. within the same thread, \ref disconnect
-					is synchronous)
-				</LI>
-				<LI>
-					notifications in other threads may be delivered after
-					\ref disconnect has returned in one thread, but only
-					for events that occured before \ref disconnect has returned
-					(i.e. for other threads, cancellation is asynchronous).
-				</LI>
-			</UL>
-
-			The weak synchronicity guarantee allows implementations that
-			provide excellent concurrency. Furthermore it allows
-			\ref disconnect to be called from arbitrary contexts: from within
-			the callback to be cancelled, from different threads etc. It
-			is guaranteed to be deadlock free.
-
-		*/
 		virtual void
 		disconnect() noexcept = 0;
-		/**
-			\brief Test if connection is alive
-
-			\return True if connected, false if disconnected
-		*/
 		virtual bool
 		is_connected() const noexcept = 0;
 
@@ -110,7 +56,7 @@ public:
 	connection() noexcept {}
 
 	inline explicit
-	connection(boost::intrusive_ptr<link_type> link) noexcept
+	connection(detail::intrusive_ptr<link_type> link) noexcept
 		: link_(std::move(link))
 	{
 	}
@@ -174,21 +120,10 @@ private:
 	link_type::pointer link_;
 };
 
-/**
-	\brief Scoped connection between signal and receiver
-
-	Variant of \ref connection object that automatically
-	breaks the connection when this object goes out of scope.
-
-	\warning This class can be used by an object to track
-	signal connections to itself, and have all connections
-	broken automatically when the object is destroyed.
-	Only do this when you know that all callback invocations
-	as well as the destructor will always run from the
-	same thread.
-*/
-class scoped_connection {
+class scoped_connection final {
 public:
+	using link_type = connection::link_type;
+
 	inline ~scoped_connection() noexcept {
 		disconnect();
 	}
@@ -235,7 +170,19 @@ public:
 		return *this;
 	}
 
-protected:
+	inline const link_type::pointer &
+	link() const noexcept
+	{
+		return connection_.link();
+	}
+
+	inline link_type *
+	get() const noexcept
+	{
+		return connection_.get();
+	}
+
+private:
 	connection connection_;
 };
 

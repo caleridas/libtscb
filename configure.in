@@ -61,7 +61,6 @@ DISPATCHER_EPOLL=yes
 
 AC_CHECK_FUNC(pipe2,[
 AC_DEFINE(HAVE_PIPE2,1,[Define if you have the pipe2 system call.])
-DISPATCHER_EPOLL=yes
 ],[])
 
 AC_CHECK_FUNC(kqueue,[
@@ -71,12 +70,15 @@ DISPATCHER_KQUEUE=yes
 
 AC_ARG_ENABLE(shared,[  --disable-shared        Disable shared library build of libtscb],[],[ENABLE_SHARED=yes])
 
+AC_ARG_ENABLE(coverage,[  --enable-coverage       Enable test coverage computation],[ENABLE_COVERAGE=yes],[])
+
 AC_SUBST(DISPATCHER_POLL)
 AC_SUBST(DISPATCHER_SELECT)
 AC_SUBST(DISPATCHER_EPOLL)
 AC_SUBST(DISPATCHER_KQUEUE)
 AC_SUBST(VERSION)
 AC_SUBST(ENABLE_SHARED)
+AC_SUBST(ENABLE_COVERAGE)
 
 # Generate output files
 AC_CONFIG_FILES([Makefile])

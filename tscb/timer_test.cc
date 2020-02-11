@@ -8,29 +8,9 @@
 
 #include <tscb/timer.h>
 
-#include <tscb/eventflag.h>
-
 #include <gtest/gtest.h>
 
 namespace tscb {
-
-class TimerTests : public ::testing::Test {
-public:
-	class my_eventflag: public eventflag {
-	public:
-		my_eventflag() : flagged(false) {}
-		virtual ~my_eventflag() noexcept {}
-
-		virtual void set() noexcept {flagged=true;}
-		virtual void wait() noexcept {while(!flagged);}
-		virtual void clear() noexcept {flagged=false;}
-
-		volatile bool flagged;
-	};
-
-protected:
-	my_eventflag flag_;
-};
 
 class X {
 public:
@@ -53,46 +33,46 @@ public:
 	friend inline void intrusive_ptr_release(Y * y) {--y->refcount_;}
 };
 
-TEST_F(TimerTests, empty)
+TEST(TimerTests, empty)
 {
-	basic_timer_dispatcher<long long> timers(flag_);
+	basic_timer_dispatcher<long long> timers([](){});
 	EXPECT_EQ(0, timers.run(0));
 	EXPECT_FALSE(timers.next_timer().first);
 }
 
-TEST_F(TimerTests, simple)
+TEST(TimerTests, simple)
 {
-	basic_timer_dispatcher<long long> tq(flag_);
+	bool flagged = false;
+	basic_timer_dispatcher<long long> tq([&flagged](){flagged = true;});
 
 	int called = 0;
 
 	basic_timer_connection<long long> connection;
 	connection = tq.timer([&called, &connection](long long t) {++called; connection.set(t + 1);}, 0);
 
-	EXPECT_TRUE(flag_.flagged);
-	flag_.clear();
+	EXPECT_TRUE(flagged);
+	flagged = false;
 
 	std::size_t count = tq.run(0);
 	EXPECT_EQ(1 ,count);
 	EXPECT_TRUE(tq.next_timer().first);
 	EXPECT_EQ(1, called);
 	EXPECT_EQ(1, connection.link()->when());
-	EXPECT_FALSE(flag_.flagged);
+	EXPECT_FALSE(flagged);
 	connection.disconnect();
-	EXPECT_FALSE(flag_.flagged);
-	flag_.clear();
+	EXPECT_FALSE(flagged);
 	count = tq.run(1);
 	EXPECT_EQ(0, count);
 	EXPECT_FALSE(tq.next_timer().first);
 	EXPECT_EQ(1, called);
-	EXPECT_FALSE(flag_.flagged);
+	EXPECT_FALSE(flagged);
 
 	EXPECT_FALSE(connection.is_connected());
 }
 
-TEST_F(TimerTests, self_disconnect)
+TEST(TimerTests, self_disconnect)
 {
-	basic_timer_dispatcher<long long> timers(flag_);
+	basic_timer_dispatcher<long long> timers([](){});
 
 	int called = 0;
 	basic_timer_connection<long long> connection;
@@ -102,9 +82,9 @@ TEST_F(TimerTests, self_disconnect)
 	EXPECT_FALSE(connection.is_connected());
 }
 
-TEST_F(TimerTests, member_fn)
+TEST(TimerTests, member_fn)
 {
-	basic_timer_dispatcher<long long> timers(flag_);
+	basic_timer_dispatcher<long long> timers([](){});
 
 	X x;
 	basic_timer_connection<long long> connection =
@@ -113,28 +93,28 @@ TEST_F(TimerTests, member_fn)
 	EXPECT_FALSE(connection.is_connected());
 }
 
-TEST_F(TimerTests, reference_count_disconnect)
+TEST(TimerTests, reference_count_disconnect)
 {
-	basic_timer_dispatcher<long long> timers(flag_);
+	basic_timer_dispatcher<long long> timers([](){});
 
 	X x;
 	EXPECT_EQ(0, x.refcount_);
 	basic_timer_connection<long long> connection =
-		timers.timer(std::bind(&X::fn, boost::intrusive_ptr<X>(&x), std::placeholders::_1), 0);
+		timers.timer(std::bind(&X::fn, detail::intrusive_ptr<X>(&x), std::placeholders::_1), 0);
 	EXPECT_EQ(1, x.refcount_);
 	connection.disconnect();
 	EXPECT_EQ(0, x.refcount_);
 	EXPECT_FALSE(connection.is_connected());
 }
 
-TEST_F(TimerTests, reference_count_expire)
+TEST(TimerTests, reference_count_expire)
 {
-	basic_timer_dispatcher<long long> timers(flag_);
+	basic_timer_dispatcher<long long> timers([](){});
 
 	Y y;
 	EXPECT_EQ(0, y.refcount_);
 	y.connection =
-		timers.timer(std::bind(&Y::fn, boost::intrusive_ptr<Y>(&y), std::placeholders::_1), 0);
+		timers.timer(std::bind(&Y::fn, detail::intrusive_ptr<Y>(&y), std::placeholders::_1), 0);
 	EXPECT_EQ(1, y.refcount_);
 	timers.run(0);
 	EXPECT_EQ(0, y.refcount_);

@@ -6,30 +6,32 @@
  * Refer to the file "COPYING" for details.
  */
 
-#include <tscb/eventflag.h>
+#include <tscb/detail/eventflag.h>
 
 #include <gtest/gtest.h>
 
 namespace tscb {
+namespace detail {
 
 TEST(EventFlagTests, pipe_eventflag_ops)
 {
 	pipe_eventflag e;
 
-	EXPECT_EQ(0, e.flagged_.load(std::memory_order_relaxed));
+	EXPECT_FALSE(e.flagged());
 	e.set();
-	EXPECT_EQ(1, e.flagged_.load(std::memory_order_relaxed));
+	EXPECT_TRUE(e.flagged());
 	e.clear();
-	EXPECT_EQ(0, e.flagged_.load(std::memory_order_relaxed));
+	EXPECT_FALSE(e.flagged());
 
 	e.start_waiting();
-	EXPECT_EQ(1, e.waiting_.load(std::memory_order_relaxed));
+	EXPECT_EQ(1, e.waiting());
 	e.stop_waiting();
-	EXPECT_EQ(0, e.waiting_.load(std::memory_order_relaxed));
+	EXPECT_EQ(0, e.waiting());
 
 	e.set();
-	EXPECT_EQ(1, e.flagged_.load(std::memory_order_relaxed));
+	EXPECT_TRUE(e.flagged());
 	e.clear();
 }
 
+}
 }

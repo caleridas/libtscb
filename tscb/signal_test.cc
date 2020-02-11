@@ -65,7 +65,7 @@ TEST_F(SignalTests, simple)
 	r.link1 = chain.connect(
 		std::bind(
 			&Receiver::cbrecv1,
-			boost::intrusive_ptr<Receiver>(&r),
+			detail::intrusive_ptr<Receiver>(&r),
 			std::placeholders::_1));
 	EXPECT_TRUE(r.refcount == 2);
 
@@ -87,7 +87,7 @@ TEST_F(SignalTests, self_cancel)
 	r.link1 = chain.connect(
 		std::bind(
 			&Receiver::cbrecv2,
-			boost::intrusive_ptr<Receiver>(&r),
+			detail::intrusive_ptr<Receiver>(&r),
 			std::placeholders::_1));
 
 	chain(3);
@@ -105,8 +105,8 @@ TEST_F(SignalTests, mutual_cancel)
 	executed) and that reference counting still works as expected */
 
 	Receiver r;
-	r.link1 = chain.connect(std::bind(&Receiver::cbrecv3, boost::intrusive_ptr<Receiver>(&r), std::placeholders::_1));
-	r.link2 = chain.connect(std::bind(&Receiver::cbrecv3, boost::intrusive_ptr<Receiver>(&r), std::placeholders::_1));
+	r.link1 = chain.connect(std::bind(&Receiver::cbrecv3, detail::intrusive_ptr<Receiver>(&r), std::placeholders::_1));
+	r.link2 = chain.connect(std::bind(&Receiver::cbrecv3, detail::intrusive_ptr<Receiver>(&r), std::placeholders::_1));
 
 	chain(5);
 
@@ -122,7 +122,7 @@ TEST_F(SignalTests, cancel_refcount)
 	Receiver r;
 	{
 		tscb::signal<void (int)> chain;
-		r.link1 = chain.connect(std::bind(&Receiver::cbrecv1, boost::intrusive_ptr<Receiver>(&r), std::placeholders::_1));
+		r.link1 = chain.connect(std::bind(&Receiver::cbrecv1, detail::intrusive_ptr<Receiver>(&r), std::placeholders::_1));
 		EXPECT_TRUE(r.refcount == 2);
 	}
 	EXPECT_TRUE(r.refcount == 1);

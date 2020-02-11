@@ -28,11 +28,13 @@ public:
 	watch_childproc(std::function<void(int, const rusage &)> function, pid_t pid) = 0;
 };
 
-class childproc_monitor : public childproc_monitor_service {
+class childproc_monitor final : public childproc_monitor_service {
 public:
-	childproc_monitor(bool reap_all_children = false);
-
 	~childproc_monitor() noexcept override;
+
+	childproc_monitor();
+
+	explicit childproc_monitor(bool reap_all_children);
 
 	connection
 	watch_childproc(std::function<void(int, const rusage &)> function, pid_t pid) override;
@@ -47,10 +49,9 @@ private:
 	remove(link_type * cb) noexcept;
 
 	void
-	synchronize();
+	synchronize() noexcept;
 
-	deferrable_rwlock lock_;
-	friend class read_guard<childproc_monitor>;
+	detail::deferrable_rwlock lock_;
 
 	bool reap_all_children_;
 

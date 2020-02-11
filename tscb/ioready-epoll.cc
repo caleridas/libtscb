@@ -17,6 +17,27 @@
 
 namespace tscb {
 
+/**
+	\class ioready_dispatcher_epoll
+	\headerfile tscb/ioready-epoll.h <tscb/ioready-epoll.h>
+	\brief Dispatcher for IO readiness events using the
+	\p epoll_* family of system calls
+
+	This class supports collecting the IO readiness state of a set of
+	file descriptors using the \p epoll_* family of system calls, and
+	dispatching callbacks to receivers that have registered themselves
+	for events on specific file descriptors.
+
+	The \p epoll_* family of system calls provide the fastest possible
+	way to observe the state of a set of file descriptors on Linux
+	systems. Like \ref tscb::ioready_dispatcher_kqueue
+	"ioready_dispatcher_kqueue" all relevant operations are O(1), i.e.
+	independent from the number of descriptors being watched.
+
+	The \ref dispatch method can usefully be called from multiple: It
+	will result in separate events to be dispatched in parallel.
+*/
+
 namespace {
 
 ioready_events
@@ -54,16 +75,32 @@ translate_tscb_to_os(ioready_events ev) noexcept
 
 }
 
-class ioready_dispatcher_epoll::link_type final : public fd_handler_table::link_type {
+/* exclude private nested class from doxygen */
+/** \cond false */
+
+class ioready_dispatcher_epoll::link_type final
+	: public detail::fd_handler_table::link_type {
 public:
-	using pointer = boost::intrusive_ptr<link_type>;
+	using pointer = detail::intrusive_ptr<link_type>;
+
+	using read_guard = detail::read_guard<
+		ioready_dispatcher_epoll,
+		&ioready_dispatcher_epoll::lock_,
+		&ioready_dispatcher_epoll::synchronize
+	>;
+
+	using write_guard = detail::async_write_guard<
+		ioready_dispatcher_epoll,
+		&ioready_dispatcher_epoll::lock_,
+		&ioready_dispatcher_epoll::synchronize
+	>;
 
 	link_type(
 		ioready_dispatcher_epoll * master,
 		std::function<void(ioready_events)> fn,
 		int fd,
 		ioready_events event_mask) noexcept
-		: fd_handler_table::link_type(std::move(fn), fd, event_mask)
+		: detail::fd_handler_table::link_type(std::move(fn), fd, event_mask)
 		, master_(master)
 	{
 	}
@@ -80,7 +117,7 @@ public:
 		ioready_dispatcher_epoll * master = master_.load(std::memory_order_relaxed);
 
 		if (master) {
-			async_write_guard<ioready_dispatcher_epoll> guard(*master);
+			write_guard guard(*master);
 			ioready_events old_mask, new_mask;
 			master->fdtab_.remove(this, old_mask, new_mask);
 			if (old_mask && old_mask != new_mask) {
@@ -117,7 +154,7 @@ public:
 		ioready_dispatcher_epoll * master = master_.load(std::memory_order_relaxed);
 
 		if (master) {
-			async_write_guard<ioready_dispatcher_epoll> guard(*master);
+			write_guard guard(*master);
 			ioready_events old_mask, new_mask;
 			master->fdtab_.modify(this, new_event_mask, old_mask, new_mask);
 			if (old_mask != new_mask) {
@@ -150,6 +187,8 @@ private:
 	std::mutex registration_mutex_;
 	std::atomic<ioready_dispatcher_epoll *> master_;
 };
+
+/** \endcond */
 
 ioready_dispatcher_epoll::~ioready_dispatcher_epoll() noexcept
 {
@@ -189,7 +228,6 @@ ioready_dispatcher_epoll::~ioready_dispatcher_epoll() noexcept
 }
 
 ioready_dispatcher_epoll::ioready_dispatcher_epoll()
-	/* throw(std::runtime_error) */
 {
 #if defined(HAVE_EPOLL1) && defined(EPOLL_CLOEXEC)
 	epoll_fd_ = ::epoll_create1(EPOLL_CLOEXEC);
@@ -201,13 +239,13 @@ ioready_dispatcher_epoll::ioready_dispatcher_epoll()
 		throw std::runtime_error("Unable to create epoll descriptor");
 	}
 
-	watch([this](ioready_events){}, wakeup_flag_.readfd_, ioready_input);
+	watch([this](ioready_events){}, wakeup_flag_.readfd(), ioready_input);
 }
 
 void
 ioready_dispatcher_epoll::process_events(const epoll_event events[], std::size_t nevents, uint32_t cookie)
 {
-	read_guard<ioready_dispatcher_epoll> guard(*this);
+	link_type::read_guard guard(*this);
 
 	for (std::size_t n = 0; n < nevents; ++n) {
 		int fd = events[n].data.fd;
@@ -239,7 +277,7 @@ ioready_dispatcher_epoll::dispatch(const std::chrono::steady_clock::duration * t
 	ssize_t nevents;
 
 	wakeup_flag_.start_waiting();
-	if (wakeup_flag_.flagged_.load(std::memory_order_relaxed) != 0) {
+	if (wakeup_flag_.flagged()) {
 		poll_timeout = 0;
 	}
 	nevents = ::epoll_wait(epoll_fd_, events, limit, poll_timeout);
@@ -279,16 +317,16 @@ ioready_dispatcher_epoll::dispatch_pending(std::size_t limit)
 	return nevents;
 }
 
-eventtrigger &
-ioready_dispatcher_epoll::get_eventtrigger() noexcept
+void
+ioready_dispatcher_epoll::wake_up() noexcept
 {
-	return wakeup_flag_;
+	wakeup_flag_.set();
 }
 
 void
 ioready_dispatcher_epoll::synchronize() noexcept
 {
-	fd_handler_table::delayed_handler_release rel = fdtab_.synchronize();
+	detail::fd_handler_table::delayed_handler_release rel = fdtab_.synchronize();
 
 	lock_.sync_finished();
 
@@ -298,7 +336,7 @@ ioready_dispatcher_epoll::synchronize() noexcept
 ioready_connection
 ioready_dispatcher_epoll::watch(
 	std::function<void(tscb::ioready_events)> function,
-	int fd, tscb::ioready_events event_mask) /* throw(std::bad_alloc) */
+	int fd, tscb::ioready_events event_mask)
 {
 	link_type::pointer link(new link_type(this, std::move(function), fd, event_mask));
 	ioready_events old_mask, new_mask;
@@ -320,11 +358,14 @@ ioready_dispatcher_epoll::watch(
 	return ioready_connection(std::move(link));
 }
 
+/** \cond false */
 
 ioready_dispatcher *
-create_ioready_dispatcher_epoll() /* throw(std::bad_alloc, std::runtime_error) */
+create_ioready_dispatcher_epoll()
 {
 	return new ioready_dispatcher_epoll();
 }
+
+/** \endcond */
 
 }
