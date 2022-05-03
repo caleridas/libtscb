@@ -1,3 +1,4 @@
 usr/include/*
 usr/lib/*/libtscb.so
 usr/lib/*/libtscb.a
+usr/lib/*/pkgconfig/libtscb.pc

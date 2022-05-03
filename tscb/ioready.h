@@ -42,6 +42,8 @@ public:
 	inline bool operator!=(ioready_events other) const noexcept { return repr_ != other.repr_; }
 	/** \brief Equivalent to *this != ioready_none */
 	inline operator bool() const noexcept { return repr_; }
+	/** \brief Bitwise negation */
+	inline ioready_events operator~() const noexcept { return ioready_events(~repr_); }
 
 private:
 	int repr_;
@@ -49,7 +51,7 @@ private:
 
 constexpr ioready_events ioready_none{0x000};
 constexpr ioready_events ioready_input{0x001};
-constexpr ioready_events ioready_output{0x001};
+constexpr ioready_events ioready_output{0x002};
 constexpr ioready_events ioready_error{0x100};
 constexpr ioready_events ioready_hangup{0x200};
 

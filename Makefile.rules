@@ -52,7 +52,7 @@ install-headers:
 	done
 
 install-pkgconfig:
-	mkdir -p -p $(DESTDIR)$(libdir)/pkgconfig/
+	mkdir -p $(DESTDIR)$(libdir)/pkgconfig/
 	for file in $(PKGCONFIG_FILES) ; do \
 		$(INSTALL) -m 644 -v -D $$file $(DESTDIR)$(libdir)/pkgconfig/ ; \
 	done
