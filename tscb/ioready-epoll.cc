@@ -341,6 +341,7 @@ ioready_dispatcher_epoll::watch(
 	link_type::pointer link(new link_type(this, std::move(function), fd, event_mask));
 	ioready_events old_mask, new_mask;
 
+	link_type::write_guard wguard(*this);
 	fdtab_.insert(link.get(), old_mask, new_mask);
 	if (new_mask != ioready_none && old_mask != new_mask) {
 		epoll_event event;
