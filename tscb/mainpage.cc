@@ -54,7 +54,10 @@ means to dispatch pending notifications:
   tscb::childproc_monitor_service "childproc_monitor_service" interface
   and \ref tscb::childproc_monitor "childproc_monitor".
 
-- \ref reactor_descr "Reactor" (aka "event driven programming"):
+- \ref inotify_descr "Inotify": Notify about inode (filesystem) state
+  changes.
+
+- \ref reactor_descr "Reactor" (aka "event driven mainloop"):
   Combines I/O, timers, workqueue (and optionally integrates with child
   process monitoring) to provide the complete interface required for
   event-driven programming. See \ref tscb::reactor_service

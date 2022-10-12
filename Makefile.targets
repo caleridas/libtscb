@@ -69,6 +69,12 @@ libtscb_HEADERS += tscb/ioready-kqueue.h
 libtscb_TESTS += tscb/ioready-kqueue_test
 endif
 
+ifeq ($(INOTIFY), yes)
+libtscb_SOURCES += tscb/inotify-service.cc tscb/inotify.cc
+libtscb_HEADERS += tscb/inotify-service.h tscb/inotify.h
+libtscb_TESTS += tscb/inotify_test
+endif
+
 default: all
 
 libtscb.so: $(patsubst %.cc, %.lo, $(libtscb_SOURCES))
