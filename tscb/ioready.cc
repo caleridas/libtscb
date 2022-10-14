@@ -510,7 +510,7 @@ ioready_connection::link_type::~link_type() noexcept
 /**
 	\class scoped_ioready_connection
 	\brief Scoped control of a connection for I/O readiness notification.
-	\headerfile tscb/connection.h <tscb/connection.h>
+	\headerfile tscb/connection.h <tscb/ioready.h>
 
 	Wrapper control object for a link for I/O callbacks.
 	scoped_ioready_connection objects may either refer to an active
