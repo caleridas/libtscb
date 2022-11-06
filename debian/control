@@ -16,7 +16,7 @@ Description: Thread safe callback library
 
 Package: libtscb0
 Architecture: any
-Depends: ${misc:Depends}
+Depends: ${misc:Depends}, ${shlibs:Depends}
 Description: Thread safe callback library
  Thread safe callbacks and I/O reactors.
  .
