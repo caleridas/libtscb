@@ -1,0 +1,33 @@
+# Define a library and its build rules, register unit
+# tests for it.
+# Depending on configuration builds only static or both
+# static and dynamic library. Depending on configuration
+# may also set up rules for test coverage report.
+
+define common_library
+SOURCES += $$($1_SOURCES)
+HEADERS += $$($1_HEADERS)
+
+$1.a: $$(patsubst %.cc, %.la, $$($1_SOURCES))
+STATIC_LIBRARIES += $1.a
+
+$1.so: $$(patsubst %.cc, %.lo, $$($1_SOURCES))
+ifeq ($$(ENABLE_SHARED), yes)
+SHARED_LIBRARIES += $1.so
+endif
+
+TESTS += $($1_TESTS)
+$$($1_TESTS): $1.a
+$$($1_TESTS): LDFLAGS+=$1.a
+SOURCES += $$(patsubst %, %.cc, $$($1_TESTS))
+
+ifeq ($$(ENABLE_COVERAGE), yes)
+$1_COVERAGE = $$(patsubst %_test, %_test.coverage, $$($1_TESTS))
+$1.coverage.a: $$(patsubst %.cc, %.coverage.la, $$($1_SOURCES))
+COVERAGE_LIBRARIES += $1.coverage.a
+COVERAGE_TESTS += $$($1_COVERAGE)
+$$($1_COVERAGE): $1.coverage.a
+$$($1_COVERAGE): LDFLAGS+=$1.coverage.a
+STATIC_LIBRARIES += $1.coverage.a
+endif
+endef

@@ -41,6 +41,9 @@ ENABLE_SHARED = @ENABLE_SHARED@
 ENABLE_COVERAGE = @ENABLE_COVERAGE@
 VERSION = @VERSION@
 
+# Macros to generate targets.
+include Makefile.macros
+
 # What to build -- may be parameterized by variables above, but
 # otherwise this is configuration-independent.
 include Makefile.targets
